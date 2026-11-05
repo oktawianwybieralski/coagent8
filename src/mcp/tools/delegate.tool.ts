@@ -16,6 +16,7 @@ import { loadConfig } from '../../config.js';
 import { executeReview } from './review.tool.js';
 import { getDataDir, getRuntimePath } from '../../paths.js';
 import { endNotesPath, isTaskFinished, type DelegationTask } from '../../sessions/tasks.js';
+import { findRootOfSession } from '../../sessions/roots.js';
 import type { TaskOptions } from '../../execution/controller.js';
 import { normalizeScopeEntry } from '../../workspace/changes.js';
 import { ToolError } from '../../contracts/error.js';
@@ -28,6 +29,8 @@ export type DelegateArguments = Omit<ToolArguments, 'scope'> & {
   loop?: boolean;
   mode?: 'async' | 'sync';
   request_id?: string;
+  root_handle?: string;
+  parent_task?: string;
 };
 
 /** Scope entries and checks accepted at most. */
@@ -47,6 +50,8 @@ export function getCanonicalDelegateToolDefinition() {
         loop: { type: 'boolean', description: 'Server checks, review.' },
         mode: { type: 'string', enum: ['async', 'sync'] },
         request_id: { type: 'string' },
+        root_handle: { type: 'string' },
+        parent_task: { type: 'string' },
         ...EXECUTION_PARAMETERS,
         // Said in full on consult; the budget of the tool definitions counts every copy.
         backend: { ...EXECUTION_PARAMETERS.backend, description: 'As in consult.' },
@@ -69,6 +74,11 @@ export function delegatePrompt(task: string, scope: readonly string[], checks: r
     '[TASK: DELEGATED CODE CHANGE]',
     'Another agent delegates this change to you. Make it by editing files in this workspace, then report.',
     `Change only: ${scope.length ? scope.join(', ') : 'files in this workspace'}.`,
+    ...(scope.length
+      ? [
+          'Other agents may be changing other paths of this work tree right now: leave them alone, also when a check fails there, and report it.',
+        ]
+      : []),
     'Do not commit, push, reset, stash, check out or switch branches, and do not change Git configuration or files outside the workspace; leave your changes in the working tree.',
     ...(loop ? ['The server runs the checks below and an independent review after you finish, and returns failures to you.'] : []),
     checks.length
@@ -158,6 +168,7 @@ function delegationStarted(task: DelegationTask, clientName?: string) {
   const lines = [
     finished ? 'Delegation already finished.' : 'Delegation started.',
     `task_handle: ${task.taskHandle}`,
+    ...(task.rootHandle ? [`root_handle: ${task.rootHandle}`] : []),
     `session_handle: ${task.sessionHandle}`,
     `state: ${task.state}`,
     `wakeup: ${wakeup}`,
@@ -169,12 +180,19 @@ function delegationStarted(task: DelegationTask, clientName?: string) {
       : wakeup === 'background_wait'
         ? 'Start wait_argv now as a background command: you are woken when it exits. Do not edit this work tree while the worker runs.'
         : 'Read the result later with the session tool, action task, or run wait_argv. Do not edit this work tree while the worker runs.',
+    ...(finished || !task.rootHandle
+      ? []
+      : [
+          'For more workers under the same limits pass root_handle; cancel with root_handle stops them all. A worker finishing does not accept the work: that stays yours.',
+        ]),
   ];
   return {
     content: [{ type: 'text' as const, text: lines.join('\n') }],
     structuredContent: {
       schemaVersion: 1,
       taskHandle: task.taskHandle,
+      ...(task.rootHandle ? { rootHandle: task.rootHandle } : {}),
+      ...(task.parentTask ? { parentTask: task.parentTask } : {}),
       sessionHandle: task.sessionHandle,
       state: task.state,
       wakeup,
@@ -217,7 +235,17 @@ export async function handleDelegate(
   ]
     .filter(Boolean)
     .join('\n');
-  const { scope: _scope, checks: _checks, task: _task, loop: loopArgument, mode, request_id: requestId, ...request } = args;
+  const {
+    scope: _scope,
+    checks: _checks,
+    task: _task,
+    loop: loopArgument,
+    mode,
+    request_id: requestId,
+    root_handle: rootHandle,
+    parent_task: parentTask,
+    ...request
+  } = args;
   const loop = loopArgument === true;
   // A check that cannot run is refused now, not after the worker's turn.
   if (loop) checks.forEach(parseCheckCommand);
@@ -233,6 +261,12 @@ export async function handleDelegate(
       publicInput,
       approve,
       supervise,
+      exclusive: loop,
+      root: {
+        ...(rootHandle ? { handle: rootHandle } : {}),
+        ...(parentTask ? { parentTask } : {}),
+        limits: loadConfig().rootLimits,
+      },
       args: request,
       cwd: workspaceCwd,
       scope: effectiveScope,
@@ -247,12 +281,18 @@ export async function handleDelegate(
     if ('outcome' in started) return formatExecutionResult(started.outcome);
     return delegationStarted(started.task, options.clientName);
   }
+  // A synchronous call has no task, so nothing could stop or count it under a root.
+  if (rootHandle || parentTask) throw new ToolError('INPUT_LIMIT', 'root_handle and parent_task need mode async.');
+  if (typeof request.session_handle === 'string' && findRootOfSession(request.session_handle)) {
+    throw new ToolError('INPUT_LIMIT', 'This session belongs to a root; continue it with mode async.');
+  }
   await approve();
   const { askChecks: _askChecks, clientName: _clientName, ...taskOptions } = options;
   const outcome = await executeDelegation(prompt, publicInput, request, workspaceCwd, effectiveScope, abortSignal, onProgress, {
     requireEnvelope: false,
     ...taskOptions,
     supervise,
+    exclusive: loop,
   });
   return formatExecutionResult(outcome);
 }

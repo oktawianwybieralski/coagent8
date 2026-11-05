@@ -16,7 +16,7 @@ import { ToolError } from '../contracts/index.js';
 import { getDataDir } from '../paths.js';
 import { atomicWrite } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
-import { isRecordedProcessAlive } from './activity.js';
+import { isRecordedProcessAlive, ownProcessIdentity } from './activity.js';
 
 export type TaskState = 'running' | 'completed' | 'failed' | 'cancelled' | 'timed_out' | 'interrupted';
 
@@ -38,6 +38,14 @@ export interface DelegationTask {
   callerSession?: string;
   /** Hash of the request behind a caller's request id. */
   requestFingerprint?: string;
+  /** The root whose budget and cancellation this task shares; absent on a synchronous-era record. */
+  rootHandle?: string;
+  /** The task the caller named as this one's parent. */
+  parentTask?: string;
+  /** Place in the root's tree, the first level being 1. */
+  depth?: number;
+  /** Workspace-relative paths the worker may change; empty or absent means the whole workspace. */
+  scope?: readonly string[];
   /** The complete result as the delegate tool formats it, written before the state turns terminal. */
   result?: { text: string; isError: boolean };
 }
@@ -84,6 +92,45 @@ export async function writeTask(task: DelegationTask): Promise<void> {
   if (task.state === 'running') removeEndNote(task.taskHandle);
   fs.mkdirSync(tasksDir(), { recursive: true, mode: 0o700 });
   await atomicWrite(taskFile(task.taskHandle), JSON.stringify(task));
+}
+
+/**
+ * Claims a request id while its task has no record yet, so two identical starts cannot both run.
+ * A task's record is written before its turn starts, so a dead owner without one started no turn.
+ * @returns Gives the claim up; idempotent.
+ * @throws `SESSION_BUSY` while a live server process holds the claim.
+ */
+export function claimTaskRequest(handle: string): () => void {
+  const file = `${taskFile(handle)}.starting`;
+  fs.mkdirSync(tasksDir(), { recursive: true, mode: 0o700 });
+  const owner = JSON.stringify({ pid: process.pid, identity: ownProcessIdentity() });
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.writeFileSync(file, owner, { flag: 'wx', mode: 0o600 });
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || attempt > 0) throw err;
+      let holder: { pid?: unknown; identity?: unknown } = {};
+      try {
+        holder = JSON.parse(readBoundedFileSync(file, 1024)) as typeof holder;
+      } catch {
+        // Unreadable: written by a process that died mid-write, as the write is one small call.
+      }
+      if (
+        typeof holder.pid === 'number' &&
+        isRecordedProcessAlive(holder.pid, typeof holder.identity === 'string' ? holder.identity : undefined)
+      ) {
+        throw new ToolError('SESSION_BUSY', 'The same request_id is still starting; read its task shortly.');
+      }
+      fs.rmSync(file, { force: true });
+    }
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    fs.rmSync(file, { force: true });
+  };
 }
 
 /** Attempts to store a final record before the result is given up; a full disk may clear. */
@@ -269,6 +316,13 @@ export function pruneTasks(now = Date.now()): void {
     throw err;
   }
   for (const name of names) {
+    // A claim left by a dead process is taken over by its request; one that never returns ages out.
+    if (name.endsWith('.json.starting')) {
+      const claimed = path.join(tasksDir(), name);
+      const at = fs.statSync(claimed, { throwIfNoEntry: false })?.mtimeMs;
+      if (at !== undefined && now - at >= TASK_RETENTION_MS) fs.rmSync(claimed, { force: true });
+      continue;
+    }
     if (!name.endsWith('.json')) continue;
     const file = path.join(tasksDir(), name);
     const modified = fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs;

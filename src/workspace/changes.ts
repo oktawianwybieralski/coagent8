@@ -67,6 +67,60 @@ export function inScope(file: string, scope: readonly string[]): boolean {
   return scope.some(entry => entry === '' || file === entry || file.startsWith(`${entry}/`));
 }
 
+/** One spelling per path where a file system ignores case; where it does not, a refusal too many is harmless. */
+function foldPath(entry: string): string {
+  return entry.normalize('NFC').toLowerCase();
+}
+
+/** Whether a path lies in, or contains, a claim entry; whole path segments must match. */
+function entriesOverlap(a: string, b: string): boolean {
+  const x = foldPath(a),
+    y = foldPath(b);
+  return x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`);
+}
+
+/** Whether two path claims can reach a common file; an empty claim is the whole work tree. */
+export function claimsOverlap(a: readonly string[], b: readonly string[]): boolean {
+  if (!a.length || !b.length) return true;
+  return a.some(x => b.some(y => entriesOverlap(x, y)));
+}
+
+/**
+ * The repository-relative paths a scope holds, for comparing with other writers' claims.
+ * Symbolic links are followed as they are now, as an admission check; one replaced later is not seen.
+ * @param scope - Normalized workspace-relative entries; empty means the whole work tree, whatever the workspace.
+ * @returns The claim; empty when it covers the whole work tree.
+ * @throws `INPUT_LIMIT` for an entry that leaves the repository or enters its Git metadata.
+ */
+export function resolveWriteClaim(repo: WorkspaceRepository, scope: readonly string[]): string[] {
+  const root = fs.realpathSync.native(repo.root);
+  const claim: string[] = [];
+  for (const entry of scope) {
+    let existing = path.resolve(repo.root, repo.prefix, entry);
+    const missing: string[] = [];
+    let real: string | undefined;
+    while (real === undefined) {
+      try {
+        real = fs.realpathSync.native(existing);
+      } catch (err) {
+        const parent = path.dirname(existing);
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT' || parent === existing) throw err;
+        missing.unshift(path.basename(existing));
+        existing = parent;
+      }
+    }
+    const relative = path.relative(root, path.join(real, ...missing));
+    const slashed = relative.split(path.sep).join('/');
+    if (slashed === '..' || slashed.startsWith('../') || path.isAbsolute(relative) || foldPath(slashed.split('/')[0]!) === '.git') {
+      throw new ToolError('INPUT_LIMIT', `Scope entry '${entry.slice(0, 120)}' leaves the repository or enters its Git metadata.`);
+    }
+    // The whole repository: nothing narrower holds.
+    if (!slashed) return [];
+    claim.push(slashed);
+  }
+  return claim;
+}
+
 /**
  * Reads the repository that holds the workspace.
  * @throws When the workspace is not inside a Git work tree.
@@ -176,6 +230,7 @@ async function trackedPaths(
 /**
  * Compares two snapshots of the same workspace.
  * @param scope - Normalized scope entries; empty means the whole workspace.
+ * @param peerClaims - Repository-relative paths other writers held meanwhile.
  * @returns The observed changes, listed up to {@link MAX_LISTED_CHANGES}.
  * @throws When a Git listing fails or is cut; the caller reports the changes as unavailable.
  */
@@ -186,6 +241,7 @@ export async function compareWorkspace(
   after: WorkspaceSnapshot,
   scope: readonly string[],
   context?: BackendReadContext,
+  peerClaims: readonly string[] = [],
 ): Promise<WorkspaceChanges> {
   const changed = new Map<string, ObservedChange['kind']>();
   const differing = [...new Set([...before.paths.keys(), ...after.paths.keys()])].filter(file => {
@@ -239,9 +295,12 @@ export async function compareWorkspace(
           .join('')
           .trimEnd() || undefined
       : undefined;
+  const outsideScope = listed.filter(change => !inScope(change.path, scope)).map(change => change.path);
+  const possiblyOtherWriter = outsideScope.filter(file => peerClaims.some(claim => entriesOverlap(`${repo.prefix}${file}`, claim)));
   return {
     changed: listed,
-    outsideScope: listed.filter(change => !inScope(change.path, scope)).map(change => change.path),
+    outsideScope,
+    ...(possiblyOtherWriter.length ? { possiblyOtherWriter } : {}),
     dirtyBefore: listed.filter(change => before.paths.has(change.path)).map(change => change.path),
     ...(headMoved ? { headMoved } : {}),
     ...(diffStat ? { diffStat } : {}),

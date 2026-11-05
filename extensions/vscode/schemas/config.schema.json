@@ -30,6 +30,35 @@
       "items": { "type": "string" },
       "description": "Commands the server may run after a delegated change without asking, each exactly as written in the call. They run with your account's rights, outside any sandbox, and execute code the worker may have changed."
     },
+    "rootLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What the delegated tasks of one root may use together. A calling agent cannot raise these.",
+      "properties": {
+        "maxCalls": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 32,
+          "description": "Backend turns: first turns, fix rounds and review attempts of a loop."
+        },
+        "maxConcurrent": { "type": "integer", "minimum": 1, "maximum": 64, "default": 4, "description": "Tasks running at once." },
+        "maxDepth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16,
+          "default": 3,
+          "description": "Tasks in a chain of parents, the first level included."
+        },
+        "maxMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440,
+          "default": 240,
+          "description": "Minutes from the root's creation to the end of its last task."
+        }
+      }
+    },
     "routing": {
       "type": "object",
       "additionalProperties": false,

@@ -122,6 +122,24 @@ export interface CheckResult {
   tail: string;
 }
 
+/** What the delegated tasks of one root may use together (#161). */
+export interface RootLimits {
+  /** Backend turns: first turns, fix rounds and review attempts of a loop. */
+  maxCalls: number;
+  /** Tasks running at once. */
+  maxConcurrent: number;
+  /** Tasks in a chain of parents, the first level included. */
+  maxDepth: number;
+  /** Minutes from the root's creation to the end of its last task. */
+  maxMinutes: number;
+}
+
+/** Limits of a root when the user's configuration sets none. */
+export const DEFAULT_ROOT_LIMITS: Readonly<RootLimits> = Object.freeze({ maxCalls: 32, maxConcurrent: 4, maxDepth: 3, maxMinutes: 240 });
+
+/** Highest value the configuration accepts for each limit. */
+export const ROOT_LIMIT_BOUNDS: Readonly<RootLimits> = Object.freeze({ maxCalls: 1000, maxConcurrent: 64, maxDepth: 16, maxMinutes: 1440 });
+
 /** The last round of the server-owned loop of a delegated change. */
 export interface LoopReport {
   outcome: 'passed' | 'checks_failed' | 'review_blocked' | 'review_failed' | 'worker_failed' | 'needs_input' | 'cancelled' | 'timed_out';
@@ -153,6 +171,11 @@ export interface WorkspaceChanges {
   changed: ObservedChange[];
   /** Changed paths outside the call's scope. */
   outsideScope: string[];
+  /**
+   * The paths of `outsideScope` that another writer held during this turn. An annotation, not an
+   * attribution: this worker may have changed them too, so they stay in the lists above.
+   */
+  possiblyOtherWriter?: string[];
   /** Changed paths that already had uncommitted changes before the turn. */
   dirtyBefore: string[];
   /** Commits between the HEAD before and after the turn, or a branch switch. */

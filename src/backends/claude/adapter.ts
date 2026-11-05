@@ -32,14 +32,18 @@ export const CLAUDE_WRITE_TOOLS = Object.freeze(['Read', 'Glob', 'Grep', 'Edit',
 /**
  * Settings of a turn: hooks off, and for `workspace-write` allow rules for the write tools.
  * Under `dontAsk` a tool call no rule allows is denied; `./**` is relative to the turn's
- * directory, the workspace, so `Edit` and `Write` outside it are denied.
+ * directory, the workspace, so `Edit` and `Write` outside it are denied. A scope narrows the rules
+ * to its paths, each as a file or a directory (#160). An entry with a pattern character cannot be
+ * written as a rule without changing what it means, so such a scope falls back to the workspace.
  */
-export function claudeTurnSettings(profile: ExecutionProfile): string {
-  return JSON.stringify(
-    profile === 'workspace-write'
-      ? { disableAllHooks: true, permissions: { allow: ['Edit(./**)', 'Write(./**)', 'Bash'] } }
-      : { disableAllHooks: true },
-  );
+export function claudeTurnSettings(profile: ExecutionProfile, writeScope: readonly string[] = []): string {
+  if (profile !== 'workspace-write') return JSON.stringify({ disableAllHooks: true });
+  const literal = writeScope.length > 0 && writeScope.every(entry => entry && !/[*?[\]{}()!\\]/.test(entry));
+  const paths = literal ? writeScope.flatMap(entry => [`./${entry}`, `./${entry}/**`]) : ['./**'];
+  return JSON.stringify({
+    disableAllHooks: true,
+    permissions: { allow: [...paths.map(p => `Edit(${p})`), ...paths.map(p => `Write(${p})`), 'Bash'] },
+  });
 }
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -475,7 +479,7 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
     '--permission-prompts',
     'none',
     '--settings',
-    claudeTurnSettings(profile),
+    claudeTurnSettings(profile, options.writeScope),
     '--strict-mcp-config',
     '--mcp-config',
     '{"mcpServers":{}}',

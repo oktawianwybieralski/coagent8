@@ -1,6 +1,6 @@
 import type { ToolArguments, ToolProgress } from '../arguments.js';
 import { closeSession, cancelSession, listSessions } from '../../sessions/session.js';
-import { captureDelegation } from '../../execution/delegation.js';
+import { cancelRootTasks, captureDelegation } from '../../execution/delegation.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { WORKSPACE_PARAMETER } from '../schema.js';
 import { deleteHistory, getTurnMapping, sessionHistory } from '../../sessions/history/index.js';
@@ -8,6 +8,7 @@ import { resolveWorkspacePath } from '../../workspace/workspace.js';
 import { ToolError } from '../../contracts/index.js';
 import { redactDiagnostic } from '../../security/redaction.js';
 import { finishedTaskText, readTask } from '../../sessions/tasks.js';
+import { isRootTaskActive, readRoot } from '../../sessions/roots.js';
 import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {
@@ -16,8 +17,9 @@ export const sessionToolDefinition = {
   inputSchema: {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['list', 'history', 'messages', 'close', 'task'] },
+      action: { type: 'string', enum: ['list', 'history', 'messages', 'close', 'task', 'root'] },
       task_handle: { type: 'string' },
+      root_handle: { type: 'string' },
       mine: { type: 'boolean' },
       session_handle: { type: 'string', description: 'history/close.' },
       cursor: { type: 'string', description: 'history.' },
@@ -36,9 +38,9 @@ export const cancelToolDefinition = {
     type: 'object',
     properties: {
       session_handle: { type: 'string' },
+      root_handle: { type: 'string' },
       ...WORKSPACE_PARAMETER,
     },
-    required: ['session_handle'],
   },
 };
 
@@ -57,9 +59,10 @@ export function publicSessionRecord(record: SessionRecord): SessionRecord {
  */
 export async function handleSession(args: ToolArguments, workspace = resolveWorkspacePath(args?.workspace_path)) {
   const action = args?.action;
-  if (!action || !['list', 'history', 'messages', 'close', 'task'].includes(action)) {
-    throw new ToolError('INPUT_LIMIT', 'Validation Error: action must be one of "list", "history", "messages", "close", "task".');
+  if (!action || !['list', 'history', 'messages', 'close', 'task', 'root'].includes(action)) {
+    throw new ToolError('INPUT_LIMIT', 'Validation Error: action must be one of "list", "history", "messages", "close", "task", "root".');
   }
+  if (action === 'root') return rootReport((args as { root_handle?: unknown }).root_handle);
   if (action === 'task') {
     const handle = (args as { task_handle?: unknown }).task_handle;
     if (typeof handle !== 'string' || !handle)
@@ -115,11 +118,59 @@ export async function handleSession(args: ToolArguments, workspace = resolveWork
   throw new ToolError('INPUT_LIMIT', `Unknown action: ${action}`);
 }
 
+/** What a root may use, what it used and how its tasks stand; a root has no state of acceptance. */
+function rootReport(handle: unknown) {
+  if (typeof handle !== 'string' || !handle)
+    throw new ToolError('INPUT_LIMIT', 'Validation Error: root_handle is required for action root.');
+  const root = readRoot(handle);
+  if (!root) throw new ToolError('SESSION_INVALID', `No root ${handle.slice(0, 80)} in this data directory.`);
+  const tasks = root.tasks.map(task => ({
+    taskHandle: task.taskHandle,
+    ...(task.parentTask ? { parentTask: task.parentTask } : {}),
+    depth: task.depth,
+    // A reservation has no task record until its turn is about to start.
+    state: readTask(task.taskHandle)?.state ?? (isRootTaskActive(task) ? 'starting' : 'not_started'),
+  }));
+  const lines = [
+    `root_handle: ${root.rootHandle}`,
+    `state: ${root.state}`,
+    `calls: ${root.calls} of ${root.limits.maxCalls}`,
+    `running: ${root.tasks.filter(isRootTaskActive).length} of ${root.limits.maxConcurrent}`,
+    `depth limit: ${root.limits.maxDepth}`,
+    `time until: ${root.deadlineAt}`,
+    '',
+    ...tasks.map(task => `- ${task.taskHandle}: ${task.state}${task.parentTask ? ` (parent ${task.parentTask})` : ''}`),
+    '',
+    'Finished workers do not make the root accepted: check and review the work yourself.',
+  ];
+  return {
+    content: [{ type: 'text' as const, text: lines.join('\n') }],
+    structuredContent: { ...root, tasks },
+  };
+}
+
+/** Cancels a root and reports what its tasks did within the wait. */
+async function cancelRootHandle(rootHandle: string) {
+  const { ended, running, interrupted } = await cancelRootTasks(rootHandle);
+  const parts = [`Root ${rootHandle} is cancelled: ${ended.length} task(s) ended.`];
+  if (running.length) parts.push(`Still stopping: ${running.join(', ')}; read the root again shortly.`);
+  if (interrupted.length) parts.push(`Their server ended, so their processes may still run on Linux and macOS: ${interrupted.join(', ')}.`);
+  const message = parts.join(' ');
+  return {
+    content: [{ type: 'text' as const, text: `> CoAgent8: ${message}` }],
+    structuredContent: { schemaVersion: 1, rootHandle, cancelled: true, ended, running, interrupted, message },
+  };
+}
+
 /**
  * Cancels the active turn of a session owned by this CoAgent8 server process (`activePid`),
  * or reclaims a stale turn lease from a dead server process.
  */
-export async function handleCancelSession(args: { session_handle: string; workspace_path?: string }) {
+export async function handleCancelSession(args: { session_handle?: string; root_handle?: string; workspace_path?: string }) {
+  if (args?.root_handle) {
+    if (args.session_handle) throw new ToolError('INPUT_LIMIT', 'Validation Error: pass session_handle or root_handle, not both.');
+    return cancelRootHandle(args.root_handle);
+  }
   if (!args?.session_handle || typeof args.session_handle !== 'string') {
     throw new ToolError('INPUT_LIMIT', 'Validation Error: session_handle is required and must be a string.');
   }

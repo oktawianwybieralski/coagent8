@@ -216,11 +216,14 @@ test('a task that cannot be recorded does not start, and the writer is released'
   fs.renameSync(store, kept);
   fs.writeFileSync(store, 'not a directory');
   try {
-    const result = await handleDelegate(REQUEST, repo, null, null, approve);
-    assert.equal(result.structuredContent?.taskHandle, undefined);
-    assert.equal(result.isError, true);
+    process.env.CODEX_FIXTURE_CAPTURE = path.join(tempDir, 'unrecorded-capture.json');
+    fs.rmSync(process.env.CODEX_FIXTURE_CAPTURE, { force: true });
+    // The store holds the root as well as the task, so the start ends before any writer or worker.
+    await assert.rejects(handleDelegate(REQUEST, repo, null, null, approve), /ENOTDIR|EEXIST/);
+    assert.equal(fs.existsSync(process.env.CODEX_FIXTURE_CAPTURE), false, 'no worker started');
     assert.equal(fs.existsSync(writerRecord(repo)), false);
   } finally {
+    process.env.CODEX_FIXTURE_CAPTURE = path.join(tempDir, 'capture.json');
     fs.rmSync(store, { force: true });
     fs.renameSync(kept, store);
   }

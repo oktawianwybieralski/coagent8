@@ -22,6 +22,7 @@ export const ERROR_CODES = [
   'HISTORY_ERROR',
   'POLICY_DENIED',
   'PRICE_LIMIT',
+  'ROOT_LIMIT',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

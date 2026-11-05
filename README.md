@@ -60,10 +60,10 @@ agent, which runs in the background and wakes Claude Code when it ends, with an
 optional loop in which CoAgent8 runs your checks and an independent review and
 returns failures to the agent; reviews of large changes in parts; and checks
 CoAgent8 runs before a review. This README describes `develop`, so features
-marked 0.8.0 are not in the published packages. Not yet available:
-coordinating several agents in parallel under one budget; separate Git worktrees
-can each run a delegated agent at once. That is the next step in the
-[roadmap](docs/ROADMAP.md#full-coagent-direction).
+marked 0.8.0 are not in the published packages. Several delegated agents can run
+at once under one budget, in disjoint scopes of a work tree or in separate Git
+worktrees. Not yet available: an agent that itself delegates to others. That is
+the next step in the [roadmap](docs/ROADMAP.md#full-coagent-direction).
 
 ## Quick start
 
@@ -262,10 +262,10 @@ supports stdio MCP in Agent mode through the same definition, following
 | --- | --- |
 | `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis |
 | `review` | An independent review of Git changes with a verdict CoAgent8 derives; large changes in parts, and `checks` CoAgent8 runs first (both 0.8.0) |
-| `delegate` (0.8.0) | Another agent makes a code change in the workspace, asked to keep to the `scope` paths (changes outside them are reported, not prevented) and to run `checks`; with `loop: true` CoAgent8 runs the checks and an independent review and returns failures to the agent. The call returns once the agent runs, with a task handle and a `wait` command; `mode: "sync"` waits instead; the result adds the files CoAgent8 saw change in Git, with warnings for changes outside the scope, to files that already had uncommitted changes, and commits. One delegate per workspace at a time; it never commits |
+| `delegate` (0.8.0) | Another agent makes a code change in the workspace, asked to keep to the `scope` paths (changes outside them are reported, not prevented) and to run `checks`; with `loop: true` CoAgent8 runs the checks and an independent review and returns failures to the agent. The call returns once the agent runs, with a task handle and a `wait` command; `mode: "sync"` waits instead; the result adds the files CoAgent8 saw change in Git, with warnings for changes outside the scope, to files that already had uncommitted changes, and commits. Agents in a work tree must have disjoint `scope`s: an overlapping start is refused, and no `scope` or `loop: true` takes the whole work tree. `root_handle` puts agents under one budget; it never commits |
 | `doctor` | Models, efforts, output prices, defaults and approval per backend; `scope: "health"` checks installation, versions, sign-in and quota; `detail: "full"` returns data |
 | `session` | List the workspace's sessions (`mine: true` for your own), page a session's history (`cursor` and `limit`) or its messages only, read a delegation's task, or close a session |
-| `cancel` | Stop the running turn of a session: interrupt where the CLI supports it, then end the CLI process |
+| `cancel` | Stop the running turn of a session: interrupt where the CLI supports it, then end the CLI process. From 0.8.0, `root_handle` stops every delegated agent of a root instead |
 | `issue` | Prepare a sanitized bug report (attaching detected CLI versions when `include_doctor` is `true`, the default) and a GitHub bug report form link to paste it into |
 
 A consultation can be as small as:
@@ -302,6 +302,19 @@ other than the agent's (and other than your client's CLI while one remains) and 
 need your approval as in reviews. Without the loop, run the checks yourself
 before accepting the change. On Windows a cancelled agent's child processes end
 with it; partial changes stay, so check `git status` after a cancel or timeout.
+
+Agents can work side by side. Every asynchronous `delegate` belongs to a root and
+returns its `root_handle`; pass it to the next call to share the limits, which
+come from `rootLimits` in your configuration (`maxCalls` 32, `maxConcurrent` 4,
+`maxDepth` 3, `maxMinutes` 240) and which a calling agent cannot raise. At a limit
+the call fails with `ROOT_LIMIT`. `parent_task` records which task a new one follows
+from. `session` with `action: root` shows the use and the tasks; a finished agent
+does not make the work accepted. A `scope` is an agreement that the server checks at
+the start and observes at the end, not a sandbox: an agent can still reach another
+agent's paths (only Claude Code's `Edit` and `Write` are held to the scope), a path
+another agent held is marked as possibly changed by either, and a check an agent runs
+sees the half-finished work of the others. Roots belong to a CoAgent8 data directory:
+a client with another one does not see them.
 
 ### Approving expensive models
 

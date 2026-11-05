@@ -18,14 +18,44 @@
  */
 import crypto from 'node:crypto';
 import { ToolError, type TaskExecutionResult, type WorkspaceChanges } from '../contracts/index.js';
+import { DEFAULT_EXECUTION_TIMEOUT_MS, type RootLimits } from '../contracts/execution.js';
 import { redactDiagnostic } from '../security/index.js';
 import { ownProcessIdentity } from '../sessions/activity.js';
 import { acquireWriterLease } from '../sessions/writer.js';
 import { createExecutionBudget } from './runtime/budget.js';
 import { jobHelperPath } from './job-helper.js';
 import { withRequiredJobHelper, withWorkerGroups } from './process.js';
-import { createTaskHandle, pruneTasks, readTask, writeFinalTask, writeTask, type DelegationTask } from '../sessions/tasks.js';
-import { captureWorkspace, compareWorkspace, readWorkspaceRepository, type WorkspaceSnapshot } from '../workspace/changes.js';
+import {
+  claimTaskRequest,
+  createTaskHandle,
+  pruneTasks,
+  readTask,
+  writeFinalTask,
+  writeTask,
+  type DelegationTask,
+} from '../sessions/tasks.js';
+import {
+  bindRootTask,
+  cancelRoot,
+  createRoot,
+  endRootTask,
+  findRootOfSession,
+  findRootOfTask,
+  isRootTaskActive,
+  pruneRoots,
+  readRoot,
+  refundRootTask,
+  removeUnusedRoot,
+  reserveRootCall,
+  reserveRootTask,
+} from '../sessions/roots.js';
+import {
+  captureWorkspace,
+  compareWorkspace,
+  readWorkspaceRepository,
+  resolveWriteClaim,
+  type WorkspaceSnapshot,
+} from '../workspace/changes.js';
 import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
 
 /**
@@ -48,9 +78,13 @@ export async function executeDelegation(
     supervise?: Supervise;
     /** Longest turn of a later round; replaceable by tests. */
     loopTurnMs?: number;
+    /** Hold the whole work tree whatever the scope: the loop's checks and review read all of it. */
+    exclusive?: boolean;
+    /** Runs before every turn after the first; a refusal ends the round. */
+    beforeRound?: () => Promise<void>;
   } = {},
 ): Promise<TaskExecutionResult> {
-  const { beforeRelease, supervise, loopTurnMs = LOOP_TURN_MS, ...taskOptions } = options;
+  const { beforeRelease, supervise, loopTurnMs = LOOP_TURN_MS, exclusive = false, beforeRound, ...taskOptions } = options;
   // A writer's descendants must end with its run; without the helper they could keep writing.
   if (process.platform === 'win32' && !jobHelperPath()) {
     throw new ToolError(
@@ -62,7 +96,7 @@ export async function executeDelegation(
     if (err instanceof ToolError && ['ABORTED', 'TIMEOUT'].includes(err.code)) throw err;
     throw new ToolError('INPUT_LIMIT', 'delegate needs a Git work tree, so the server can report what changed; run it in a repository.');
   });
-  const lease = await acquireWriterLease(repo.gitDir);
+  const lease = await acquireWriterLease(repo.gitDir, undefined, exclusive ? [] : resolveWriteClaim(repo, scope));
   let outcome: TaskExecutionResult | undefined;
   let treeUnconfirmed = false;
   try {
@@ -78,6 +112,7 @@ export async function executeDelegation(
       if (!supervise) return first;
       // Each later turn has its own bound within what is left of the task's budget.
       const inRound: Supervision['inRound'] = async run => {
+        await beforeRound?.();
         const remainingMs = Math.min(loopTurnMs, options.budget?.remainingExecutionMs() ?? Number.POSITIVE_INFINITY);
         if (remainingMs <= 0) throw new ToolError('TIMEOUT', 'The task budget ended before the next turn.');
         const budget = createExecutionBudget({
@@ -115,7 +150,7 @@ export async function executeDelegation(
       : runTask());
     let changes: WorkspaceChanges;
     try {
-      changes = await compareWorkspace(cwd, repo, before, await captureWorkspace(cwd, repo), scope);
+      changes = await compareWorkspace(cwd, repo, before, await captureWorkspace(cwd, repo), scope, undefined, lease.peerClaims());
     } catch (err) {
       changes = {
         changed: [],
@@ -127,7 +162,8 @@ export async function executeDelegation(
     }
     outcome = { ...outcome, changes };
     // A worker that was denied and changed nothing may still report a normal end (#127).
-    if (outcome.result.denials?.length && !changes.changed.length && !changes.unavailable) {
+    const ownChanges = changes.changed.filter(change => !changes.possiblyOtherWriter?.includes(change.path));
+    if (outcome.result.denials?.length && !ownChanges.length && !changes.unavailable) {
       outcome = {
         ...outcome,
         warnings: [
@@ -161,7 +197,7 @@ export async function executeDelegation(
 }
 
 /** Operations of asynchronous delegations in this server, awaited at shutdown. */
-const activeDelegations = new Map<Promise<unknown>, AbortController>();
+const activeDelegations = new Map<Promise<unknown>, { controller: AbortController; rootHandle: string }>();
 
 /**
  * Stops every asynchronous delegation of this server, at once also one still waiting for consent.
@@ -201,8 +237,71 @@ export function captureDelegation(sessionHandle: string): (waitMs?: number) => P
 }
 
 export function stopActiveDelegations(): Promise<unknown> {
-  for (const controller of activeDelegations.values()) controller.abort();
+  for (const { controller } of activeDelegations.values()) controller.abort();
   return Promise.allSettled([...activeDelegations.keys()]);
+}
+
+/** How often a running delegation looks for a cancellation of its root by another server process. */
+const ROOT_WATCH_MS = 1000;
+/** Reads of a root that may fail in a row before its worker is stopped: a root nobody can read cannot cancel it. */
+const ROOT_WATCH_FAILURES = 5;
+const ROOT_SETTLE_POLL_MS = 100;
+
+/** What a root's cancellation reached. */
+export interface RootCancellation {
+  /** Ended tasks of the root. */
+  ended: string[];
+  /** Tasks still running when the wait ended. */
+  running: string[];
+  /** Tasks whose server process died while their turn may have run: on POSIX their processes can outlive it. */
+  interrupted: string[];
+}
+
+/**
+ * Cancels a root: no task starts from here on, this server's tasks stop at once and every other
+ * server process's within its next look at the root. Nothing here signals a process by a recorded PID.
+ * @returns What the tasks did within the wait.
+ * @throws `SESSION_INVALID` when this data directory has no such root.
+ */
+export async function cancelRootTasks(rootHandle: string, waitMs = CANCEL_SETTLE_MS): Promise<RootCancellation> {
+  await cancelRoot(rootHandle);
+  for (const active of activeDelegations.values()) {
+    if (active.rootHandle === rootHandle) active.controller.abort();
+  }
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const root = readRoot(rootHandle);
+    const tasks = root?.tasks ?? [];
+    const running = tasks.filter(isRootTaskActive);
+    if (!running.length || Date.now() >= deadline) {
+      return {
+        ended: tasks.filter(task => task.endedAt).map(task => task.taskHandle),
+        running: running.map(task => task.taskHandle),
+        // Without a session the turn had not started, as the session is bound just before it.
+        interrupted: tasks.filter(task => !task.endedAt && !isRootTaskActive(task) && task.sessionHandle).map(task => task.taskHandle),
+      };
+    }
+    await new Promise(resolve => setTimeout(resolve, ROOT_SETTLE_POLL_MS));
+  }
+}
+
+/**
+ * Finds the root of a request: the named one, or that of its parent or of the session it continues.
+ * @returns The root, or null when the request starts a new one.
+ * @throws `SESSION_INVALID` for a root or parent this data directory does not have, `INPUT_LIMIT`
+ * when they name different roots.
+ */
+function requestedRoot(start: DelegationStart): string | null {
+  const named = start.root?.handle;
+  if (named && !readRoot(named)) throw new ToolError('SESSION_INVALID', `No root ${named.slice(0, 80)} in this data directory.`);
+  const parent = start.root?.parentTask;
+  const ofParent = parent ? findRootOfTask(parent)?.rootHandle : undefined;
+  if (parent && !ofParent) throw new ToolError('SESSION_INVALID', `No task ${parent.slice(0, 80)} in a root of this data directory.`);
+  const session = start.args.session_handle;
+  const ofSession = typeof session === 'string' ? findRootOfSession(session)?.rootHandle : undefined;
+  const roots = new Set([named, ofParent, ofSession].filter((root): root is string => Boolean(root)));
+  if (roots.size > 1) throw new ToolError('INPUT_LIMIT', 'root_handle, parent_task and session_handle name different roots.');
+  return [...roots][0] ?? null;
 }
 
 /** Longest turn of a later round of the loop, fix or review. */
@@ -237,6 +336,10 @@ export interface DelegationStart {
   /** Asks what must be settled before a new task starts, after a repeated request id was ruled out. */
   approve?: () => Promise<void>;
   supervise?: Supervise;
+  /** Holds the whole work tree whatever the scope. */
+  exclusive?: boolean;
+  /** The root to join and the parent to name; without either a new root starts with `limits`. */
+  root?: { handle?: string; parentTask?: string; limits?: Partial<RootLimits> };
   /** Formats the outcome the way the tool returns it. */
   format: (outcome: TaskExecutionResult) => { text: string; isError: boolean };
   options: Pick<TaskOptions, 'askConsent' | 'requireEnvelope' | 'warnings' | 'clock'>;
@@ -244,8 +347,11 @@ export interface DelegationStart {
 
 /** Identifies what a request id stands for, so a reused id cannot silently return another task. */
 function requestFingerprint(start: DelegationStart): string {
-  const { args, prompt, scope } = start;
-  return crypto.createHash('sha256').update(JSON.stringify({ prompt, scope, args })).digest('hex');
+  const { args, prompt, scope, root } = start;
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify({ prompt, scope, args, root: root?.handle, parent: root?.parentTask }))
+    .digest('hex');
 }
 
 /** Terminal task state of an outcome. */
@@ -264,16 +370,66 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
   const key = start.requestId ? `${start.cwd}\n${start.requestId}` : undefined;
   const taskHandle = createTaskHandle(key);
   const fingerprint = key ? requestFingerprint(start) : undefined;
-  const existing = key ? readTask(taskHandle) : null;
-  if (existing) {
-    if (existing.requestFingerprint !== fingerprint) {
+  const existingTask = () => {
+    const existing = key ? readTask(taskHandle) : null;
+    if (existing && existing.requestFingerprint !== fingerprint) {
       throw new ToolError('INPUT_LIMIT', `request_id '${start.requestId?.slice(0, 80)}' was already used for a different delegation.`);
     }
-    return { task: existing };
+    return existing;
+  };
+  const existing = existingTask();
+  if (existing) return { task: existing };
+  const releaseRequest = key ? claimTaskRequest(taskHandle) : () => undefined;
+  try {
+    // The first start may have recorded its task between the look above and this claim.
+    const recorded = existingTask();
+    if (recorded) return { task: recorded };
+    return await launchDelegation(start, taskHandle, fingerprint);
+  } finally {
+    releaseRequest();
   }
-  await start.approve?.();
+}
+
+/** Reserves the task in its root and runs it; see {@link startDelegation}. */
+async function launchDelegation(
+  start: DelegationStart,
+  taskHandle: string,
+  fingerprint: string | undefined,
+): Promise<{ task: DelegationTask } | { outcome: TaskExecutionResult }> {
+  const joined = requestedRoot(start);
+  const rootHandle = joined ?? (await createRoot(start.root?.limits)).rootHandle;
+  const giveUpNewRoot = async () => {
+    if (!joined) await removeUnusedRoot(rootHandle);
+  };
+  let reservation: { depth: number; remainingMs: number };
+  try {
+    reservation = await reserveRootTask(rootHandle, {
+      taskHandle,
+      ...(start.root?.parentTask ? { parentTask: start.root.parentTask } : {}),
+      ...(typeof start.args.session_handle === 'string' ? { continues: start.args.session_handle } : {}),
+    });
+  } catch (err) {
+    await giveUpNewRoot();
+    throw err;
+  }
+  /** Returns the charge of a start that never reached a turn; a failure here must not hide its reason. */
+  const refund = async () => {
+    try {
+      await refundRootTask(rootHandle, taskHandle);
+      await giveUpNewRoot();
+    } catch (err) {
+      process.stderr.write(`CoAgent8: root ${rootHandle} was not updated: ${redactDiagnostic((err as Error).message, 512)}\n`);
+    }
+  };
+  try {
+    await start.approve?.();
+  } catch (err) {
+    await refund();
+    throw err;
+  }
   try {
     pruneTasks();
+    pruneRoots();
   } catch (err) {
     // Old records are housekeeping; a new delegation does not depend on removing them.
     process.stderr.write(`CoAgent8: old tasks were not removed: ${redactDiagnostic((err as Error).message, 512)}
@@ -288,7 +444,11 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
   // Owned by the task from the first Git read on, so cancellation and timeout_ms bound all of it.
   const timeoutMs = start.args.timeout_ms;
   const budget = createExecutionBudget({
-    totalBudgetMs: typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) ? timeoutMs : undefined,
+    // The root's time is shared: no task runs past it, whatever it asked for.
+    totalBudgetMs: Math.min(
+      typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_EXECUTION_TIMEOUT_MS,
+      reservation.remainingMs,
+    ),
     parentSignal: controller.signal,
     clock: start.options.clock,
   });
@@ -315,9 +475,33 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
     finalStored = await writeFinalTask(task);
     if (!finalStored) logUnstored();
   };
+  /** Never rejects either: the root's books must not hide how the task ended. */
+  const closeInRoot = async () => {
+    if (!task) return refund();
+    try {
+      await endRootTask(rootHandle, taskHandle);
+    } catch (err) {
+      process.stderr.write(`CoAgent8: root ${rootHandle} was not updated: ${redactDiagnostic((err as Error).message, 512)}\n`);
+    }
+  };
+  let watchFailures = 0;
+  const watch = setInterval(() => {
+    try {
+      const root = readRoot(rootHandle);
+      watchFailures = root ? 0 : watchFailures + 1;
+      if (root?.state === 'cancelled') controller.abort();
+    } catch {
+      // A rename by another process can fail one read on Windows; only repeated failures count.
+      watchFailures++;
+    }
+    if (watchFailures >= ROOT_WATCH_FAILURES) controller.abort();
+  }, ROOT_WATCH_MS);
+  watch.unref();
   const operation = executeDelegation(start.prompt, start.publicInput, start.args, start.cwd, start.scope, controller.signal, null, {
     ...start.options,
     supervise: start.supervise,
+    exclusive: start.exclusive,
+    beforeRound: () => reserveRootCall(rootHandle),
     budget,
     context,
     onTurnStart: async turn => {
@@ -335,7 +519,13 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
         startedAt: new Date().toISOString(),
         ...(callerSession ? { callerSession } : {}),
         ...(fingerprint ? { requestFingerprint: fingerprint } : {}),
+        rootHandle,
+        ...(start.root?.parentTask ? { parentTask: start.root.parentTask } : {}),
+        depth: reservation.depth,
+        ...(start.scope.length ? { scope: start.scope } : {}),
       };
+      // The last check before the turn: a root cancelled until now prevents it.
+      await bindRootTask(rootHandle, taskHandle, turn.sessionHandle);
       // A record that cannot be written fails the turn before it starts: nothing could be waited for.
       await writeTask(initial);
       task = initial;
@@ -350,21 +540,24 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
     async outcome => {
       // Formatted again: a failed release adds its warning after the first copy was stored.
       await finish({ state: finalState(outcome), result: start.format(outcome) });
+      await closeInRoot();
       return { outcome };
     },
     async (err: unknown) => {
       const message = redactDiagnostic((err as Error).message, 1024);
       await finish({ state: 'failed', result: { text: `The delegation failed: ${message}`, isError: true } });
+      await closeInRoot();
       return { error: err };
     },
   );
-  activeDelegations.set(settled, controller);
+  activeDelegations.set(settled, { controller, rootHandle });
   const outcomeStored = settled.then(() => finalStored);
   void running.then(() => {
     if (task) delegationBySession.set(task.sessionHandle, outcomeStored);
   });
   void settled.then(() => {
     activeDelegations.delete(settled);
+    clearInterval(watch);
     // Only its own entry: a newer delegation in the same session may have registered meanwhile.
     if (task && delegationBySession.get(task.sessionHandle) === outcomeStored) delegationBySession.delete(task.sessionHandle);
     budget.dispose();

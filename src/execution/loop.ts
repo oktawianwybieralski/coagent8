@@ -130,7 +130,7 @@ export async function superviseChange(first: TaskExecutionResult, steps: LoopSte
         const code = err instanceof ToolError ? err.code : undefined;
         if (code === 'ABORTED') return interrupted(last, report, 'cancelled');
         if (code === 'TIMEOUT') return interrupted(last, report, 'timed_out');
-        const needsUser = code === 'POLICY_DENIED' || code === 'PRICE_LIMIT';
+        const needsUser = code === 'POLICY_DENIED' || code === 'PRICE_LIMIT' || code === 'ROOT_LIMIT';
         return ended(last, report, needsUser ? 'needs_input' : 'review_failed', (err as Error).message);
       }
       const reviewText = reviewed.result.output ?? '';
@@ -164,7 +164,7 @@ export async function superviseChange(first: TaskExecutionResult, steps: LoopSte
       const code = err instanceof ToolError ? err.code : undefined;
       if (code === 'ABORTED') return interrupted(last, report, 'cancelled');
       if (code === 'TIMEOUT') return interrupted(last, report, 'timed_out');
-      const needsUser = code === 'POLICY_DENIED' || code === 'PRICE_LIMIT';
+      const needsUser = code === 'POLICY_DENIED' || code === 'PRICE_LIMIT' || code === 'ROOT_LIMIT';
       return ended(last, report, needsUser ? 'needs_input' : 'worker_failed', (err as Error).message);
     }
   }
