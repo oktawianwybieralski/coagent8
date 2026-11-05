@@ -50,8 +50,8 @@ export interface RootRecord {
 }
 
 const ROOT_HANDLE = /^root_[a-f0-9]{32}$/;
-/** Entries are bounded by `maxCalls`; this bounds reading a damaged file. */
-const MAX_ROOT_BYTES = 1024 * 1024;
+/** Fits `ROOT_LIMIT_BOUNDS.maxCalls` entries with the longest paths; bounds reading a damaged file. */
+const MAX_ROOT_BYTES = 8 * 1024 * 1024;
 /** Roots without a running task older than this are removed when a new root is created. */
 const ROOT_RETENTION_MS = 7 * 24 * 3600 * 1000;
 

@@ -311,7 +311,8 @@ the call fails with `ROOT_LIMIT`. `parent_task` records which task a new one fol
 from. `session` with `action: root` shows the use and the tasks; a finished agent
 does not make the work accepted. A `scope` is an agreement that the server checks at
 the start and observes at the end, not a sandbox: an agent can still reach another
-agent's paths (only Claude Code's `Edit` and `Write` are held to the scope), a path
+agent's paths (only Claude Code's `Edit` and `Write` are held to the scope, unless a
+scope entry contains a pattern character such as `*` or `[`), a path
 another agent held is marked as possibly changed by either, and a check an agent runs
 sees the half-finished work of the others. Roots belong to a CoAgent8 data directory:
 a client with another one does not see them.

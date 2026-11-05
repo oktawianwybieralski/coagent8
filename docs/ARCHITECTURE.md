@@ -1343,7 +1343,7 @@ recorded process group lives and it was not starting a worker, and then only for
 A claim schedules writers; it is not a sandbox. Codex and agy get it as an instruction, Claude's
 `Edit` and `Write` allow rules narrow to it (verified natively with Claude Code 2.1.318, 2026-11-05: a new file under a directory entry and an edit of a file entry succeeded, a new file and an edit outside were denied), and Claude's `Bash` reaches everything. A scope entry
 with a pattern character keeps Claude's rule at the workspace. A link replaced after the start is
-not seen.
+not seen, and neither is a hard link between two claims, which compare paths and not files.
 
 **Evidence.** The result still lists the paths the server saw change, up to 200 with a notice that
 more changed, and those outside the scope among them. A path that another writer held during the turn is also in `possiblyOtherWriter`,

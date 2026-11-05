@@ -56,7 +56,8 @@ Writers of a Git work tree hold disjoint paths, recorded in its Git directory so
 every client's server process sees them; no `scope` or `loop: true` holds the whole
 tree, and an overlapping start is refused (0.8.0 plan, owner decision 2026-11-02).
 A path claim schedules writers and is no sandbox: the limits above are the only
-containment, and Claude's `Edit` and `Write` rules narrow to the scope. The server
+containment, and Claude's `Edit` and `Write` rules narrow to the scope unless an entry
+has a pattern character. The server
 reports the Git changes it observed before and after the turn, whoever
 may have made them, and never commits, resets or cleans up. Root limits come from the
 user's `rootLimits`; a calling agent, skill or worker cannot raise them. On Windows `delegate` refuses to run without the job helper,
