@@ -23,7 +23,7 @@ current state. History, not instructions. The card records in this directory are
   session list/history/cancel, closed-session refusal and cleanup. Codex could
   not delete its scratch repository (its own execution policy). An earlier
   Claude Code run used a manual registration of the source build and does not
-  count. Findings: [FEEDBACK-070](../../ROADMAP.md#feedback-070-findings-of-the-070-native-acceptance),
+  count. Findings: [FEEDBACK-070](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#feedback-070-findings-of-the-070-native-acceptance),
   fixed in #86 (`87c7b13`) before the tag; then #85 is rebased, its new
   artifacts accepted again and the release review bound to their hashes.
 
@@ -74,18 +74,18 @@ current state. History, not instructions. The card records in this directory are
   (`chore(release): v0.6.1 (#32)`), published on GitHub, npm (`latest` and
   `next`) and the VS Code Marketplace ([release evidence](../0.6.1/README.md#061-release-evidence)).
   It is the first release under the MIT License. Its changes are listed in
-  `CHANGELOG.md` and the [PATCH-061 queue](../../ROADMAP.md#patch-061-061-task-queue).
-- **Next work: the [0.7.0 plan](../../ROADMAP.md#070-beta3-plan)** (owner direction
+  `CHANGELOG.md` and the [PATCH-061 queue](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#patch-061-061-task-queue).
+- **Next work: the [0.7.0 plan](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#070-beta3-plan)** (owner direction
   2026-10-13). Phase 0 is owner decisions on
-  [`PROPOSALS-001`](../../ROADMAP.md#proposals-001-proposals-awaiting-an-owner-decision),
+  [`PROPOSALS-001`](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#proposals-001-proposals-awaiting-an-owner-decision),
   the npm publisher mode and release channel and the `0.7.0` write scope;
   Phase 1 is the public CLI (`CLI-FIRST-001a-e`). Publication automation
-  ([`RELEASE-001`](../../ROADMAP.md#release-001-automated-publication)) is Phase 5,
+  ([`RELEASE-001`](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#release-001-automated-publication)) is Phase 5,
   before the tag: the `0.6.1` publication path broke twice and npm and the
   Marketplace were published by hand. The `PATCH-061` native tasks that did
   not run before `0.6.1` are part of the `0.7.0` acceptance.
 - **Phase 1 status (2026-10-13):** rows 1.1-1.13 of the
-  [task queue](../../ROADMAP.md#tasks-070-070-task-queue) are merged:
+  [task queue](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#tasks-070-070-task-queue) are merged:
   the public CLI (`CLI-FIRST-001a-e`, #34 and #36-#42), `RELEASE-001a` (#35)
   and the Windows PATH opt-in (`CLI-FIRST-001h1/h2`, #43). On 2026-10-13 the
   owner installed the packed CLI globally (`--help`, `models`, `doctor`,
@@ -277,7 +277,7 @@ current state. History, not instructions. The card records in this directory are
   reported by the home check.
 - **Release split (owner decision 2026-10-15):** `0.7.0` is a stability release and
   `0.8.0` (rc.1) carries delegation and orchestration; the
-  [ROADMAP split](../../ROADMAP.md#070-beta3-plan) assigns each open row. The owner's
+  [ROADMAP split](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#070-beta3-plan) assigns each open row. The owner's
   Claude Code, Codex and VS Code registrations run the working-tree build
   (`dist/index.cjs mcp`); rebuild with `npm run build` and restart the client's
   MCP server to pick up changes. Rows 2.13-2.17 and 3.9-3.13b are done; the
@@ -352,7 +352,7 @@ current state. History, not instructions. The card records in this directory are
   naming an external project (#68); rows 3.9-3.11 followed in #69 and #70. WSL lane 2.18 needs an Ubuntu distribution with
   Node and signed-in CLIs; on 2026-10-18 the machine had only `docker-desktop`.
 - **PR scope (owner direction, 2026-10-13):** use the
-  [result groups](../../ROADMAP.md#pr-groups-and-existing-history), with subtasks as
+  [result groups](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;
   PR #46 implements result group 2.3-2.4. Required review and
   CI cover each complete result; a task ID or line count is not a PR boundary.

@@ -170,5 +170,5 @@ current state. History, not instructions. The card records in this directory are
   Draft contract in
   [ARCHITECTURE](../../ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c);
   re-scoped cards and four open owner decisions in the
-  [DELEGATE-001 card](../../ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up).
+  [DELEGATE-001 card](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up).
   Not reviewed yet.

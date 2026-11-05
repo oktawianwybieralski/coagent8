@@ -174,7 +174,7 @@ become the final commit, so they must meet this section.
   in their own PR, so the history and the changelog show them.
 * The PR that delivers a card's subtasks adds or extends the version's record
   in [docs/delivered/](../../docs/delivered/README.md) and links it from the
-  ROADMAP card; the [rules there](../../docs/delivered/README.md#rules) say what
+  issue; the [rules there](../../docs/delivered/README.md#rules) say what
   a record holds and how merge data and release evidence are filled in later.
 * For a grouped PR, record all included task IDs and acceptance checks. Internal
   dependencies are completed in order on the same branch; external dependencies

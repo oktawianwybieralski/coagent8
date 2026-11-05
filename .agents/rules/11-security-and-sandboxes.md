@@ -8,7 +8,8 @@ never relaxes one. Violations block execution and are never bypassed.
 
 Owner decision (2026-10-08): full coagents may perform implementation and command
 execution under task-scoped user policy. The migration is specified by
-[`COAGENT-002/007` in the roadmap](../../docs/ROADMAP.md#full-coagent-direction).
+the [coagent direction](../../docs/ROADMAP.md#full-coagent-direction), issues
+[#160](https://github.com/oktawianwybieralski/coagent8/issues/160) (profiles) and [#165](https://github.com/oktawianwybieralski/coagent8/issues/165) (compatibility).
 This replaces the consultation-only product boundary and proposed blanket
 sandbox opt-out. Current profiles below remain enforced until each replacement
 is implemented and verified. Planning a capability does not make it available.

@@ -21,7 +21,7 @@ the downloaded release artifacts:
   on runtime `0.6.1`, passed `doctor`, `consult` with continuation, `review`
   BLOCKED then READY on one `session_handle`, `session` list/history/close,
   `cancel` on an idle session, the closed-session refusal and `issue`. Findings
-  are recorded as [`FEEDBACK-061`](../../ROADMAP.md#feedback-061-findings-of-the-061-native-acceptance).
+  are recorded as [`FEEDBACK-061`](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#feedback-061-findings-of-the-061-native-acceptance).
   A first round silently ran the previous `0.6.0` runtime in chats started
   before the update (`FEEDBACK-061a`) and was discarded.
 - PASS: squash commit `55c7859` on `develop` has the release PR's tree, is
@@ -164,7 +164,7 @@ matching the downloaded VSIX) across `codex-cli 0.162.0-alpha.17.2`,
   Codex and Antigravity turns.
 - FAIL/NOTE: defects identified during the run and their split between `0.6.0`
   and `0.6.1` are tracked under
-  [`FEEDBACK-060`](../../ROADMAP.md#feedback-060-findings-of-the-060-native-acceptance)
+  [`FEEDBACK-060`](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#feedback-060-findings-of-the-060-native-acceptance)
   (including the local reproduction where `git diff --cached` in a repository
   owned by `CodexSandboxOnline` reported dubious ownership followed by
   `unknown option 'cached'`).
@@ -191,7 +191,7 @@ Native check on VS Code 1.141.0 (Windows):
 
 ## REPO-003a one numeric version
 
-Card: [REPO-003](../../ROADMAP.md#repo-003-one-numeric-version-for-npm-vsix-and-tags).
+Card: [REPO-003](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#repo-003-one-numeric-version-for-npm-vsix-and-tags).
 Synchronized numeric `major.minor.patch` versioning (`0.6.0` for the `beta.2`
 stage; `0.5.0` skipped after withdrawing the `1.0.0-beta.1` npm placeholder)
 across `package.json`, `package-lock.json`, `plugin.json` and
@@ -212,7 +212,7 @@ across `package.json`, `package-lock.json`, `plugin.json` and
 
 ## CLIMGMT-001 manage coding CLIs
 
-Card: [CLIMGMT-001](../../ROADMAP.md#climgmt-001-manage-coding-clis). Implemented
+Card: [CLIMGMT-001](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#climgmt-001-manage-coding-clis). Implemented
 `CLIMGMT-001a` through `CLIMGMT-001d` for `0.6.0`:
 
 - `src/integrations/setup.ts`: added `listInstallations` (vendor extension copy,
@@ -248,7 +248,7 @@ could select a model below USD 5 per million output tokens using MCP tools alone
 
 ## SKILLS-001 client skills
 
-Card: [SKILLS-001](../../ROADMAP.md#skills-001-client-skills-installed-with-the-registration).
+Card: [SKILLS-001](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#skills-001-client-skills-installed-with-the-registration).
 Implemented `SKILLS-001a` through `SKILLS-001d` in `0.6.0`:
 
 - Packaged six single-file client skills (`consult`, `review`, `doctor`,
@@ -486,7 +486,7 @@ numbering on `0.6.0`:
 
 ## REPO-002c/d/e: beta.2 pull request branch and API site
 
-Card: [REPO-002](../../ROADMAP.md#repo-002-branch-model-and-release-workflow).
+Card: [REPO-002](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#repo-002-branch-model-and-release-workflow).
 Prepared the `develop` + `X.Y.x` workflow, CI/release automation and TypeDoc
 API site for `0.6.0`:
 
@@ -541,7 +541,7 @@ verified fixes before `0.6.0`:
 
 ## SKILLS-002: complete independent skill management
 
-Card: [SKILLS-002](../../ROADMAP.md#skills-002-independent-skill-management).
+Card: [SKILLS-002](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#skills-002-independent-skill-management).
 Implemented `SKILLS-002a` and `SKILLS-002b` in `0.6.0`:
 
 - Added **CoAgent8: Manage Skills** in VS Code and

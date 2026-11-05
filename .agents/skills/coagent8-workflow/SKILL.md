@@ -28,7 +28,8 @@ running server's environment; do not change guessed config files.
 ## Work on the project
 
 Read [HANDOFF.md](../../../docs/HANDOFF.md) for current state,
-[ROADMAP.md](../../../docs/ROADMAP.md) for the single active plan and
+GitHub Issues for the backlog, [ROADMAP.md](../../../docs/ROADMAP.md) for the
+direction and milestone order, and
 [ARCHITECTURE.md](../../../docs/ARCHITECTURE.md) for current contracts and target
 design. Read only the sections needed for the task. Optional docs/.local/
 investigations are historical reference, never another plan.
@@ -52,8 +53,7 @@ Betas are tags on `develop`, release candidates and patches tags on an `X.Y.x`
 line, which receives fixes only as backport PRs. You may prepare commits, a
 release PR branch, release notes and gate evidence. Pushing, opening and merging a
 PR follow the standing go-aheads in [`project.md`](../../project.md#standing-go-aheads);
-tagging, GitHub Releases, npm and repository settings are the owner's. The one-time migration to this model is
-[REPO-002](../../../docs/ROADMAP.md#repo-002-branch-model-and-release-workflow).
+tagging, GitHub Releases, npm and repository settings are the owner's.
 
 Prose needs content/link review and git diff --check, not runtime tests or paid
 backend calls. Source comments/documentation tooling additionally need lint:docs

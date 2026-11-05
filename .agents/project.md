@@ -74,13 +74,20 @@ tool's configuration, for CoAgent8 `~/.coagent8/config.json`.
 
 ## Backlog
 
-GitHub Issues hold the backlog (owner request 2026-11-02): defects, findings and concrete open
-work, each small enough to close. `docs/ROADMAP.md` keeps the direction and the cards; a card links
-its issues instead of repeating them. An issue has a title that states the problem, then what is
-wrong or missing, `Evidence:` saying how it was verified and what was not, `Expected:` when it is
-not obvious, and `Done when` with a condition that can be checked. It carries one kind label and,
+GitHub Issues hold the whole backlog (owner requests 2026-11-02 and 2026-11-05): defects, findings
+and every planned result, each small enough to close. A planned result (a card) is an issue with its
+context, dated owner decisions, `Done when` and its open steps as a task list; a step that gets its
+own PR becomes a sub-issue. Milestones: `0.8.0` (the release candidate) and `After 0.8.0`; an
+issue without a milestone is not scheduled. `docs/ROADMAP.md` is the direction document: the
+direction, the order of the milestones with links to their issues, and a table of the former card
+identifiers. A finding issue has a title that states the problem, then what is wrong or missing,
+`Evidence:` saying how it was verified and what was not, `Expected:` when it is not obvious, and
+`Done when` with a condition that can be checked. It carries one kind label and,
 except for questions, one priority label. Whatever a change finds and does not fix becomes an
-issue, not a note in a PR.
+issue, not a note in a PR. Issues, PRs and comments for people outside the project cite issue
+numbers, not internal identifiers. The pinned core rules (v0.1.0) still name ROADMAP cards;
+issues satisfy them, and the next standards update replaces that wording
+([agent-standards#6](https://github.com/oktawianwybieralski/agent-standards/issues/6)).
 
 ## Commands
 

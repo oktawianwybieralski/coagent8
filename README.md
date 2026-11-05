@@ -535,7 +535,7 @@ release. Restart a running MCP server after rebuilding.
 | --- | --- |
 | How to contribute | [Contributing](https://github.com/oktawianwybieralski/coagent8/blob/develop/CONTRIBUTING.md) |
 | Security support and private reports | [Security policy](https://github.com/oktawianwybieralski/coagent8/security/policy) |
-| Priorities and acceptance | [Roadmap](docs/ROADMAP.md) |
+| Planned work and priorities | [Issues](https://github.com/oktawianwybieralski/coagent8/issues), [Roadmap](docs/ROADMAP.md) |
 | Contracts, limitations and design | [Architecture](docs/ARCHITECTURE.md) |
 | Current work and evidence | [Handoff](docs/HANDOFF.md) |
 | Contributor rules | [AGENTS.md](AGENTS.md) |
