@@ -391,14 +391,15 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     head in a throwaway public repository `<repo>-release-test` (for `0.6.1` the
     owner skipped it and Phase D verified the tag's draft instead, owner decision
     2026-10-13; that exception covers only `0.6.1`):
-    * push the head as `develop` and make `develop` its default branch (the
-      workflow accepts tags only on `develop` or a line);
+    * push the head's parent as `develop` and make `develop` its default branch
+      (the workflow accepts tags only on `develop` or a line);
     * push the release tags that exist in `<repo>` (each tag listed by
       `git ls-remote --tags --refs origin 'v*'`, as
       `git push <throwaway> refs/tags/<tag>:refs/tags/<tag>`; never local-only
       tags), so the notes start at the previous version as they will in `<repo>`;
-    * merge a PR there by squash whose description holds the release notes (step 9),
-      because `release.yml` reads them from the PR of the tagged commit;
+    * push the head as a branch and merge it there by a squash PR whose description
+      holds the release notes (step 9), because `release.yml` reads them from the
+      PR of the tagged commit;
     * push an annotated `vX.Y.Z` on that merge commit and verify the draft as in
       Phase D with `<repo>` set to the throwaway repository;
     * when `docs.yml` changed, enable Pages there and publish the draft: the
