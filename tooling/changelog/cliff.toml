@@ -73,7 +73,7 @@ body = """
 # git-cliff reads (REPO-002). Its entries are generated, never written by hand,
 # from the commits that the pull request keeps (refs/pull/3/head):
 #   git fetch origin refs/pull/3/head
-#   git-cliff --config cliff.toml --tag v0.6.0 --strip all v1.0.0-beta.1..FETCH_HEAD
+#   git-cliff --config tooling/changelog/cliff.toml --tag v0.6.0 --strip all v1.0.0-beta.1..FETCH_HEAD
 # replacing the list below. `npm run changelog` generates everything after
 # v0.6.0. The npm name placeholder 1.0.0-beta.1 holds the place of 0.5.0 and has no
 # entry: it is withdrawn from npm and has no tag or release on GitHub (REPO-003).

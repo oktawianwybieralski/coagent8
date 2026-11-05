@@ -16,7 +16,7 @@ it is pushed; CI runs the same check on every PR.
 | Runtime logic, schemas, adapters or routing | Typecheck and focused behavioral tests; build when bundle compatibility is affected. Broaden for shared contracts or unresolved integration risk. |
 | Process lifecycle, cancellation, sandbox, privacy or sessions | Typecheck and the relevant unit, integration and failure-path tests on the affected platforms. Verify owned cleanup and hidden Windows descendants. |
 | Dependencies, build, package contents or entry points | Typecheck, `npm run check:dependencies`, build, package inspection, `npm run test:consumer` and the affected regression tests. Package safety is not limited to changes in `src/`. |
-| A runtime change that reaches the package (tool list, skills, exports) | Everything CI runs after the tests: `npm run docs`, `npm run build`, `npm pack --dry-run`, `npm run test:consumer`, `node scripts/publish-npm.cjs --dry-run`, `npm run package:vscode`. |
+| A runtime change that reaches the package (tool list, skills, exports) | Everything CI runs after the tests: `npm run docs`, `npm run build`, `npm pack --dry-run`, `npm run test:consumer`, `node tooling/scripts/publish-npm.cjs --dry-run`, `npm run package:vscode`. |
 | VS Code or setup integration | The relevant setup and provider tests and the build and package checks; real host acceptance for changed installation, update or repair claims, in isolated profiles that keep working registrations. |
 | Test harness or CI | Discovery, selection and cleanup regressions and the affected suite; the required status checks stay valid. |
 

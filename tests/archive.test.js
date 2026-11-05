@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const zlib = require('node:zlib');
-const { readTarball, readZipEntry } = require('../scripts/archive.cjs');
+const { readTarball, readZipEntry } = require('../tooling/scripts/archive.cjs');
 const { createSyntheticArtifacts } = require('../tooling/acceptance/artifacts.cjs');
 
 function scratch(t) {

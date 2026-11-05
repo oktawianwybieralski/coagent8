@@ -253,7 +253,7 @@ become the final commit, so they must meet this section.
   Git tag carry the same numeric `X.Y.Z`, with no mapping between them. VS Code
   accepts only a numeric extension version and offers Restart Extensions after an
   update only when that number changes; the Marketplace refuses a repeated
-  version. `scripts/build-vscode.cjs` refuses any other version.
+  version. `tooling/scripts/build-vscode.cjs` refuses any other version.
 * **A preview is every version below 1.0.0.** Each preview, beta or release
   candidate, raises the minor: `0.5.0` is skipped (the withdrawn npm name
   placeholder `1.0.0-beta.1` held it), then `0.6.0` (the first release,
@@ -359,19 +359,20 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
      `extensions/vscode/package.json` and both versions in `server.json`; `git grep -n "<previous version>"` then
      finds no other manifest still carrying the old number;
    * regenerates `CHANGELOG.md` with `npm run changelog -- --tag vX.Y.Z`;
-   * adds the tester header `docs/releases/vX.Y.Z.md` (step 9).
+   * writes the release notes into the PR description (step 9).
 
    Every later regeneration on this branch also passes `--tag vX.Y.Z`; plain
    `npm run changelog` would turn the version heading back into Unreleased.
 8. **Local checks on that commit:** the full local gate
    ([rule 14](14-quality-gate.md#full-release-gate)) with platform, Node,
    commit, tree and tarball digest recorded.
-9. **Release notes header** in English for testers, written to
-   `docs/releases/vX.Y.Z.md` and reviewed with the release PR: what CoAgent8 is,
+9. **Release notes** in English for testers, written in the release PR's
+   description between the lines `<!-- release-notes -->` and
+   `<!-- /release-notes -->` and reviewed with the PR: what CoAgent8 is,
    install, what changed in plain words, known limitations, upgrade notes. No
    internal card IDs or process notes. `npm run release-notes -- --tag vX.Y.Z`
-   previews the generated part; `release.yml` puts the header above it and fails
-   without the file (`RELEASE-001e`).
+   previews the generated part; `release.yml` reads the notes from the PR of the
+   tagged commit, puts them above that part and fails without them (`RELEASE-001e`).
 10. Run `npm run changelog -- --tag vX.Y.Z` once more (it must leave the file
     unchanged), push the branch and open the PR `chore(release): vX.Y.Z` into
     the target, with the evidence. Its six CI jobs must be green; they
@@ -385,19 +386,22 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     finding is fixed by its own PR into the target (step 1); then rebase the
     release branch, regenerate the changelog and repeat from step 8.
 12. **Rehearsal when release tooling changed.** If any PR since the previous
-    tag changed `.github/workflows/`, `package.json` or `package-lock.json`,
-    `scripts/`, `tooling/` or `cliff*.toml`, rehearse with the release PR's
+    tag changed `.github/workflows/`, `package.json`, `package-lock.json` or
+    `tooling/`, rehearse with the release PR's
     head in a throwaway public repository `<repo>-release-test` (for `0.6.1` the
     owner skipped it and Phase D verified the tag's draft instead, owner decision
     2026-10-13; that exception covers only `0.6.1`):
-    * push the head as `develop` and make `develop` its default branch (the
-      workflow accepts tags only on `develop` or a line);
+    * push the head's parent as `develop` and make `develop` its default branch
+      (the workflow accepts tags only on `develop` or a line);
     * push the release tags that exist in `<repo>` (each tag listed by
       `git ls-remote --tags --refs origin 'v*'`, as
       `git push <throwaway> refs/tags/<tag>:refs/tags/<tag>`; never local-only
       tags), so the notes start at the previous version as they will in `<repo>`;
-    * push an annotated `vX.Y.Z` on the head and verify the draft as in Phase D
-      with `<repo>` set to the throwaway repository;
+    * push the head as a branch and merge it there by a squash PR whose description
+      holds the release notes (step 9), because `release.yml` reads them from the
+      PR of the tagged commit;
+    * push an annotated `vX.Y.Z` on that merge commit and verify the draft as in
+      Phase D with `<repo>` set to the throwaway repository;
     * when `docs.yml` changed, enable Pages there and publish the draft: the
       documentation must deploy;
     * delete the repository afterwards.
@@ -432,8 +436,8 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     numeric annotated `vX.Y.Z` on `develop` or an `X.Y.x` line matching
     `package.json`, runs the full gate on Ubuntu with Node 24, packs and
     smoke-tests the exact tarball, packages the VSIX, writes `SHA256SUMS`, signs
-    build provenance for both, composes the notes (`scripts/release-notes.cjs`:
-    the step 9 header, the git-cliff changelog with `--current` and root commits
+    build provenance for both, composes the notes (`tooling/scripts/release-notes.cjs`:
+    the step 9 notes, the git-cliff changelog with `--current` and root commits
     skipped, the artifacts) and creates a **draft** normal release. It never
     publishes anything. A failure here is fixed by a new patch version; the tag
     stays.
@@ -488,7 +492,7 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     Once both publishing jobs finish, run the **Verify published** workflow
     with the tag (`RELEASE-001f`): npm `dist.shasum`, `dist.integrity` and `next`, and
     the Marketplace VSIX, must equal the release files. Locally:
-    `node scripts/verify-published.cjs --tag vX.Y.Z --dir <Phase D folder>`.
+    `node tooling/scripts/verify-published.cjs --tag vX.Y.Z --dir <Phase D folder>`.
 24. Announce the release to testers with the GitHub Release link.
 
 ### After the release
@@ -519,14 +523,14 @@ head. A pushed tag is never moved, deleted or reused.
 ## 6. Changelog
 
 * `CHANGELOG.md` at the repository root is generated from the Conventional
-  Commits history by git-cliff (`cliff.toml`, `npm run changelog`), with one
+  Commits history by git-cliff (`tooling/changelog/cliff.toml`, `npm run changelog`), with one
   section per released version (`## vX.Y.Z - (YYYY-MM-DD)`), newest first.
   The layout below is an owner decision of 2026-10-13.
 * Nobody edits it by hand; the Reviewer rejects a manual edit. It is
   regenerated only in a release PR, with `--tag` (section 5, owner decision
   2026-10-14). One exception (owner decision 2026-10-31): the adoption of the
   agent standards moved this rule file, so `STANDARDS-001a` committed the
-  output of `git-cliff --config cliff.toml v0.6.0..v0.7.0`, which changes only
+  output of `git-cliff --config tooling/changelog/cliff.toml v0.6.0..v0.7.0`, which changes only
   the header link. Between releases it lists the released versions only; topic
   branches never run `npm run changelog` and never commit `CHANGELOG.md`.
 * Each section is a nested list: area (commit scope; "General" without one),
@@ -548,7 +552,7 @@ head. A pushed tag is never moved, deleted or reused.
   commits of PR #3, squash-merged as one commit (REPO-002); GitHub keeps them as
   `refs/pull/3/head`. They are generated from those commits, never written by
   hand, named by their commit, and kept as a fixed section, the oldest entry at
-  the end of the file (`cliff.toml` footer, which names the command); generation
+  the end of the file (`tooling/changelog/cliff.toml` footer, which names the command); generation
   after it starts at tag `v0.6.0`.
 * Types, in this order: Breaking change (`!` or `BREAKING CHANGE`), New feature
   (`feat`), Improvement (`perf`), Bug fix (`fix`), Refactoring (`refactor`),
@@ -559,7 +563,7 @@ head. A pushed tag is never moved, deleted or reused.
   `Revert "..."` title) fails the generation (`require_conventional`) instead of
   silently losing its entry.
 * GitHub release notes are generated by `npm run release-notes`
-  (`cliff.release-notes.toml`).
+  (`tooling/changelog/release-notes.toml`).
   - Under a "Full Changelog" heading, a collapsed list has the layout of a
     `CHANGELOG.md` section: area, then type (Breaking change first), then
     `#PR: description (by @author)`. GitHub links `#N` and `@user` there.

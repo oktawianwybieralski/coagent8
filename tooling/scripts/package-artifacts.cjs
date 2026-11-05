@@ -9,7 +9,7 @@ const { createHash } = require('node:crypto');
 const { buildExtension } = require('./build-vscode.cjs');
 const { readTarball } = require('./archive.cjs');
 
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(__dirname, '../..');
 const output = path.join(root, '.artifacts', 'package');
 const npm = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
 

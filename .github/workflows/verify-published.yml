@@ -45,4 +45,4 @@ jobs:
       - name: Compare with npm and the Marketplace
         env:
           TAG: ${{ inputs.tag }}
-        run: node scripts/verify-published.cjs --tag "$TAG" --dir release
+        run: node tooling/scripts/verify-published.cjs --tag "$TAG" --dir release

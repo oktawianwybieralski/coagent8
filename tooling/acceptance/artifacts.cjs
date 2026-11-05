@@ -3,14 +3,14 @@
  *
  * @remarks
  * Candidate archives are read through the shared bounded readers in
- * `scripts/archive.cjs`; this module adds package manifest checks and builds the
+ * `tooling/scripts/archive.cjs`; this module adds package manifest checks and builds the
  * synthetic candidates a dry run installs.
  */
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const { createHash } = require('node:crypto');
-const { MAX_ARCHIVE_BYTES, readTarball, readZipEntry } = require('../../scripts/archive.cjs');
+const { MAX_ARCHIVE_BYTES, readTarball, readZipEntry } = require('../scripts/archive.cjs');
 
 /**
  * Computes the SHA-256 hash of a file no larger than the archive bound.

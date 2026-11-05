@@ -55,12 +55,12 @@ jobs:
       # WINDOWS-001d: the consumer test installs the package with its reproducible helper.
       - name: Stage the Windows job helper for the package
         if: runner.os == 'Windows'
-        run: node scripts/build-job-helper.cjs --verify
+        run: node tooling/scripts/build-job-helper.cjs --verify
 
       # A release builds arm64 too; a failure must show here, not first on a tag.
       - name: Build the arm64 Windows job helper
         if: runner.os == 'Windows' && matrix.node-version == '24.x'
-        run: node scripts/build-job-helper.cjs --arch arm64 --verify
+        run: node tooling/scripts/build-job-helper.cjs --arch arm64 --verify
 
       # Core rules 00 and 05 of the agent standards: the managed copy matches its lock,
       # and tracked files carry keyboard characters only.
@@ -70,7 +70,7 @@ jobs:
       - name: Check keyboard characters
         run: node .agents/standards/check-keyboard-characters.mjs
 
-      # Core rule 05: one formatter configuration (.prettierrc.json, .prettierignore).
+      # Core rule 05: one formatter configuration (package.json "prettier", .prettierignore).
       - name: Check formatting
         run: npm run format:check
 
@@ -105,7 +105,7 @@ jobs:
 
       # Exercise the same publish command as npm-publish.yml without publishing.
       - name: Verify npm publish dry-run on packed tarball
-        run: node scripts/publish-npm.cjs --dry-run
+        run: node tooling/scripts/publish-npm.cjs --dry-run
 
       - name: Install VSIX packaging dependencies (Node 24)
         if: matrix.node-version == '24.x'

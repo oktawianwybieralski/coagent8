@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { isBuiltin } = require('node:module');
 const { prepareBranding } = require('./branding.cjs');
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(__dirname, '../..');
 const dist = path.join(root, 'dist');
 
 // The bundle carries no comments. License notices of the bundled packages ship next to it instead.
@@ -44,7 +44,7 @@ function writeNotices(packageDirs) {
 }
 
 /**
- * Takes the helpers built by scripts/build-job-helper.cjs into dist/ and returns their SHA-256
+ * Takes the helpers built by tooling/scripts/build-job-helper.cjs into dist/ and returns their SHA-256
  * digests per architecture, which the bundle embeds and checks before it launches one.
  */
 function stageJobHelpers() {
@@ -60,7 +60,9 @@ function stageJobHelpers() {
     fs.writeFileSync(path.join(dist, directory, 'coagent8-job.exe'), bytes);
   }
   if (process.platform === 'win32' && !digests[process.arch]) {
-    console.error('No job helper staged for this machine: on Windows, delegate refuses to run from this package. See CONTRIBUTING.md.');
+    console.error(
+      'No job helper staged for this machine: on Windows, delegate refuses to run from this package. See .github/CONTRIBUTING.md.',
+    );
   }
   return digests;
 }

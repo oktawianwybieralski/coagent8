@@ -2,8 +2,8 @@
 # "Full Changelog" list by area (commit scope), then type, then
 # "#PR: description (by @author)", like CHANGELOG.md;
 # contributors and a compare link follow. GitHub links "#N" and "@user" in release
-# notes itself. release.yml renders it below the tester header that the release PR adds
-# as docs/releases/vX.Y.Z.md (scripts/release-notes.cjs, RELEASE-001e); `npm run
+# notes itself. release.yml renders it below the release notes in the description of the release
+# PR (tooling/scripts/release-notes.cjs, RELEASE-001e); `npm run
 # release-notes -- --tag vX` previews it.
 #
 # With GITHUB_TOKEN set, authors and PR numbers come from the GitHub API. Without
@@ -84,7 +84,7 @@ filter_commits = false
 tag_pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+.*"
 # Newest first within each type, as merged.
 sort_commits = "newest"
-# Same type mapping as cliff.toml; commits without a scope are listed under
+# Same type mapping as cliff.toml next to this file; commits without a scope are listed under
 # "General". A breaking commit of an omitted type is kept
 # (protect_breaking_commits) and listed under "Breaking change" of its area.
 commit_parsers = [

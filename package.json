@@ -22,7 +22,6 @@
   "type": "commonjs",
   "files": [
     "dist/",
-    "index.js",
     "src/",
     "skills/",
     "assets/logo.svg",
@@ -53,15 +52,21 @@
   "bugs": {
     "url": "https://github.com/oktawianwybieralski/coagent8/issues"
   },
+  "prettier": {
+    "printWidth": 140,
+    "singleQuote": true,
+    "arrowParens": "avoid",
+    "endOfLine": "lf"
+  },
   "scripts": {
     "lint:docs": "node tooling/documentation/node_modules/eslint/bin/eslint.js --config tooling/documentation/eslint.config.cjs src --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "docs": "npm --prefix tooling/documentation run build",
-    "build": "node scripts/build.cjs",
+    "build": "node tooling/scripts/build.cjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p extensions/vscode/tsconfig.json",
-    "check:dependencies": "node scripts/check-dependencies.cjs",
-    "package:artifacts": "node scripts/package-artifacts.cjs",
+    "check:dependencies": "node tooling/scripts/check-dependencies.cjs",
+    "package:artifacts": "node tooling/scripts/package-artifacts.cjs",
     "package:vscode": "npm run package:artifacts && npm --prefix tooling/vscode run package",
     "start": "node dist/index.cjs",
     "test": "node tests/run.cjs",
@@ -69,9 +74,9 @@
     "prepack": "npm run build",
     "test:coverage": "c8 --all --include=src/**/*.ts --check-coverage --statements=70 --lines=70 --branches=70 --functions=75 --reporter=text --reporter=json-summary --reports-dir=.artifacts/coverage node tests/run.cjs",
     "test:consumer": "node tests/consumer/smoke.cjs",
-    "changelog": "git-cliff --config cliff.toml --output CHANGELOG.md v0.6.0..HEAD",
-    "changelog:check": "git-cliff --config cliff.toml --unreleased --strip all v0.6.0..HEAD",
-    "release-notes": "git-cliff --config cliff.release-notes.toml --unreleased v0.6.0..HEAD"
+    "changelog": "git-cliff --config tooling/changelog/cliff.toml --output CHANGELOG.md v0.6.0..HEAD",
+    "changelog:check": "git-cliff --config tooling/changelog/cliff.toml --unreleased --strip all v0.6.0..HEAD",
+    "release-notes": "git-cliff --config tooling/changelog/release-notes.toml --unreleased v0.6.0..HEAD"
   },
   "keywords": [
     "cli",

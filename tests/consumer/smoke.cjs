@@ -30,7 +30,7 @@ function npmRun(args, cwd = root) {
     .digest('hex');
   if (existing) assert.equal(hash, pack.sha256, 'Existing artifact hash');
   else await fsp.writeFile(tarball + '.manifest.json', JSON.stringify({ ...pack, sha256: hash }, null, 2));
-  // WINDOWS-001d: what scripts/build-job-helper.cjs staged is packed; a release requires both.
+  // WINDOWS-001d: what tooling/scripts/build-job-helper.cjs staged is packed; a release requires both.
   const stagedHelpers = path.join(root, '.artifacts', 'job-helper');
   const jobHelpers = (fs.existsSync(stagedHelpers) ? fs.readdirSync(stagedHelpers) : []).map(dir => `dist/${dir}/coagent8-job.exe`);
   if (process.env.coagent8_REQUIRE_JOB_HELPERS) {
@@ -46,7 +46,6 @@ function npmRun(args, cwd = root) {
     'assets/logo64.png',
     'plugin.json',
     'mcp.json',
-    'index.js',
     'README.md',
     'LICENSE',
     ...['consult', 'delegate', 'doctor', 'issue', 'loop', 'review', 'session'].map(n => `skills/coagent8-${n}/SKILL.md`),
@@ -105,7 +104,7 @@ function npmRun(args, cwd = root) {
         `Packed ${file.path} matches the source`,
       );
     }
-    const rebuild = spawnSync(process.execPath, [path.join(root, 'scripts', 'build.cjs')], {
+    const rebuild = spawnSync(process.execPath, [path.join(root, 'tooling', 'scripts', 'build.cjs')], {
       cwd: root,
       encoding: 'utf8',
       windowsHide: true,

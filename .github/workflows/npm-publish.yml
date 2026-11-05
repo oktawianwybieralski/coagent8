@@ -57,9 +57,9 @@ jobs:
           gh attestation verify "release/coagent8-$version.tgz" --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
 
-      # Publishes ./release/coagent8-X.Y.Z.tgz to `next` (scripts/publish-npm.cjs, RELEASE-001a/b1).
+      # Publishes ./release/coagent8-X.Y.Z.tgz to `next` (tooling/scripts/publish-npm.cjs, RELEASE-001a/b1).
       - name: Publish on npm
         shell: bash
         env:
           TAG: ${{ github.event.release.tag_name }}
-        run: node scripts/publish-npm.cjs
+        run: node tooling/scripts/publish-npm.cjs
