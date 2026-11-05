@@ -13,6 +13,7 @@ on:
 # id-token and attestations sign the build provenance (Sigstore, GitHub attestations).
 permissions:
   contents: write
+  pull-requests: read
   id-token: write
   attestations: write
 
@@ -30,8 +31,8 @@ jobs:
 
       - name: Build reproducible helpers
         run: |
-          node scripts/build-job-helper.cjs --arch x64 --verify
-          node scripts/build-job-helper.cjs --arch arm64 --verify
+          node tooling/scripts/build-job-helper.cjs --arch x64 --verify
+          node tooling/scripts/build-job-helper.cjs --arch arm64 --verify
 
       - name: Keep the helpers for the draft job
         uses: actions/upload-artifact@v4
@@ -92,9 +93,13 @@ jobs:
           fi
           echo "Tag $tag ($GITHUB_SHA) is on $on_branch"
 
-      # The release PR adds the tester header (RELEASE-001e); without it no draft is built.
-      - name: Require the release notes header
-        run: node scripts/release-notes.cjs --check --tag "$GITHUB_REF_NAME"
+      # The release PR describes the release for testers (RELEASE-001e); without it no draft is built.
+      - name: Require the release notes of the release PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[0].body // ""' > "$RUNNER_TEMP/release-pr-body.md"
+          node tooling/scripts/release-notes.cjs --check --pr-body "$RUNNER_TEMP/release-pr-body.md"
 
       - name: Install dependencies
         run: |
@@ -165,8 +170,8 @@ jobs:
           # commit" that the first release reaches, are no Conventional Commits: skip every one.
           skips=()
           for root in $(git rev-list --max-parents=0 "$GITHUB_SHA"); do skips+=(--skip-commit "$root"); done
-          npx --no-install git-cliff --config cliff.release-notes.toml --current "${skips[@]}" --strip all > release/changelog.md
-          node scripts/release-notes.cjs --tag "$GITHUB_REF_NAME" --changelog release/changelog.md \
+          npx --no-install git-cliff --config tooling/changelog/release-notes.toml --current "${skips[@]}" --strip all > release/changelog.md
+          node tooling/scripts/release-notes.cjs --pr-body "$RUNNER_TEMP/release-pr-body.md" --tag "$GITHUB_REF_NAME" --changelog release/changelog.md \
             --sums release/SHA256SUMS --repository "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" --out release/notes.md
 
       - name: Create draft GitHub Release

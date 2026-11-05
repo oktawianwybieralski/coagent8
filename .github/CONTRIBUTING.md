@@ -2,15 +2,15 @@
 
 Bug reports, documentation improvements and focused code changes are welcome.
 Before starting substantial work, check the [open issues](https://github.com/oktawianwybieralski/coagent8/issues) and the
-[roadmap](docs/ROADMAP.md), and comment on an issue or open one to discuss
+[roadmap](../docs/ROADMAP.md), and comment on an issue or open one to discuss
 scope with the maintainer. Issues hold the planned work and milestones its
 release; the roadmap gives the direction and order and the
-[architecture](docs/ARCHITECTURE.md) defines contracts.
+[architecture](../docs/ARCHITECTURE.md) defines contracts.
 
 ## Contribution license
 
 Contributions to the project source, documentation and artwork use the
-[MIT License](LICENSE). Submit only material you have the right to contribute
+[MIT License](../LICENSE). Submit only material you have the right to contribute
 under those terms, and identify third-party material with its original license
 and required notices. This does not assign copyright to the maintainer or
 change the terms of previously distributed copies.
@@ -44,7 +44,7 @@ Use isolated test profiles and preserve existing client registrations and data.
 
 1. Create a topic branch from the current `develop`, such as
    `fix/short-description` or `docs/short-description`. There is no `main` branch.
-2. Keep the change focused and follow [AGENTS.md](AGENTS.md) and its linked rules.
+2. Keep the change focused and follow [AGENTS.md](../AGENTS.md) and its linked rules.
    Source, comments and documentation must be in English.
 3. Use Conventional Commits for commit subjects and the PR title. Do not add
    attribution to AI tools in commits or PR descriptions.
@@ -56,17 +56,17 @@ Use isolated test profiles and preserve existing client registrations and data.
    submission. Documentation-only titles are omitted from the generated entries.
 7. Open a PR targeting `develop`, as a draft if work or verification is incomplete.
    Describe the problem, change, related issues, verification and risks using the
-   [required PR sections](.agents/rules/12-release-workflow.md#3-pull-requests).
+   [required PR sections](../.agents/rules/12-release-workflow.md#3-pull-requests).
 
 Required CI checks and independent review must pass before merge. The author
 cannot provide their own independent approval. The maintainer integrates changes
 through squash merges; release tagging and publication are owner actions.
-See the [Git workflow](.agents/rules/12-release-workflow.md) for release lines,
+See the [Git workflow](../.agents/rules/12-release-workflow.md) for release lines,
 backports and the full process.
 
 ## Verification by scope
 
-The [quality gate](.agents/rules/14-quality-gate.md) defines required checks.
+The [quality gate](../.agents/rules/14-quality-gate.md) defines required checks.
 Markdown prose needs content and link review plus `git diff --check`, without
 runtime tests, builds or backend model calls solely for documentation edits.
 
@@ -84,4 +84,4 @@ owning documentation when behavior or contracts change.
 
 On Windows, `delegate` and its tests need the job helper. Install Rust, then run
 `cargo build --release --examples --bins` in `native/coagent8-job`. A package built on your
-machine carries a helper only after `node scripts/build-job-helper.cjs`.
+machine carries a helper only after `node tooling/scripts/build-job-helper.cjs`.

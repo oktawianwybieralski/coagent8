@@ -93,7 +93,7 @@ numbers, not internal identifiers.
 | Dependency boundaries | `npm run check:dependencies` |
 | Tests | `npm test` (all), `node tests/run.cjs <file>...` (focused) |
 | Build | `npm run build` |
-| Windows job helper | `cargo build --release --examples --bins` in `native/coagent8-job` (tests on Windows), `node scripts/build-job-helper.cjs` (package) |
+| Windows job helper | `cargo build --release --examples --bins` in `native/coagent8-job` (tests on Windows), `node tooling/scripts/build-job-helper.cjs` (package) |
 | API documentation | `npm run docs` |
 | Package | `npm pack --dry-run`, `npm run test:consumer`, `npm run package:vscode` |
 | Changelog | `npm run changelog:check`, `npm run changelog:check -- --with-commit "<PR title>"` |

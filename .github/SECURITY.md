@@ -60,8 +60,8 @@ Backend protections differ. In particular, Antigravity inherits configured MCP
 servers and plugins that CoAgent8 cannot disable. Process cleanup also has
 documented platform limitations. Session records are stored locally even when
 history archives are disabled. Review the
-[backend profiles](README.md#backends-and-read-only-profiles) and
-[known limitations](README.md#known-limitations) before using sensitive data.
+[backend profiles](../README.md#backends-and-read-only-profiles) and
+[known limitations](../README.md#known-limitations) before using sensitive data.
 
 For vulnerabilities solely in an upstream CLI or model provider, use that
 vendor's security reporting channel. Report effects on CoAgent8's integration

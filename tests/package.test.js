@@ -5,9 +5,9 @@ const os = require('node:os');
 const path = require('node:path');
 const zlib = require('node:zlib');
 
-const { buildBundles } = require('../scripts/build.cjs');
-const { extractPackage, verifyPlugin } = require('../scripts/package-artifacts.cjs');
-const { readTarball } = require('../scripts/archive.cjs');
+const { buildBundles } = require('../tooling/scripts/build.cjs');
+const { extractPackage, verifyPlugin } = require('../tooling/scripts/package-artifacts.cjs');
+const { readTarball } = require('../tooling/scripts/archive.cjs');
 
 test('optional setup is a separate bundle and core startup excludes installation and JSONC modules', async () => {
   const root = path.resolve(__dirname, '..');
@@ -109,8 +109,7 @@ test('PACKAGE-001: the plugin check rejects a package whose manifests reference 
   const root = path.resolve(__dirname, '..');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-plugin-'));
   try {
-    for (const name of ['package.json', 'plugin.json', 'mcp.json', 'index.js'])
-      fs.copyFileSync(path.join(root, name), path.join(dir, name));
+    for (const name of ['package.json', 'plugin.json', 'mcp.json']) fs.copyFileSync(path.join(root, name), path.join(dir, name));
     fs.mkdirSync(path.join(dir, 'dist'));
     fs.writeFileSync(path.join(dir, 'dist', 'index.cjs'), '');
     assert.throws(() => verifyPlugin(dir), /assets\/logo32\.png/, 'a missing plugin icon is reported');
@@ -128,7 +127,7 @@ test('PACKAGE-001: the plugin check rejects a package whose manifests reference 
 });
 
 test('the VSIX keeps the shared numeric version and is built for the normal Marketplace channel', () => {
-  const { extensionVersion } = require('../scripts/build-vscode.cjs');
+  const { extensionVersion } = require('../tooling/scripts/build-vscode.cjs');
   assert.equal(extensionVersion('0.6.0', '0.6.0'), '0.6.0');
   assert.throws(() => extensionVersion('0.6.0', '0.7.0'), /must match/);
   assert.throws(
@@ -185,7 +184,7 @@ test('PROPOSALS-001a: server.json describes the npm package for the MCP Registry
 });
 
 test('RELEASE-001a/b1: the npm script publishes the ./release/... tarball directly on next', () => {
-  const { resolvePublishPlan, runPublishNpm, resolveNpmCommand } = require('../scripts/publish-npm.cjs');
+  const { resolvePublishPlan, runPublishNpm, resolveNpmCommand } = require('../tooling/scripts/publish-npm.cjs');
 
   const customNpm = resolveNpmCommand({ npm_execpath: process.execPath });
   assert.equal(customNpm.command, process.execPath);
@@ -229,7 +228,7 @@ test('RELEASE-001a/b1: the npm script publishes the ./release/... tarball direct
 });
 
 test('RELEASE-001b1: publish executes the exact tarball with provenance or a dry run and propagates failures', () => {
-  const { runPublishNpm } = require('../scripts/publish-npm.cjs');
+  const { runPublishNpm } = require('../tooling/scripts/publish-npm.cjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-publish-command-'));
   try {
     const cli = path.join(dir, 'npm-fixture.cjs');

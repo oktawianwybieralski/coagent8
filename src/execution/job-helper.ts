@@ -13,7 +13,7 @@ import type { ExecutionError } from '../contracts/index.js';
 const PACKAGE_NAME = 'coagent8';
 /** Win32 errors that mean the program does not exist. */
 const NOT_FOUND_ERRORS = new Set(['2', '3']);
-/** SHA-256 digests per architecture of the helpers in this package; set by `scripts/build.cjs`. */
+/** SHA-256 digests per architecture of the helpers in this package; set by `tooling/scripts/build.cjs`. */
 declare const __COAGENT8_JOB_HELPER_DIGESTS__: Readonly<Record<string, string>> | undefined;
 const PACKAGED_DIGESTS: Readonly<Record<string, string>> =
   typeof __COAGENT8_JOB_HELPER_DIGESTS__ === 'undefined' ? {} : __COAGENT8_JOB_HELPER_DIGESTS__;

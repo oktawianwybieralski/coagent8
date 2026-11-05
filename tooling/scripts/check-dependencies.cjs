@@ -5,7 +5,7 @@ const path = require('node:path');
 const cp = require('node:child_process');
 
 function resolveTypeScript(customRoot) {
-  const searchRoots = [path.resolve(__dirname, '../tooling/documentation'), customRoot || path.resolve(__dirname, '..'), process.cwd()];
+  const searchRoots = [path.resolve(__dirname, '../documentation'), customRoot || path.resolve(__dirname, '../..'), process.cwd()];
 
   for (const root of searchRoots) {
     try {
@@ -274,7 +274,7 @@ function resolveSpecifier(fromFile, specifier, rootDir) {
 }
 
 function buildModuleGraph(files, options = {}) {
-  const rootDir = options.rootDir || path.resolve(__dirname, '..');
+  const rootDir = options.rootDir || path.resolve(__dirname, '../..');
   const ts = options.ts || resolveTypeScript(rootDir);
 
   const edges = [];
@@ -606,7 +606,7 @@ function crawlDirectory(dir, rootDir) {
 }
 
 function checkDependencies(options = {}) {
-  const rootDir = options.rootDir || path.resolve(__dirname, '..');
+  const rootDir = options.rootDir || path.resolve(__dirname, '../..');
   let files = options.files;
 
   if (!files) {
@@ -680,7 +680,7 @@ function checkDependencies(options = {}) {
 }
 
 function runCli() {
-  const rootDir = path.resolve(__dirname, '..');
+  const rootDir = path.resolve(__dirname, '../..');
   const result = checkDependencies({ rootDir });
 
   console.log(`CoAgent8 Dependency & Boundary Verification (S6)`);

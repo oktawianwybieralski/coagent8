@@ -1,7 +1,7 @@
 // Builds the Windows job helper for packaging (WINDOWS-001d). The result lands in
-// .artifacts/job-helper/win32-<arch>/, where scripts/build.cjs takes it into dist/.
+// .artifacts/job-helper/win32-<arch>/, where tooling/scripts/build.cjs takes it into dist/.
 //
-//   node scripts/build-job-helper.cjs [--arch x64|arm64] [--target <triple>] [--verify]
+//   node tooling/scripts/build-job-helper.cjs [--arch x64|arm64] [--target <triple>] [--verify]
 //
 // --target replaces the MSVC target, for a machine without the MSVC linker; such a build is for
 // local use only, because releases build the MSVC targets.
@@ -14,7 +14,7 @@ const { createHash } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(__dirname, '../..');
 const crate = path.join(root, 'native', 'coagent8-job');
 const TARGETS = { x64: 'x86_64-pc-windows-msvc', arm64: 'aarch64-pc-windows-msvc' };
 

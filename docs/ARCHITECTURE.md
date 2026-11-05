@@ -68,7 +68,7 @@ The table below describes the realized ownership and dependency direction
 completed in [SIMPLIFY-001](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#simplify-001-module-boundary-migration).
 It implements the
 [P0 boundary rules](../.agents/rules/10-architecture-and-runtime.md#dependency-and-responsibility-boundaries)
-and is enforced by automated verification (`scripts/check-dependencies.cjs`, `npm run check:dependencies`).
+and is enforced by automated verification (`tooling/scripts/check-dependencies.cjs`, `npm run check:dependencies`).
 
 | Target owner | Responsibility and dependency direction |
 | --- | --- |
@@ -1658,7 +1658,7 @@ short-path mismatches on Windows:
   the `Code.exe` and `cli.js` it starts with `ELECTRON_RUN_AS_NODE=1`; a shim of another
   shape is refused, never run through `cmd.exe`.
 - Archives: the tarball and the VSIX are read by the shared bounded readers in
-  `scripts/archive.cjs` (size limit, tar checksums and bounds, ZIP structure and CRC-32,
+  `tooling/scripts/archive.cjs` (size limit, tar checksums and bounds, ZIP structure and CRC-32,
   ZIP64 rejected), the same readers packaging uses.
 - Teardown: the runner removes `tempRoot` after writing the evidence, on success and
   failure, with Windows retry backoff for transient file locks; `--keep-temp` keeps it

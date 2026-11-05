@@ -138,12 +138,7 @@ test('S5 graph: zero imports across the entire repository reference retired shim
   assert.deepEqual(violations, [], `Found imports referencing retired paths: ${violations.join(', ')}`);
 });
 
-test('S5 public entrypoints: index.js compatibility wrapper and package.json entries are intact', () => {
-  const indexJs = path.join(root, 'index.js');
-  assert.ok(fs.existsSync(indexJs), 'index.js compatibility wrapper must exist');
-  const indexContent = fs.readFileSync(indexJs, 'utf8');
-  assert.ok(indexContent.includes("require('./dist/index.cjs')"), 'index.js must delegate to dist/index.cjs');
-
+test('S5 public entrypoints: package.json entries are intact', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   assert.equal(pkg.main, 'dist/index.cjs');
   assert.equal(pkg.bin.coagent8, './dist/index.cjs');

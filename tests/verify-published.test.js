@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { digests, compare, parseArgs } = require('../scripts/verify-published.cjs');
+const { digests, compare, parseArgs } = require('../tooling/scripts/verify-published.cjs');
 
 // RELEASE-001f: offline checks of the comparison; the registries are read by the workflow.
 test('RELEASE-001f: published packages match only when every digest and next agree', () => {
@@ -36,7 +36,7 @@ test('RELEASE-001f: arguments need a numeric tag and the release folder', () => 
 
 test('RELEASE-001f: the Marketplace download is hashed chunk by chunk and cancelled above the limit', async () => {
   const { createHash } = require('node:crypto');
-  const { sha256OfBoundedStream } = require('../scripts/verify-published.cjs');
+  const { sha256OfBoundedStream } = require('../tooling/scripts/verify-published.cjs');
   const streamOf = (...chunks) =>
     new ReadableStream({
       pull(controller) {

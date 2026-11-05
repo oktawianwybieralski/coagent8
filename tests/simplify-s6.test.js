@@ -13,7 +13,7 @@ const {
   verifyBoundaries,
   getOwner,
   resolveTypeScript,
-} = require('../scripts/check-dependencies.cjs');
+} = require('../tooling/scripts/check-dependencies.cjs');
 
 const root = path.resolve(__dirname, '..');
 
