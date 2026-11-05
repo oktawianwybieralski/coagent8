@@ -80,7 +80,7 @@ export async function executeDelegation(
     loopTurnMs?: number;
     /** Hold the whole work tree whatever the scope: the loop's checks and review read all of it. */
     exclusive?: boolean;
-    /** Runs before every turn after the first; a refusal ends the round. */
+    /** Runs just before every backend turn after the first; a refusal fails that turn before it starts. */
     beforeRound?: () => Promise<void>;
     /** Asks what the user must settle, with the writer held so that an overlapping start asks nothing. */
     approveStart?: (signal: AbortSignal | null) => Promise<void>;
@@ -145,14 +145,17 @@ export async function executeDelegation(
       const inRound: Supervision['inRound'] = async run => {
         const remainingMs = Math.min(loopTurnMs, options.budget?.remainingExecutionMs() ?? Number.POSITIVE_INFINITY);
         if (remainingMs <= 0) throw new ToolError('TIMEOUT', 'The task budget ended before the next turn.');
-        await beforeRound?.();
         const budget = createExecutionBudget({
           totalBudgetMs: remainingMs,
           parentSignal: abortSignal ?? undefined,
           clock: options.clock,
         });
         try {
-          return await run({ budget, context: { abortSignal: budget.executionSignal, budget, timeoutMs: budget.remainingExecutionMs() } });
+          return await run({
+            budget,
+            context: { abortSignal: budget.executionSignal, budget, timeoutMs: budget.remainingExecutionMs() },
+            onTurnStart: beforeRound,
+          });
         } finally {
           budget.dispose();
         }
@@ -165,11 +168,7 @@ export async function executeDelegation(
         // The call that could show a form has ended: a model that needs approval is refused.
         fix: text =>
           inRound(round =>
-            turn(
-              text,
-              { ...args, session_handle: first.sessionHandle ?? undefined },
-              { ...taskOptions, ...round, askConsent: undefined, onTurnStart: undefined },
-            ),
+            turn(text, { ...args, session_handle: first.sessionHandle ?? undefined }, { ...taskOptions, ...round, askConsent: undefined }),
           ),
       });
     };
@@ -352,7 +351,12 @@ export interface Supervision {
   context?: TaskOptions['context'];
   /** Runs one turn under its own bound. */
   inRound: <T>(
-    run: (round: { budget: NonNullable<TaskOptions['budget']>; context: NonNullable<TaskOptions['context']> }) => Promise<T>,
+    run: (round: {
+      budget: NonNullable<TaskOptions['budget']>;
+      context: NonNullable<TaskOptions['context']>;
+      /** Pass to the turn, so it runs just before each backend turn of the round. */
+      onTurnStart: (() => Promise<void>) | undefined;
+    }) => Promise<T>,
   ) => Promise<T>;
   fix: (prompt: string) => Promise<TaskExecutionResult>;
 }

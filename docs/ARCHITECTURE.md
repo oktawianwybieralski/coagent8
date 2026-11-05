@@ -1355,7 +1355,7 @@ does not see changes outside it. A check a worker runs sees the half-finished wo
 
 **Root.** `delegate` without `root_handle` starts a root, in `<data>/delegations/roots/`. The limits
 are `rootLimits` of the user's configuration when the root is created: `maxCalls` 32 (first
-turns, fix rounds and every review attempt of a loop), `maxConcurrent` 4, `maxDepth` 3 and
+turns and every later backend turn of a loop), `maxConcurrent` 4, `maxDepth` 3 and
 `maxMinutes` 240. A calling agent cannot raise them. Every reservation runs under the record's
 lock, also across server processes; a task's budget is its `timeout_ms` or the default, cut to
 what is left of the root's time. At a limit a start fails with `ROOT_LIMIT` and a loop ends with
@@ -1373,8 +1373,8 @@ exclusive file while its task has no record, so two identical starts run one wor
 `SESSION_BUSY`, or the task once it exists. Then the root is reserved, the writer acquired, the checks
 approved, consent obtained, the root checked and bound to the session once more, and the task record
 written, in that order, just before the turn. The time of a form counts against the task's budget, and the
-task's cancellation or deadline closes it. A start that this process knows reached no turn is refunded; a later round
-that a refusal stops before its turn keeps its charge, so a limit can only be reached early. After a crash
+task's cancellation or deadline closes it. A start that this process knows reached no turn is refunded; a later turn is
+charged just before it starts, each part and synthesis of a loop's review included. After a crash
 the charge stays; an entry without a session started no turn, and one with a session reads as possibly
 interrupted, as its record says. A task of a dead server stops counting as running only when its writer
 record shows no worker that can have outlived it (#186). A task whose process tree could not be confirmed

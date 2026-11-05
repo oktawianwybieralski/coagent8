@@ -142,6 +142,7 @@ export async function superviseChange(first: TaskExecutionResult, steps: LoopSte
         sessionHandle: reviewed.sessionHandle,
       };
       if (reviewed.isError) {
+        if (reviewed.result.error?.code === 'ROOT_LIMIT') return ended(last, report, 'needs_input', reviewed.result.error.message);
         return reviewed.result.status === 'cancelled' || reviewed.result.status === 'timed_out'
           ? interrupted(last, report, reviewed.result.status)
           : ended(last, report, 'review_failed', reviewed.result.error?.message);
@@ -158,7 +159,10 @@ export async function superviseChange(first: TaskExecutionResult, steps: LoopSte
     report.checks = [];
     delete report.review;
     try {
-      last = await steps.fix(prompt);
+      const fixed = await steps.fix(prompt);
+      // Refused before its turn: the change is what it was, and the caller decides.
+      if (fixed.result.error?.code === 'ROOT_LIMIT') return ended(last, report, 'needs_input', fixed.result.error.message);
+      last = fixed;
       report.fixRounds = round + 1;
     } catch (err) {
       const code = err instanceof ToolError ? err.code : undefined;

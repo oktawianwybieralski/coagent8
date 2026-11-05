@@ -684,27 +684,82 @@ test('a loop whose root ran out of calls ends for the caller to decide', async (
   assert.match(reviewEnded.loop.detail, /Root used its calls/);
 });
 
-test('later rounds of a loop are charged to the root', async () => {
+test('a later turn of a loop is charged just before it starts, and a refusal starts none', async () => {
   const { executeDelegation } = require('../../../src/execution/delegation.ts');
+  const { executeReview } = require('../../../src/mcp/tools/review.tool.ts');
   const repo = fixtureRepo();
+  process.env.CODEX_FIXTURE_WRITES = JSON.stringify({ 'a/one.ts': 'x\n' });
   let charged = 0;
+  const refuse = async () => {
+    charged++;
+    throw new ToolError('ROOT_LIMIT', 'Root used its calls.');
+  };
   const outcome = await executeDelegation('Change a file', 'Change a file', REQUEST, repo, [], null, null, {
     ...approve,
     requireEnvelope: false,
     exclusive: true,
-    beforeRound: async () => {
-      charged++;
-      throw new ToolError('ROOT_LIMIT', 'Root used its calls.');
-    },
-    supervise: async (result, turn) => {
-      await assert.rejects(turn.fix('Again'), code('ROOT_LIMIT'));
-      await assert.rejects(
-        turn.inRound(async () => assert.fail('no turn runs')),
-        code('ROOT_LIMIT'),
+    beforeRound: refuse,
+    supervise: async (first, turn) => {
+      assert.equal(charged, 0, 'the first turn was charged at its reservation');
+      const fixed = await turn.fix('Again');
+      assert.equal(fixed.result.error.code, 'ROOT_LIMIT');
+      assert.equal(charged, 1);
+      const reviewed = await turn.inRound(round =>
+        executeReview({ backend: 'codex', scope: 'uncommitted' }, repo, null, null, { ...round }),
       );
-      return result;
+      assert.equal(reviewed.result.error.code, 'ROOT_LIMIT');
+      assert.equal(charged, 2);
+      return first;
     },
   });
   assert.equal(outcome.isError, false);
-  assert.equal(charged, 2);
+});
+
+test('a review in parts charges each backend turn', async () => {
+  const { executeReview } = require('../../../src/mcp/tools/review.tool.ts');
+  const repo = fixtureRepo();
+  const lines = 'const line = 1;\n'.repeat(9000);
+  fs.writeFileSync(path.join(repo, 'a', 'one.ts'), lines);
+  fs.writeFileSync(path.join(repo, 'b', 'two.ts'), lines);
+  let turns = 0;
+  const reviewed = await executeReview({ backend: 'codex', scope: 'uncommitted' }, repo, null, null, {
+    ...approve,
+    onTurnStart: async () => {
+      turns++;
+    },
+  });
+  assert.equal(turns >= 3, true, `two parts and a synthesis, got ${turns}: ${reviewed.result.error?.message ?? ''}`);
+});
+
+test('a limit met before a later turn ends the loop with the change as it was', async () => {
+  const first = {
+    isError: false,
+    provider: 'codex',
+    result: { status: 'completed', isError: false, output: 'done', model: 'm' },
+    sessionHandle: 'worker',
+    meta: {},
+    warnings: [],
+  };
+  const refused = {
+    ...first,
+    isError: true,
+    result: {
+      status: 'failed',
+      isError: true,
+      output: '',
+      error: { code: 'ROOT_LIMIT', message: 'Root used its calls.', retryable: false },
+    },
+  };
+  const base = { checks: [], cwd: tempDir, signal: null, remainingMs: () => 60000 };
+  const review = await superviseChange(first, { ...base, fix: async () => first, review: async () => refused });
+  assert.equal(review.loop.outcome, 'needs_input');
+  assert.match(review.loop.detail, /Root used its calls/);
+  const fix = await superviseChange(first, {
+    ...base,
+    checks: [`${JSON.stringify(process.execPath)} -e "process.exit(3)"`],
+    fix: async () => refused,
+    review: async () => assert.fail('no review of a failing check'),
+  });
+  assert.equal(fix.loop.outcome, 'needs_input');
+  assert.equal(fix.isError, false, 'the last turn that ran stays the result');
 });
