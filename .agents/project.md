@@ -67,8 +67,8 @@ tool's configuration, for CoAgent8 `~/.coagent8/config.json`.
 
 ## Findings labels
 
-- Kind: `bug`, `enhancement`, `documentation`, `question`, `dead-code`,
-  `cleanup`, `needs-verification`
+- Kind: `bug`, `enhancement`, `documentation`, `question`, `tech-debt`,
+  `needs-triage`
 - Priority: `priority: high`, `priority: medium`, `priority: low`
 - Provenance: `found-in:vX.Y.Z` (the version where it was observed)
 
@@ -76,13 +76,13 @@ tool's configuration, for CoAgent8 `~/.coagent8/config.json`.
 
 GitHub Issues hold the whole backlog (owner requests 2026-11-02 and 2026-11-05): defects, findings
 and every planned result, each small enough to close. A planned result (a card) is an issue with its
-context, dated owner decisions, `Done when` and its open steps as a task list; a step that gets its
-own PR becomes a sub-issue. Milestones: `0.8.0` (the release candidate) and `After 0.8.0`; an
+context, dated owner decisions, `Acceptance criteria` and its open steps as a task list; a step that gets its
+own PR becomes a sub-issue. Milestones: `0.8.0` (the release candidate) and `1.0.0`; an
 issue without a milestone is not scheduled. `docs/ROADMAP.md` is the direction document: the
 direction, the order of the milestones with links to their issues, and a table of the former card
 identifiers. A finding issue has a title that states the problem, then what is wrong or missing,
 `Evidence:` saying how it was verified and what was not, `Expected:` when it is not obvious, and
-`Done when` with a condition that can be checked. It carries one kind label and,
+`Acceptance criteria` with a condition that can be checked. It carries one kind label and,
 except for questions, one priority label. Whatever a change finds and does not fix becomes an
 issue, not a note in a PR. Issues, PRs and comments for people outside the project cite issue
 numbers, not internal identifiers. The pinned core rules (v0.1.0) still name ROADMAP cards;

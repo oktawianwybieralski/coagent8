@@ -33,7 +33,7 @@ A consult is advisory and does not satisfy independent review. -->
 ## Checklist
 
 - [ ] Core rule 01 checked: no secrets, personal data, local paths or hard-coded hosts.
-- [ ] Docs, contracts, HANDOFF and the task lists of the linked issues updated where needed.
+- [ ] Docs, contracts and the task lists of the linked issues updated where needed.
 - [ ] No dead code or unused dependencies left behind.
 - [ ] CHANGELOG.md unchanged (it is regenerated only in release PRs).
 - [ ] Conventional Commit title preview passed.

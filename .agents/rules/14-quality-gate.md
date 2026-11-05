@@ -54,7 +54,7 @@ output, coverage, API documentation and acceptance evidence. Agents keep their
 scripts, logs, PR body drafts and notes in their session scratch directory, so
 that removing `.artifacts/` before a clean rebuild loses nothing and packaging
 never picks up agent files (owner decision 2026-10-13, `PROPOSALS-001g`).
-Evidence worth keeping goes into `docs/HANDOFF.md` or the PR.
+Evidence worth keeping goes into the PR or the issue.
 
 ## Full release gate
 

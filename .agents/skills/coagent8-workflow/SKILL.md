@@ -27,8 +27,7 @@ running server's environment; do not change guessed config files.
 
 ## Work on the project
 
-Read [HANDOFF.md](../../../docs/HANDOFF.md) for current state,
-GitHub Issues for the backlog, [ROADMAP.md](../../../docs/ROADMAP.md) for the
+Read GitHub Issues for the backlog and current state, [ROADMAP.md](../../../docs/ROADMAP.md) for the
 direction and milestone order, and
 [ARCHITECTURE.md](../../../docs/ARCHITECTURE.md) for current contracts and target
 design. Read only the sections needed for the task. Optional docs/.local/
@@ -77,7 +76,7 @@ is advisory. GitHub Checks owns current CI status; do not duplicate it in a
 checklist. Use the [PR template](../../../.github/pull_request_template.md)
 without copying rules or narrating the commit history.
 
-Update the owning document in place: roadmap for remaining work/acceptance,
-architecture for contracts/design, handoff for current evidence/next action.
+Update the owner in place: issues for remaining work/acceptance/evidence,
+roadmap for direction and order, architecture for contracts/design.
 README serves users. Remove superseded reports rather than append transcripts.
 Keep required decisions in tracked documents; optional local notes may be ignored.

@@ -4,9 +4,8 @@ Bug reports, documentation improvements and focused code changes are welcome.
 Before starting substantial work, check the [open issues](https://github.com/oktawianwybieralski/coagent8/issues) and the
 [roadmap](docs/ROADMAP.md), and comment on an issue or open one to discuss
 scope with the maintainer. Issues hold the planned work and milestones its
-release; the roadmap gives the direction and order, the
-[architecture](docs/ARCHITECTURE.md) defines contracts and the
-[handoff](docs/HANDOFF.md) records current work and evidence.
+release; the roadmap gives the direction and order and the
+[architecture](docs/ARCHITECTURE.md) defines contracts.
 
 ## Contribution license
 

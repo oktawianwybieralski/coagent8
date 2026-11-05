@@ -16,15 +16,14 @@ scopes in one work tree and delegated coordination are not implemented yet.
 This file holds the direction and the order of the milestones. The work itself
 is in [GitHub Issues](https://github.com/oktawianwybieralski/coagent8/issues):
 each planned result is one issue with its context, dated decisions,
-`Done when` and open steps, and a
+`Acceptance criteria` and open steps, and a
 [milestone](https://github.com/oktawianwybieralski/coagent8/milestones) names
 the release it is planned for (owner decision 2026-11-05; core rule 02
 "Backlog" in
 [agent-standards#7](https://github.com/oktawianwybieralski/agent-standards/pull/7)).
-[ARCHITECTURE.md](ARCHITECTURE.md) owns contracts and target design,
-[HANDOFF.md](HANDOFF.md) current work and evidence, and
-[docs/delivered](delivered/README.md) what each version delivered. README owns
-getting started; [AGENTS.md](../AGENTS.md) owns contributor rules.
+[ARCHITECTURE.md](ARCHITECTURE.md) owns contracts and target design. Current
+work and evidence are in issues and PRs (owner decision 2026-11-05). README
+owns getting started; [AGENTS.md](../AGENTS.md) owns contributor rules.
 
 The cards this file held until 2026-11-05 are in [ROADMAP at `a7c6f72`](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md);
 the [former card identifiers](#former-card-identifiers) below map each open
@@ -34,8 +33,8 @@ card to its issue.
 
 `0.7.0` (beta.3) is released: tag `v0.7.0`, GitHub Release, npm (`latest`) and
 the VS Code Marketplace, uploaded by hand
-([record](delivered/0.7.0/README.md)). `develop` holds the `0.8.0` candidate
-([plan](#080-plan), [record](delivered/0.8.0/README.md)). Agents merge a PR
+([record](https://github.com/oktawianwybieralski/coagent8/blob/7eec83a/docs/delivered/0.7.0/README.md)). `develop` holds the `0.8.0` candidate
+([plan](#080-plan), [record](https://github.com/oktawianwybieralski/coagent8/blob/7eec83a/docs/delivered/0.8.0/README.md)). Agents merge a PR
 when its gate and CI pass and every required reviewer is READY on its head
 ([standing go-ahead](../.agents/project.md#standing-go-aheads) of 2026-11-02);
 tags, publication and repository settings stay the owner's.
@@ -60,7 +59,7 @@ and review, not by time. The
 [`0.8.0` milestone](https://github.com/oktawianwybieralski/coagent8/milestone/1)
 lists every issue; this is their order.
 
-**Delivered on `develop`** ([records](delivered/0.8.0/README.md)): write
+**Delivered on `develop`** ([records](https://github.com/oktawianwybieralski/coagent8/blob/7eec83a/docs/delivered/0.8.0/README.md)): write
 delegation, asynchronous by default with `wait` and task records, Claude Code
 wake-up, the caller label (Claude Code only) and the first slice of the
 server-owned loop; Windows per-call containment, accepted natively on `x64`;
@@ -113,9 +112,9 @@ on release day), the tag and publication.
   the MCP adapter over the packaged CLI, the CLI topology measurement and
   readable terminal output (#170, steps g, i and j), the session modes (#188;
   its early handles stay in `0.8.0`), the documentation site (#183) and the
-  connectome research (#182). Asynchronous review stays deferred (2026-10-21).
+  connectome research (#182). Asynchronous review stays deferred (2026-10-21, #192).
   Issues the plan does not order carry no milestone; #152, #163 and #183 carry
-  "After 0.8.0" because the proposal covers all their open steps.
+  `1.0.0` because the proposal covers all their open steps.
 
 ## Full coagent direction
 
@@ -154,7 +153,7 @@ previews are `0.8.0` (rc.1) and `0.9.0` if needed.
 
 | Stage | Required scope |
 | --- | --- |
-| BETA-001: beta.2 (0.6.0, released) | Released as `v0.6.0` ([evidence](delivered/0.6.1/README.md#060-release-evidence)): bridge audit blockers (`AUDIT-001-A01` to `A07`), `AX-007a-c`, `WINDOWS-001a`, `SKILLS-001a-d`, and `EXEC-001-T12` package/matrix/independent review and native VS Code checks. No write claim. |
+| BETA-001: beta.2 (0.6.0, released) | Released as `v0.6.0` ([evidence](https://github.com/oktawianwybieralski/coagent8/blob/7eec83a/docs/delivered/0.6.1/README.md#060-release-evidence)): bridge audit blockers (`AUDIT-001-A01` to `A07`), `AX-007a-c`, `WINDOWS-001a`, `SKILLS-001a-d`, and `EXEC-001-T12` package/matrix/independent review and native VS Code checks. No write claim. |
 | PATCH-061: 0.6.1 (fix-only preview, released) | `FEEDBACK-060` 0.6.1 fixes, `PUBLIC-001`, `DOCS-002a/b/d`, `LIC-001` MIT relicensing, `SUPPLY-001a-b` packaging fixes, and `PATCH-061-R1..R7`/`N1..N7` release acceptance. |
 | BETA-001: beta.3 (0.7.0, released 2026-10-20) | The `0.7.0` rows of the [release split](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#070-beta3-plan): public CLI (CLI-FIRST-001a-e, h), FEEDBACK-061, the acceptance runner (ACCEPT-001a/b; WSL 2.18 deferred to `0.8.0` on 2026-10-19), native acceptance of shipped skills and CLI management, the accepted PROPOSALS-001 rule and description items, RELEASE-001 and a native upgrade from the published `0.6.1` (row 5.10). No write claim. |
 | RC-001: rc.1 (0.8.0, first on `1.0.x`) | Ordered by the [0.8.0 plan](#080-plan), with its open owner decisions on `PLUGIN-001f` and the deferrals. The `0.8.0` rows of the release split: asynchronous delegation with caller wake-up (DELEGATE-001), host-led COAGENT-001 through 005 and applicable 007 (verified writes/checks/review/skills), WINDOWS-001 containment before write profiles, the delegated/parallel slice, COAGENT-008, PLUGIN-001, DOCS-003, SUPPLY-001c-e, AX acceptance and AUDIT-001-A08 to A21, all complete or explicitly deferred before freeze, unsupported claims removed. |
@@ -238,8 +237,7 @@ Select local checks by change scope using the [quality gate](../.agents/rules/14
 
 ## Former card identifiers
 
-Commits, PRs, ARCHITECTURE and `docs/delivered` records cite cards by
-identifier. Open cards moved to these issues on 2026-11-05; completed cards
+Commits, PRs and ARCHITECTURE cite cards by identifier. Open cards moved to these issues on 2026-11-05; completed cards
 keep their text in [ROADMAP at `a7c6f72`](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md).
 
 | Former card | Issue |
@@ -257,7 +255,7 @@ keep their text in [ROADMAP at `a7c6f72`](https://github.com/oktawianwybieralski
 | `COAGENT-001` to `COAGENT-008` | #159 to #166 |
 | `CUR-011` (POSIX parent-death cleanup) | #186 |
 | `CUR-013` (other-tree review) | #187 |
-| `DELEGATE-001` (`001a` is #113, `001d` is #114) | #168 |
+| `DELEGATE-001` (`001a` is #113, `001d` is #114, `001e5` is #192) | #168 |
 | `DOCS-003`, `PROPOSALS-001i` | #183 |
 | `ENVELOPE-001` | #173 |
 | `EXEC-001-T12` | #148 |
@@ -277,14 +275,15 @@ keep their text in [ROADMAP at `a7c6f72`](https://github.com/oktawianwybieralski
 
 ## Documentation ownership
 
-Only ROADMAP, ARCHITECTURE and HANDOFF are active project documents in docs/;
-docs/delivered is their permanent record and GitHub Issues hold the backlog.
+ROADMAP and ARCHITECTURE are the active project documents in docs/; GitHub
+Issues hold the backlog, and issues and PRs hold current work and evidence.
 README and extension README serve users; .agents/rules/ serve contributors.
 Update the owning section or issue instead of appending session reports or
 parallel plans. Useful investigations may live in ignored docs/.local/;
-tracked documents must not depend on them. History stays in Git and in
-[docs/delivered](delivered/README.md) (owner decision 2026-10-20); there is no
-other archive.
+tracked documents must not depend on them. History stays in Git; the HANDOFF
+and the delivery records removed on 2026-11-05 are at [`7eec83a`](https://github.com/oktawianwybieralski/coagent8/blob/7eec83a/docs), and
+there is no other archive. Do not add a document that an issue or a PR can
+hold.
 
 Deferred unless justified: SQLite/transcript database, persistent daemon,
 arbitrary third-party skill registry, private provider hub, binary prompt

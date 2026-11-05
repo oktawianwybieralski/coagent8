@@ -10,7 +10,6 @@
   "projectDocuments": [
     "../../docs/ARCHITECTURE.md",
     "../../docs/ROADMAP.md",
-    "../../docs/HANDOFF.md",
     "../../CHANGELOG.md",
     "../../.agents/rules/12-release-workflow.md"
   ],
