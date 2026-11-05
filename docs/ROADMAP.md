@@ -82,9 +82,11 @@ clients; 5 is the release-candidate gate.
    parent identity, fan-out and depth limits, cycle and replay refusal and tree
    cancellation. The nested-turn refusal stays until the gateway is accepted.
 3. **Profiles and roles:** verified capabilities per backend, version and OS
-   (#160), role defaults independent of backend (#161), the compatibility
-   inventory (#165), then the loop on the accepted profiles (#168). Also open
-   from the loop's first slice: agy as a loop writer and a POSIX run.
+   (#160), with POSIX parent-death cleanup (#186) and the Windows containment
+   (#169) before any write or command profile is claimed; role defaults
+   independent of backend (#161), the compatibility inventory (#165), then the
+   loop on the accepted profiles (#168). Also open from the loop's first slice:
+   agy as a loop writer and a POSIX run.
 4. **Wake-up for Codex and agy** (#168 with #113 and #114). Both get
    `wakeup: none` and `wait` today; the tests need an open Codex window and the
    agy hub. Related: #137, #138.

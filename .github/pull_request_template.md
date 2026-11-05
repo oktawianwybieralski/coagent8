@@ -8,7 +8,7 @@ Replace the comments, mark sections that do not apply N/A. -->
 
 ## Links
 
-<!-- Closes #N / Part of #N, ARCHITECTURE decision. None if nothing applies. -->
+<!-- Fixes #N / Refs #N, ARCHITECTURE decision. None if nothing applies. -->
 
 ## Changes
 
