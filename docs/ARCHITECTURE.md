@@ -1345,8 +1345,8 @@ A claim schedules writers; it is not a sandbox. Codex and agy get it as an instr
 with a pattern character keeps Claude's rule at the workspace. A link replaced after the start is
 not seen.
 
-**Evidence.** The result still lists every path the server saw change, and every path outside
-the scope. A path that another writer held during the turn is also in `possiblyOtherWriter`,
+**Evidence.** The result still lists the paths the server saw change, up to 200 with a notice that
+more changed, and those outside the scope among them. A path that another writer held during the turn is also in `possiblyOtherWriter`,
 because the snapshots say what changed and not who changed it: either may have, and a write
 that was later restored is seen by neither. An ended writer stays as a tombstone until no
 writer of a claim is left, so one still running can name it; a writer that ended before another

@@ -281,6 +281,9 @@ const ROOT_WATCH_MS = 1000;
 /** Reads of a root that may fail in a row before its worker is stopped: a root nobody can read cannot cancel it. */
 const ROOT_WATCH_FAILURES = 5;
 const ROOT_SETTLE_POLL_MS = 100;
+/** Attempts to mark a task ended in its root, so a passing failure does not keep its place. */
+const ROOT_END_ATTEMPTS = 3;
+const ROOT_END_RETRY_MS = 200;
 
 /** What a root's cancellation reached. */
 export interface RootCancellation {
@@ -511,10 +514,18 @@ async function launchDelegation(
   const closeInRoot = async () => {
     if (!task) return refund();
     if (workerMayRun) return;
-    try {
-      await endRootTask(rootHandle, taskHandle);
-    } catch (err) {
-      process.stderr.write(`CoAgent8: root ${rootHandle} was not updated: ${redactDiagnostic((err as Error).message, 512)}\n`);
+    // A lock held by another reservation can time out once; a root that stays unwritable refuses every reservation anyway.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await endRootTask(rootHandle, taskHandle);
+        return;
+      } catch (err) {
+        if (attempt >= ROOT_END_ATTEMPTS) {
+          process.stderr.write(`CoAgent8: root ${rootHandle} was not updated: ${redactDiagnostic((err as Error).message, 512)}\n`);
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, ROOT_END_RETRY_MS));
+      }
     }
   };
   let watchFailures = 0;
