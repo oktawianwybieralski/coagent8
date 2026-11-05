@@ -82,7 +82,7 @@ async function runningWorker(repo, args, writes) {
 }
 
 test.beforeEach(async () => {
-  await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+  await saveConfig({ defaultBackend: 'codex', rootLimits: {}, routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
   delete process.env.CODEX_FIXTURE_MODE;
   delete process.env.CODEX_FIXTURE_WRITES;
 });
@@ -428,6 +428,67 @@ test('a reservation that reached no turn is refunded; a task of a dead server st
   assert.equal(readRoot(root.rootHandle).calls, 2, 'the charge of the dead one stays');
 });
 
+test('a loop still refuses a scope that escapes, and a cancelled root closes an open form', async () => {
+  const repo = fixtureRepo();
+  await assert.rejects(
+    handleDelegate({ ...REQUEST, scope: ['.git/hooks'], loop: true, checks: [] }, repo, null, null, approve),
+    code('INPUT_LIMIT'),
+  );
+
+  let formOpen;
+  const opened = new Promise(resolve => {
+    formOpen = resolve;
+  });
+  const root = await createRoot();
+  const start = handleDelegate({ ...REQUEST, root_handle: root.rootHandle, loop: true, checks: ['node -v'] }, repo, null, null, {
+    ...approve,
+    askChecks: async (_checks, signal) =>
+      new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('form closed')), { once: true });
+        formOpen();
+      }),
+  });
+  await opened;
+  await handleCancelSession({ root_handle: root.rootHandle });
+  await assert.rejects(start, code('ABORTED'));
+  assert.deepEqual(readRoot(root.rootHandle).tasks, [], 'no turn started, so the charge is back');
+  assert.equal(fs.existsSync(path.join(repo, '.git', WRITER_RECORD_FILE)), false, 'and the writer is free');
+});
+
+test('a task keeps the parent of the session it continues', async () => {
+  const repo = fixtureRepo();
+  const first = await handleDelegate(REQUEST, repo, null, null, approve);
+  await finished(first.structuredContent.taskHandle);
+  const child = await handleDelegate({ ...REQUEST, parent_task: first.structuredContent.taskHandle }, repo, null, null, approve);
+  await finished(child.structuredContent.taskHandle);
+  const next = await handleDelegate({ ...REQUEST, session_handle: child.structuredContent.sessionHandle }, repo, null, null, approve);
+  await finished(next.structuredContent.taskHandle);
+  const task = readTask(next.structuredContent.taskHandle);
+  assert.equal(task.parentTask, first.structuredContent.taskHandle);
+  assert.equal(task.depth, 2);
+});
+
+test('a worker that may outlive its dead server still counts as running', async () => {
+  const root = await createRoot({ maxConcurrent: 1 });
+  const handle = `task_${'9'.repeat(32)}`;
+  await reserveRootTask(root.rootHandle, { taskHandle: handle });
+  const gitDir = fs.mkdtempSync(path.join(tempDir, 'git-'));
+  const writer = path.join(gitDir, WRITER_RECORD_FILE);
+  await bindRootTask(root.rootHandle, handle, 'syn_sess_gone', { file: writer, token: 'old' });
+  const dead = spawnSync(process.execPath, ['-e', ''], { windowsHide: true }).pid;
+  fs.writeFileSync(writer, JSON.stringify({ pid: dead, token: 'old', startedAt: 'x', starting: true }));
+  const file = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${root.rootHandle}.json`);
+  const record = readRoot(root.rootHandle);
+  record.tasks[0].pid = dead;
+  await atomicWrite(file, JSON.stringify(record));
+  await assert.rejects(reserveRootTask(root.rootHandle, { taskHandle: `task_${'a'.repeat(32)}` }), code('ROOT_LIMIT'));
+  const cancelledLater = readRoot(root.rootHandle);
+  assert.equal(cancelledLater.calls, 1);
+  fs.writeFileSync(writer, JSON.stringify({ pid: dead, token: 'someone-later', startedAt: 'x', starting: true }));
+  await reserveRootTask(root.rootHandle, { taskHandle: `task_${'a'.repeat(32)}` });
+  assert.equal(readRoot(root.rootHandle).calls, 2, "another writer's record says nothing about this task");
+});
+
 test('a call limit holds across server processes', async () => {
   const root = await createRoot({ maxCalls: 2, maxConcurrent: 64 });
   const script = index => `require('tsx/cjs');
@@ -552,11 +613,10 @@ test('an overlapping start is refused before the check form, and a form counts a
   await assert.rejects(
     handleDelegate({ ...REQUEST, root_handle: root.rootHandle, loop: true, checks: ['node -v'] }, repo, null, null, {
       ...approve,
-      // A form left open past the root's time: nothing may run after the answer.
+      // A form left open past the root's time is closed by the deadline.
       askChecks: async (_checks, signal) =>
-        new Promise((resolve, reject) => {
+        new Promise((_resolve, reject) => {
           signal?.addEventListener('abort', () => reject(new Error('form closed')), { once: true });
-          setTimeout(() => resolve('approved'), 4000);
         }),
     }),
     code('TIMEOUT'),

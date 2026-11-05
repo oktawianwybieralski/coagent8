@@ -49,6 +49,8 @@ interface WriterRecord {
 /** Ownership of a work tree's writer slot; `release` is idempotent. */
 export interface WriterLease {
   readonly token: string;
+  /** The record of this lease. */
+  readonly file: string;
   /**
    * Call synchronously before a worker starts, so a crash from here on leaves the slot taken.
    * @throws When that cannot be recorded: the worker must then not start.
@@ -103,6 +105,24 @@ function unreadable(file: string): ToolError {
     'SESSION_BUSY',
     `The delegate writer record ${file} cannot be read. If no delegate call is changing files in this work tree, delete the file.`,
   );
+}
+
+/**
+ * Whether a writer record shows a worker that may outlive its ended server (`CUR-011`).
+ * @param file - The record, as a lease names it.
+ * @param token - The lease's token: a later writer's record says nothing about this one.
+ * @param groupAlive - Tests a recorded process group; replaceable by tests.
+ * @returns True also for an unreadable record, which may belong to a running writer.
+ */
+export function writerMayStillRun(file: string, token: string, groupAlive: (groupId: number) => boolean = isProcessGroupAlive): boolean {
+  let record: WriterRecord | null;
+  try {
+    record = readWriter(file);
+  } catch {
+    return true;
+  }
+  if (!record || record.token !== token || record.endedAt) return false;
+  return Boolean(record.starting) || Boolean(record.workerGroups?.some(groupAlive));
 }
 
 /** The records of the writers of claims. */
@@ -223,6 +243,7 @@ export async function acquireWriterLease(
   };
   return {
     token,
+    file,
     workerStarting() {
       if (released) throw new Error('This call released the writer record.');
       starting++;

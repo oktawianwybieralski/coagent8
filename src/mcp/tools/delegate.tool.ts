@@ -249,8 +249,8 @@ export async function handleDelegate(
   const loop = loopArgument === true;
   // A check that cannot run is refused now, not after the worker's turn.
   if (loop) checks.forEach(parseCheckCommand);
-  const approve = async () => {
-    if (loop) await approveChecks(checks, loadConfig().allowedChecks ?? [], options.askChecks, abortSignal);
+  const approve = async (signal: AbortSignal | null) => {
+    if (loop) await approveChecks(checks, loadConfig().allowedChecks ?? [], options.askChecks, signal);
   };
   const supervise = loop ? loopSupervisor(task, checks, workspaceCwd, options.clock) : undefined;
   const prompt = delegatePrompt(task, effectiveScope, checks, loop);

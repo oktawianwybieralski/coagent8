@@ -41,7 +41,7 @@ import {
   endRootTask,
   findRootOfSession,
   findRootOfTask,
-  isRootTaskActive,
+  isRootTaskServerAlive,
   pruneRoots,
   readRoot,
   refundRootTask,
@@ -83,10 +83,21 @@ export async function executeDelegation(
     /** Runs before every turn after the first; a refusal ends the round. */
     beforeRound?: () => Promise<void>;
     /** Asks what the user must settle, with the writer held so that an overlapping start asks nothing. */
-    approveStart?: () => Promise<void>;
+    approveStart?: (signal: AbortSignal | null) => Promise<void>;
+    /** Told the writer record once it is held. */
+    onWriter?: (writer: { file: string; token: string }) => void;
   } = {},
 ): Promise<TaskExecutionResult> {
-  const { beforeRelease, supervise, loopTurnMs = LOOP_TURN_MS, exclusive = false, beforeRound, approveStart, ...taskOptions } = options;
+  const {
+    beforeRelease,
+    supervise,
+    loopTurnMs = LOOP_TURN_MS,
+    exclusive = false,
+    beforeRound,
+    approveStart,
+    onWriter,
+    ...taskOptions
+  } = options;
   // A writer's descendants must end with its run; without the helper they could keep writing.
   if (process.platform === 'win32' && !jobHelperPath()) {
     throw new ToolError(
@@ -98,11 +109,25 @@ export async function executeDelegation(
     if (err instanceof ToolError && ['ABORTED', 'TIMEOUT'].includes(err.code)) throw err;
     throw new ToolError('INPUT_LIMIT', 'delegate needs a Git work tree, so the server can report what changed; run it in a repository.');
   });
-  const lease = await acquireWriterLease(repo.gitDir, undefined, exclusive ? [] : resolveWriteClaim(repo, scope));
+  // Resolved also when the loop holds the whole tree: this is what refuses an escaping scope.
+  const claim = resolveWriteClaim(repo, scope);
+  const lease = await acquireWriterLease(repo.gitDir, undefined, exclusive ? [] : claim);
+  onWriter?.({ file: lease.file, token: lease.token });
   let outcome: TaskExecutionResult | undefined;
   let treeUnconfirmed = false;
   try {
-    await approveStart?.();
+    // The task's own signal: its cancellation and deadline close the form, and the writer is not held by it.
+    const approvalSignal = options.budget?.executionSignal ?? abortSignal ?? null;
+    try {
+      await approveStart?.(approvalSignal);
+    } catch (err) {
+      if (approvalSignal?.aborted) {
+        throw approvalSignal.reason instanceof ToolError
+          ? approvalSignal.reason
+          : new ToolError('ABORTED', 'The delegation was cancelled while waiting for the user.');
+      }
+      throw err;
+    }
     const before: WorkspaceSnapshot = await captureWorkspace(cwd, repo, options.context);
     const turn = (text: string, turnArgs: ExecutionRequest, turnOptions: typeof taskOptions) =>
       executeTask(text, publicInput, turnArgs, cwd, abortSignal, onProgress, {
@@ -278,13 +303,13 @@ export async function cancelRootTasks(rootHandle: string, waitMs = CANCEL_SETTLE
   for (;;) {
     const root = readRoot(rootHandle);
     const tasks = root?.tasks ?? [];
-    const running = tasks.filter(isRootTaskActive);
+    const running = tasks.filter(task => !task.endedAt && isRootTaskServerAlive(task));
     if (!running.length || Date.now() >= deadline) {
       return {
         ended: tasks.filter(task => task.endedAt).map(task => task.taskHandle),
         running: running.map(task => task.taskHandle),
         // Without a session the turn had not started, as the session is bound just before it.
-        interrupted: tasks.filter(task => !task.endedAt && !isRootTaskActive(task) && task.sessionHandle).map(task => task.taskHandle),
+        interrupted: tasks.filter(task => !task.endedAt && !isRootTaskServerAlive(task) && task.sessionHandle).map(task => task.taskHandle),
       };
     }
     await new Promise(resolve => setTimeout(resolve, ROOT_SETTLE_POLL_MS));
@@ -340,7 +365,7 @@ export interface DelegationStart {
   /** Aborts the start until the turn runs; afterwards the request no longer owns the worker. */
   requestSignal?: AbortSignal | null;
   /** Asks what must be settled before a new task starts, after a repeated request id was ruled out. */
-  approve?: () => Promise<void>;
+  approve?: (signal: AbortSignal | null) => Promise<void>;
   supervise?: Supervise;
   /** Holds the whole work tree whatever the scope. */
   exclusive?: boolean;
@@ -407,7 +432,7 @@ async function launchDelegation(
   const giveUpNewRoot = async () => {
     if (!joined) await removeUnusedRoot(rootHandle);
   };
-  let reservation: { depth: number; remainingMs: number };
+  let reservation: Awaited<ReturnType<typeof reserveRootTask>>;
   try {
     reservation = await reserveRootTask(rootHandle, {
       taskHandle,
@@ -447,7 +472,7 @@ async function launchDelegation(
     // The root's time is shared: no task runs past it, whatever it asked for.
     totalBudgetMs: Math.min(
       typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_EXECUTION_TIMEOUT_MS,
-      reservation.remainingMs,
+      Math.max(1, reservation.deadlineMs - Date.now()),
     ),
     parentSignal: controller.signal,
     clock: start.options.clock,
@@ -455,6 +480,7 @@ async function launchDelegation(
   const context = { abortSignal: budget.executionSignal, budget, timeoutMs: budget.remainingExecutionMs() };
 
   let task: DelegationTask | undefined;
+  let writer: { file: string; token: string } | undefined;
   let announce!: () => void;
   const running = new Promise<void>(resolve => {
     announce = resolve;
@@ -502,6 +528,9 @@ async function launchDelegation(
     supervise: start.supervise,
     exclusive: start.exclusive,
     ...(start.approve ? { approveStart: start.approve } : {}),
+    onWriter: held => {
+      writer = held;
+    },
     beforeRound: () => reserveRootCall(rootHandle),
     budget,
     context,
@@ -521,12 +550,12 @@ async function launchDelegation(
         ...(callerSession ? { callerSession } : {}),
         ...(fingerprint ? { requestFingerprint: fingerprint } : {}),
         rootHandle,
-        ...(start.root?.parentTask ? { parentTask: start.root.parentTask } : {}),
+        ...(reservation.parentTask ? { parentTask: reservation.parentTask } : {}),
         depth: reservation.depth,
         ...(start.scope.length ? { scope: start.scope } : {}),
       };
       // The last check before the turn: a root cancelled until now prevents it.
-      await bindRootTask(rootHandle, taskHandle, turn.sessionHandle);
+      await bindRootTask(rootHandle, taskHandle, turn.sessionHandle, writer);
       // A record that cannot be written fails the turn before it starts: nothing could be waited for.
       await writeTask(initial);
       task = initial;

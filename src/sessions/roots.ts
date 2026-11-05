@@ -20,12 +20,15 @@ import { getDataDir } from '../paths.js';
 import { atomicWrite, withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { isRecordedProcessAlive, ownProcessIdentity } from './activity.js';
+import { writerMayStillRun } from './writer.js';
 
 /** One task of a root. */
 export interface RootTask {
   taskHandle: string;
   /** The worker's session; present once the turn is about to start. */
   sessionHandle?: string;
+  /** The task's writer record, where a worker that outlives the server shows. */
+  writer?: { file: string; token: string };
   pid: number;
   pidIdentity?: string;
   parentTask?: string;
@@ -84,9 +87,18 @@ export function readRoot(handle: string): RootRecord | null {
   return parseRoot(rootFile(handle));
 }
 
-/** Whether a task of a root may still be running: not ended, and its server process lives. */
+/** Whether the server process of a task lives; only that process can stop or end the task. */
+export function isRootTaskServerAlive(task: RootTask): boolean {
+  return isRecordedProcessAlive(task.pid, task.pidIdentity);
+}
+
+/**
+ * Whether a task may still be using its root: not ended, and its server lives or, on POSIX, a worker
+ * of its dead server does (`CUR-011`).
+ */
 export function isRootTaskActive(task: RootTask): boolean {
-  return !task.endedAt && isRecordedProcessAlive(task.pid, task.pidIdentity);
+  if (task.endedAt) return false;
+  return isRootTaskServerAlive(task) || (task.writer ? writerMayStillRun(task.writer.file, task.writer.token) : false);
 }
 
 /**
@@ -122,12 +134,11 @@ async function updateRoot<T>(handle: string, change: (record: RootRecord) => T):
   });
 }
 
-/** Milliseconds left, or a refusal when the root is cancelled or out of time. */
-function assertUsable(record: RootRecord): number {
+/** Refuses a root that is cancelled or out of time. */
+function assertUsable(record: RootRecord): void {
   if (record.state === 'cancelled') throw new ToolError('ABORTED', `Root ${record.rootHandle} was cancelled.`);
   const remainingMs = Date.parse(record.deadlineAt) - Date.now();
   if (!(remainingMs > 0)) throw new ToolError('ROOT_LIMIT', `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes.`);
-  return remainingMs;
 }
 
 function charge(record: RootRecord): void {
@@ -140,16 +151,16 @@ function charge(record: RootRecord): void {
 /**
  * Reserves one task of a root, atomically with every limit it is subject to.
  * @param request - The task, its parent, and the worker session it continues, whose place in the tree it keeps.
- * @returns The task's depth and the milliseconds left in the root.
+ * @returns The task's depth, its parent, named or inherited, and the root's deadline in epoch milliseconds.
  * @throws `ROOT_LIMIT` at a limit, `ABORTED` for a cancelled root, `SESSION_BUSY` while the same task
  * is reserved, `INPUT_LIMIT` for a parent outside the root, `SESSION_INVALID` without such a root.
  */
 export function reserveRootTask(
   handle: string,
   request: { taskHandle: string; parentTask?: string; continues?: string },
-): Promise<{ depth: number; remainingMs: number }> {
+): Promise<{ depth: number; parentTask?: string; deadlineMs: number }> {
   return updateRoot(handle, record => {
-    const remainingMs = assertUsable(record);
+    assertUsable(record);
     if (record.tasks.some(task => task.taskHandle === request.taskHandle && isRootTaskActive(task))) {
       throw new ToolError('SESSION_BUSY', `Task ${request.taskHandle} is already starting in this root.`);
     }
@@ -172,7 +183,7 @@ export function reserveRootTask(
       depth,
       startedAt: new Date().toISOString(),
     });
-    return { depth, remainingMs };
+    return { depth, ...(parentTask ? { parentTask } : {}), deadlineMs: Date.parse(record.deadlineAt) };
   });
 }
 
@@ -181,12 +192,18 @@ export function reserveRootTask(
  * cancellation can still prevent it.
  * @throws `ABORTED` for a cancelled root, `ROOT_LIMIT` for one out of time.
  */
-export function bindRootTask(handle: string, taskHandle: string, sessionHandle: string): Promise<void> {
+export function bindRootTask(
+  handle: string,
+  taskHandle: string,
+  sessionHandle: string,
+  writer?: { file: string; token: string },
+): Promise<void> {
   return updateRoot(handle, record => {
     assertUsable(record);
     const task = record.tasks.findLast(entry => entry.taskHandle === taskHandle);
     if (!task) throw new ToolError('PROTOCOL_ERROR', `Task ${taskHandle} has no reservation in root ${handle}.`);
     task.sessionHandle = sessionHandle;
+    if (writer) task.writer = writer;
   });
 }
 

@@ -1370,11 +1370,12 @@ writer exclusion but not a budget.
 exclusive file while its task has no record, so two identical starts run one worker: the other gets
 `SESSION_BUSY`, or the task once it exists. Then the root is reserved, the writer acquired, the checks
 approved, consent obtained, the root checked and bound to the session once more, and the task record
-written, in that order, just before the turn. The time of a form counts against the task's budget, which
-starts at the reservation. A start that this process knows reached no turn is refunded; a later round
+written, in that order, just before the turn. The time of a form counts against the task's budget, and the
+task's cancellation or deadline closes it. A start that this process knows reached no turn is refunded; a later round
 that a refusal stops before its turn keeps its charge, so a limit can only be reached early. After a crash
 the charge stays; an entry without a session started no turn, and one with a session reads as possibly
-interrupted, as its record says.
+interrupted, as its record says. A task of a dead server stops counting as running only when its writer
+record shows no worker that can have outlived it (#186).
 
 **Cancel.** `cancel` with `root_handle` marks the root cancelled under the same lock, so no
 reservation succeeds from then on, aborts this server's tasks at once, and waits up to 15
