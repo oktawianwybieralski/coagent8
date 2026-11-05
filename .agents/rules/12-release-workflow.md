@@ -367,12 +367,12 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
    ([rule 14](14-quality-gate.md#full-release-gate)) with platform, Node,
    commit, tree and tarball digest recorded.
 9. **Release notes** in English for testers, written in the release PR's
-   description under the heading `## Release notes`, with `###` subheadings, and
-   reviewed with the PR: what CoAgent8 is,
+   description between the lines `<!-- release-notes -->` and
+   `<!-- /release-notes -->` and reviewed with the PR: what CoAgent8 is,
    install, what changed in plain words, known limitations, upgrade notes. No
    internal card IDs or process notes. `npm run release-notes -- --tag vX.Y.Z`
-   previews the generated part; `release.yml` reads the section from the PR of the
-   tagged commit, puts it above that part and fails without it (`RELEASE-001e`).
+   previews the generated part; `release.yml` reads the notes from the PR of the
+   tagged commit, puts them above that part and fails without them (`RELEASE-001e`).
 10. Run `npm run changelog -- --tag vX.Y.Z` once more (it must leave the file
     unchanged), push the branch and open the PR `chore(release): vX.Y.Z` into
     the target, with the evidence. Its six CI jobs must be green; they
@@ -386,7 +386,7 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     finding is fixed by its own PR into the target (step 1); then rebase the
     release branch, regenerate the changelog and repeat from step 8.
 12. **Rehearsal when release tooling changed.** If any PR since the previous
-    tag changed `.github/workflows/`, `package.json` or `package-lock.json`,
+    tag changed `.github/workflows/`, `package.json`, `package-lock.json` or
     `tooling/`, rehearse with the release PR's
     head in a throwaway public repository `<repo>-release-test` (for `0.6.1` the
     owner skipped it and Phase D verified the tag's draft instead, owner decision
@@ -397,8 +397,10 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
       `git ls-remote --tags --refs origin 'v*'`, as
       `git push <throwaway> refs/tags/<tag>:refs/tags/<tag>`; never local-only
       tags), so the notes start at the previous version as they will in `<repo>`;
-    * push an annotated `vX.Y.Z` on the head and verify the draft as in Phase D
-      with `<repo>` set to the throwaway repository;
+    * merge a PR there by squash whose description holds the release notes (step 9),
+      because `release.yml` reads them from the PR of the tagged commit;
+    * push an annotated `vX.Y.Z` on that merge commit and verify the draft as in
+      Phase D with `<repo>` set to the throwaway repository;
     * when `docs.yml` changed, enable Pages there and publish the draft: the
       documentation must deploy;
     * delete the repository afterwards.
@@ -434,7 +436,7 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     `package.json`, runs the full gate on Ubuntu with Node 24, packs and
     smoke-tests the exact tarball, packages the VSIX, writes `SHA256SUMS`, signs
     build provenance for both, composes the notes (`tooling/scripts/release-notes.cjs`:
-    the step 9 section, the git-cliff changelog with `--current` and root commits
+    the step 9 notes, the git-cliff changelog with `--current` and root commits
     skipped, the artifacts) and creates a **draft** normal release. It never
     publishes anything. A failure here is fixed by a new patch version; the tag
     stays.

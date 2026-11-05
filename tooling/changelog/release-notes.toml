@@ -2,7 +2,7 @@
 # "Full Changelog" list by area (commit scope), then type, then
 # "#PR: description (by @author)", like CHANGELOG.md;
 # contributors and a compare link follow. GitHub links "#N" and "@user" in release
-# notes itself. release.yml renders it below the "Release notes" section of the release
+# notes itself. release.yml renders it below the release notes in the description of the release
 # PR (tooling/scripts/release-notes.cjs, RELEASE-001e); `npm run
 # release-notes -- --tag vX` previews it.
 #

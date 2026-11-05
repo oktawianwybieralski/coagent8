@@ -25,7 +25,7 @@ function extensionVersion(manifestVersion, serverVersion) {
 async function buildExtension(serverRoot) {
   const root = path.resolve(__dirname, '../..');
   const output = path.join(root, '.artifacts/vscode');
-  const manifest = require('../extensions/vscode/package.json');
+  const manifest = require('../../extensions/vscode/package.json');
   const server = JSON.parse(fs.readFileSync(path.join(serverRoot, 'package.json'), 'utf8'));
   extensionVersion(manifest.version, server.version);
   fs.rmSync(output, { recursive: true, force: true });

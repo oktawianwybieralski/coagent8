@@ -12,23 +12,23 @@ const cliff = path.join(root, 'node_modules', 'git-cliff', 'lib', 'cli', 'cli.js
 test('RELEASE-001e: the release notes need the section the release PR describes', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-notes-'));
   try {
-    assert.throws(() => extractNotes('## Summary\n\nA release.\n'), /no "## Release notes" section/);
-    assert.throws(() => extractNotes('## Release notes\n\n  \n## Links\n'), /is empty/);
+    assert.throws(() => extractNotes('## Summary\n\nA release.\n'), /has no notes between/);
+    assert.throws(() => extractNotes('<!-- /release-notes -->\n<!-- release-notes -->'), /has no notes between/);
+    assert.throws(() => extractNotes('<!-- release-notes -->\n  \n<!-- /release-notes -->'), /are empty/);
     const body = [
       '## Summary',
       '',
       'Not for testers.',
       '',
-      '## Release notes',
-      '',
-      '### What is CoAgent8',
+      '<!-- release-notes -->',
+      '## What is CoAgent8',
       '',
       'A bridge.',
       '',
       '```text',
-      '## not a heading',
-      '### not a subheading',
+      '## inside a code block',
       '```',
+      '<!-- /release-notes -->',
       '',
       '## Links',
       '',
@@ -58,7 +58,7 @@ test('RELEASE-001e: the release notes need the section the release PR describes'
     const notes = fs.readFileSync(out, 'utf8');
     // The section comes first, then the generated changelog, then the artifacts.
     assert.ok(notes.startsWith('## What is CoAgent8\n\nA bridge.'));
-    assert.ok(notes.includes('## not a heading\n### not a subheading'), 'code fences stay as written');
+    assert.ok(notes.includes('```text\n## inside a code block\n```'), 'the notes stay as written');
     assert.ok(!notes.includes('Not for testers') && !notes.includes('None'), 'only that section is taken');
     assert.ok(notes.indexOf('## What is CoAgent8') < notes.indexOf('## Full Changelog'));
     assert.ok(notes.indexOf('## Full Changelog') < notes.indexOf('## Artifacts'));
@@ -69,7 +69,7 @@ test('RELEASE-001e: the release notes need the section the release PR describes'
     // The early workflow step only requires the section.
     main(['--check', '--pr-body', prBody]);
     fs.writeFileSync(prBody, 'No section.');
-    assert.throws(() => main(['--check', '--pr-body', prBody]), /no "## Release notes" section/);
+    assert.throws(() => main(['--check', '--pr-body', prBody]), /has no notes between/);
     assert.throws(() => main(['--check']), /Usage/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

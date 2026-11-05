@@ -1,34 +1,30 @@
 #!/usr/bin/env node
-// Composes the GitHub Release notes (RELEASE-001e): the "Release notes" section of the release
-// PR's description, the version's generated changelog, and the artifacts with their checksums.
-// release.yml runs it and fails without the section, so the draft carries the reviewed notes
+// Composes the GitHub Release notes (RELEASE-001e): the marked part of the release PR's
+// description, the version's generated changelog, and the artifacts with their checksums.
+// release.yml runs it and fails without the marked part, so the draft carries the reviewed notes
 // and nobody replaces them by hand (rule 12, section 5). No file in the repository holds them
 // (owner decision 2026-11-05).
 const fs = require('node:fs');
 
-const SECTION = '## Release notes';
+const START = '<!-- release-notes -->';
+const END = '<!-- /release-notes -->';
 
 /**
- * Extracts the release notes from a release PR's description. They end at the next `##`
- * heading; their `###` subheadings become `##` in the release. Code fences are left alone.
- * @throws When the description has no such section, or it is empty.
+ * Extracts the release notes from a release PR's description: the text between the two markers,
+ * which do not show on GitHub, so the notes can hold any headings and code blocks.
+ * @throws When the markers are missing, or nothing stands between them.
  */
 function extractNotes(body) {
-  const notes = [];
-  let found = false;
-  let fenced = false;
-  for (const line of body.split(/\r?\n/)) {
-    if (!found) {
-      found = line.trim() === SECTION;
-      continue;
-    }
-    if (line.startsWith('```')) fenced = !fenced;
-    if (!fenced && line.startsWith('## ')) break;
-    notes.push(!fenced && line.startsWith('### ') ? line.slice(1) : line);
+  const start = body.indexOf(START);
+  const end = body.indexOf(END);
+  if (start < 0 || end < start) {
+    throw new Error(`The release PR's description has no notes between ${START} and ${END} (rule 12, section 5, step 9).`);
   }
-  if (!found) throw new Error(`The release PR's description has no "${SECTION}" section (rule 12, section 5, step 9).`);
-  const text = notes.join('\n').trim();
-  if (!text) throw new Error(`The "${SECTION}" section of the release PR is empty.`);
+  const text = body
+    .slice(start + START.length, end)
+    .replace(/\r\n/g, '\n')
+    .trim();
+  if (!text) throw new Error(`The release notes in the release PR's description are empty.`);
   return text;
 }
 
