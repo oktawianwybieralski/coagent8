@@ -316,6 +316,22 @@ test('root limits come from the configuration and refuse a start before it reser
   assert.equal(report.structuredContent.state, 'open', 'finished workers do not finish the root');
 });
 
+test('a finished task has left its root by the time its final state can be read', async () => {
+  await saveConfig({ ...loadConfig(), rootLimits: { maxConcurrent: 1 } });
+  const repo = fixtureRepo();
+  const first = await handleDelegate({ ...REQUEST, scope: ['a'] }, repo, null, null, approve);
+  await finished(first.structuredContent.taskHandle);
+  assert.ok(readRoot(first.structuredContent.rootHandle).tasks[0].endedAt);
+  const next = await handleDelegate(
+    { ...REQUEST, scope: ['b'], root_handle: first.structuredContent.rootHandle },
+    repo,
+    null,
+    null,
+    approve,
+  );
+  await finished(next.structuredContent.taskHandle);
+});
+
 test('the configuration refuses invalid limits', async () => {
   for (const rootLimits of [{ maxCalls: 0 }, { maxConcurrent: 65 }, { maxDepth: 1.5 }, { maxMinutes: '4' }, { other: 1 }, []]) {
     await assert.rejects(saveConfig({ ...loadConfig(), rootLimits }), /rootLimits/, JSON.stringify(rootLimits));

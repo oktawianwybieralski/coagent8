@@ -309,10 +309,11 @@ export async function cancelRootTasks(rootHandle: string, waitMs = CANCEL_SETTLE
   for (;;) {
     const root = readRoot(rootHandle);
     const tasks = root?.tasks ?? [];
-    const running = tasks.filter(task => !task.endedAt && isRootTaskServerAlive(task));
+    // A task leaves the root just before its final state is stored: a read after this cancel must find that state.
+    const running = tasks.filter(task => isRootTaskServerAlive(task) && (!task.endedAt || readTask(task.taskHandle)?.state === 'running'));
     if (!running.length || Date.now() >= deadline) {
       return {
-        ended: tasks.filter(task => task.endedAt).map(task => task.taskHandle),
+        ended: tasks.filter(task => task.endedAt && !running.includes(task)).map(task => task.taskHandle),
         running: running.map(task => task.taskHandle),
         // Without a session the turn had not started, as the session is bound just before it.
         interrupted: tasks.filter(task => !task.endedAt && !isRootTaskServerAlive(task) && task.sessionHandle).map(task => task.taskHandle),
@@ -594,14 +595,15 @@ async function launchDelegation(
   const settled: Promise<{ outcome: TaskExecutionResult } | { error: unknown }> = operation.then(
     async outcome => {
       // Formatted again: a failed release adds its warning after the first copy was stored.
-      await finish({ state: finalState(outcome), result: start.format(outcome) });
+      // Its place in the root goes first, like the writer: a woken caller can start the next task at once.
       await closeInRoot();
+      await finish({ state: finalState(outcome), result: start.format(outcome) });
       return { outcome };
     },
     async (err: unknown) => {
       const message = redactDiagnostic((err as Error).message, 1024);
-      await finish({ state: 'failed', result: { text: `The delegation failed: ${message}`, isError: true } });
       await closeInRoot();
+      await finish({ state: 'failed', result: { text: `The delegation failed: ${message}`, isError: true } });
       return { error: err };
     },
   );
