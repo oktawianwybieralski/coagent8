@@ -1341,7 +1341,7 @@ serializes every acquire and release. A dead server's writer stops blocking only
 recorded process group lives and it was not starting a worker, and then only for what overlaps.
 
 A claim schedules writers; it is not a sandbox. Codex and agy get it as an instruction, Claude's
-`Edit` and `Write` allow rules narrow to it, and Claude's `Bash` reaches everything. A scope entry
+`Edit` and `Write` allow rules narrow to it (verified natively with Claude Code 2.1.318, 2026-11-05: a new file under a directory entry and an edit of a file entry succeeded, a new file and an edit outside were denied), and Claude's `Bash` reaches everything. A scope entry
 with a pattern character keeps Claude's rule at the workspace. A link replaced after the start is
 not seen.
 
@@ -1384,6 +1384,8 @@ another server's turn past its last check can still start, and it stops within t
 failed reads in a row stop the worker too, as a root nobody can read could not cancel it. Nothing
 signals a process by a recorded PID. The answer lists what ended, what is still stopping, and tasks
 whose server died, whose processes can outlive it on POSIX (#186).
+
+**Native runs (Windows, 2026-11-05, real Codex, Claude Code and agy through the built server over MCP stdio).** On each backend: two workers ran at once on disjoint scopes and wrote their files, an overlapping start was refused, and cancelling the root ended two running workers as `cancelled`. Claude ran below a price limit, as this client shows no form. POSIX is not run.
 
 **Not covered.** A worker calling CoAgent8 stays refused until the gateway (#164). Published
 versions have no `delegate`, so no released server ignores `coagent8-writers/`; a development
