@@ -348,7 +348,8 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
 ### Phase A - prepare and accept the release candidate (agent may prepare)
 
 6. **Scope.** The milestone names the issues of the version. Preparation starts
-   when all of them are closed, CI is green on the target's head, no P0/P1 issue
+   when all of them are closed, except those that only the candidate or the
+   release can close (candidate acceptance, release review, release-day steps), CI is green on the target's head, no P0/P1 issue
    is open, and README, extension README and known limitations describe the
    merged behavior.
 7. **Release branch.** `git switch -c release/vX.Y.Z origin/<target>` with one
