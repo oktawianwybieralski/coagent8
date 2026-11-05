@@ -8,7 +8,7 @@ Replace the comments, mark sections that do not apply N/A. -->
 
 ## Links
 
-<!-- Fixes #N / Refs #N, ROADMAP card, ARCHITECTURE decision. None if nothing applies. -->
+<!-- Fixes #N / Refs #N, ARCHITECTURE decision. None if nothing applies. -->
 
 ## Changes
 
@@ -33,7 +33,7 @@ A consult is advisory and does not satisfy independent review. -->
 ## Checklist
 
 - [ ] Core rule 01 checked: no secrets, personal data, local paths or hard-coded hosts.
-- [ ] Docs, contracts and ROADMAP/HANDOFF updated where needed.
+- [ ] Docs, contracts, HANDOFF and the task lists of the linked issues updated where needed.
 - [ ] No dead code or unused dependencies left behind.
 - [ ] CHANGELOG.md unchanged (it is regenerated only in release PRs).
 - [ ] Conventional Commit title preview passed.

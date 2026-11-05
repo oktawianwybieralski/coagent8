@@ -23,7 +23,7 @@ CoAgent8 project rule. It adds requirements to the core rules in
 These are invariants, not directory naming preferences. The
 [architecture ownership map](../../docs/ARCHITECTURE.md#dependency-boundaries)
 defines the dependency direction; the
-[migration plan](../../docs/ROADMAP.md#simplify-001-module-boundary-migration)
+[migration plan](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#simplify-001-module-boundary-migration)
 records existing violations and their removal. A directory move alone does not
 establish compliance. `npm run check:dependencies` verifies the graph.
 

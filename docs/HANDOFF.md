@@ -4,8 +4,8 @@ title: Handoff
 
 # CoAgent8 handoff
 
-Updated 2026-11-03. Read this for current work, [ROADMAP.md](ROADMAP.md) for
-priorities and acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
+Updated 2026-11-05. Read this for current work, [ROADMAP.md](ROADMAP.md) and
+[GitHub Issues](https://github.com/oktawianwybieralski/coagent8/issues) for priorities and acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Evidence of finished work is in [docs/delivered](delivered/README.md); this file
 links it instead of repeating it. Do not append session transcripts or treat old
 test counts as fresh evidence.
@@ -15,9 +15,11 @@ test counts as fresh evidence.
 - **Versions:** `0.7.0` is released ([record](delivered/0.7.0/README.md)).
   `develop` at `3f7994c` (#146) is the `0.8.0` candidate, not tagged
   ([record](delivered/0.8.0/README.md), [plan](ROADMAP.md#080-plan)).
-- **Working rules (owner 2026-11-02):** the backlog is in GitHub Issues
-  ([`project.md`](../.agents/project.md#backlog)); an issue is closed by solving
-  it. A PR is merged when its gate and CI pass and every required reviewer is READY
+- **Working rules (owner 2026-11-02 and 2026-11-05):** the whole backlog is in
+  GitHub Issues with milestones `0.8.0` and `After 0.8.0`
+  ([`project.md`](../.agents/project.md#backlog)); the ROADMAP cards moved to
+  issues #148 to #190 on 2026-11-05 ([former identifiers](ROADMAP.md#former-card-identifiers)).
+  An issue is closed by solving it. A PR is merged when its gate and CI pass and every required reviewer is READY
   on its head ([standing go-ahead](../.agents/project.md#standing-go-aheads));
   bugs another agent reports are fixed as they come. Tags, publication and repository
   settings need the owner.

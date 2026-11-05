@@ -72,11 +72,10 @@ list for the agent's own clean topic PRs; it does not cover force-pushing.
      stop and report.
    - `docs/ROADMAP.md`: run `git show REBASE_HEAD -- docs/ROADMAP.md` to see
      the exact edit of the commit being replayed. Keep the `<<<<<<< HEAD` side
-     whole and apply to it exactly that edit (typically one card changed from
-     `- [ ]` to `- [x]` with new text). Remove all conflict markers and check
-     that none remain, then `git add docs/ROADMAP.md`. Stop if the edit does
-     not apply cleanly to the HEAD side (both sides changed the same card), or
-     if you are unsure.
+     whole and apply to it exactly that edit (typically an issue link or a
+     status line). Remove all conflict markers and check that none remain,
+     then `git add docs/ROADMAP.md`. Stop if the edit does not apply cleanly to
+     the HEAD side (both sides changed the same lines), or if you are unsure.
    - Any other file: stop and report the file names. Do not resolve code or
      test conflicts: they need a new review.
    - Then `git -c core.editor=true rebase --continue`; repeat until the rebase

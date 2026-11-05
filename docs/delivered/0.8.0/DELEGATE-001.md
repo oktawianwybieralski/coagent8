@@ -4,7 +4,7 @@ title: DELEGATE-001 in 0.8.0
 
 # DELEGATE-001 in 0.8.0: delegation and caller wake-up
 
-Card: [ROADMAP DELEGATE-001](../../ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up).
+Card: [ROADMAP DELEGATE-001](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up).
 
 ## Merges
 

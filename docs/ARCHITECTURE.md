@@ -6,7 +6,7 @@ title: Architecture
 
 Updated 2026-10-09; SIMPLIFY-001 ownership and enforcement reflect the local
 follow-up to `f97ffeb`. This document owns current runtime
-contracts and the target orchestration design. [ROADMAP.md](ROADMAP.md) owns work
+contracts and the target orchestration design. [ROADMAP.md](ROADMAP.md) and GitHub Issues own work
 order and acceptance; [HANDOFF.md](HANDOFF.md) owns current evidence. Source
 inspection is not native or release acceptance.
 
@@ -65,7 +65,7 @@ for tasks; introduce a scheduler only for actual dependency/concurrency work.
 ### Dependency boundaries
 
 The table below describes the realized ownership and dependency direction
-completed in [SIMPLIFY-001](ROADMAP.md#simplify-001-module-boundary-migration).
+completed in [SIMPLIFY-001](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#simplify-001-module-boundary-migration).
 It implements the
 [P0 boundary rules](../.agents/rules/10-architecture-and-runtime.md#dependency-and-responsibility-boundaries)
 and is enforced by automated verification (`scripts/check-dependencies.cjs`, `npm run check:dependencies`).
@@ -658,7 +658,7 @@ establish support for every host/version. The roadmap owns outstanding checks.
 > Target specification pending implementation across Phase 1 (CLI-FIRST-001b through 001e). Current baseline runtime dispatch is defined in `src/index.ts`.
 
 CoAgent8 exposes a command-line interface via npm package executable `coagent8`
-([CLI-FIRST-001](ROADMAP.md#cli-first-001-public-cli-and-mcp-adapter)). The CLI
+([CLI-FIRST-001](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#cli-first-001-public-cli-and-mcp-adapter), open work in [#170](https://github.com/oktawianwybieralski/coagent8/issues/170)). The CLI
 shares engine, diagnostic, session and integration services with the MCP server
 while providing deterministic command routing, lazy bundle loading, structured
 JSON output and explicit process exit codes.
@@ -1238,7 +1238,7 @@ and use. Plain MCP remains usable without a skill or repository knowledge.
 
 Owner request 2026-10-21: a coordinating agent hands a coding task to another
 backend, which changes files in the workspace, and gets the observed changes
-back. This is the synchronous first step of [DELEGATE-001](ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up);
+back. This is the synchronous first step of [DELEGATE-001](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up);
 asynchronous start, `wait` and caller wake-up (`001c-e`) keep this contract and
 add an immediate handle ([asynchronous delegation](#asynchronous-delegation-and-caller-wake-up-delegate-001c)).
 `consult` and `review` stay read-only, so a reviewer never edits what it judges.
@@ -1393,7 +1393,7 @@ only waits. Planned with a Codex consultation (`gpt-6.1-sol`, session
 `syn_sess_973e692be03b734e8b5fdbaa`); its claims about the current code were
 checked against `src/mcp/server.ts`, `src/execution/delegation.ts` and
 `src/sessions/writer.ts`. Owner decisions are on the
-[DELEGATE-001 card](ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up).
+[DELEGATE-001 card](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up), now issue [#168](https://github.com/oktawianwybieralski/coagent8/issues/168).
 
 **As built (`DELEGATE-001e`, 2026-11-01).** `executeTaskInternal` announces the turn just
 before `adapter.execute` (`onTurnStart`), and `startDelegation` returns then. So consent still
@@ -1577,7 +1577,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-08 | doctor defaults to the cached model view; health is a scope and the quota argument is removed. Consent refusals no longer advise another model. |
 | 2026-10-09 | Setup updates its own unchanged Claude and agy registrations once the new runtime starts and lists its tools, as a first registration; only a host setup can check (Codex) must also call it. The previous runtime stays until cleanup. After an update the VSIX offers Set Up CLIs once per runtime when a CLI chat still starts another version. |
 | 2026-10-10 | Every CoAgent8 function has a client skill. Setup installs a client's skills with its registration; cleanup and the VS Code uninstall remove them. Only the VSIX and the npm package install them, and they ship in beta.2 (SKILLS-001). |
-| 2026-10-10 | Git branch model: `develop` (default) plus release lines `X.Y.x`, no `main`. Every commit on them is a GitHub-signed squash commit of one PR; fixes are backported by squash PRs, never merged back. A release tag starts a workflow that drafts the GitHub Release with verified artifacts; the owner publishes it and the npm tarball (`next` for previews). Migration: [REPO-002](ROADMAP.md#repo-002-branch-model-and-release-workflow). |
+| 2026-10-10 | Git branch model: `develop` (default) plus release lines `X.Y.x`, no `main`. Every commit on them is a GitHub-signed squash commit of one PR; fixes are backported by squash PRs, never merged back. A release tag starts a workflow that drafts the GitHub Release with verified artifacts; the owner publishes it and the npm tarball (`next` for previews). Migration: [REPO-002](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#repo-002-branch-model-and-release-workflow). |
 | 2026-10-11 | Set Up Coding CLIs becomes Manage Coding CLIs, a list of CLIs with one menu per CLI built like Manage Skills; Uninstall CoAgent8 is removed in favour of per-CLI removal and the uninstall hook; vendor extensions stay machine-scoped, because the install command can avoid VS Code's sync question only by excluding them from Sync; only what CoAgent8 installed is offered for removal (CLIMGMT-001). |
 | 2026-10-11 | Release artifacts carry signed build provenance (GitHub artifact attestations) next to `SHA256SUMS`. After beta.2, which is published by hand, npm publishing moves to a workflow started by the published release: npm trusted publishing (OIDC, no token) with provenance, gated by the owner's approval of the `npm` environment, publishing the verified release tarball (REPO-002g). |
 | 2026-10-11 | One numeric version without pre-release suffixes for npm, the VSIX and the Git tag (`vX.Y.Z`), because VS Code accepts only numeric extension versions and offers Restart Extensions only when the number changes. Every version below 1.0.0 is a preview (VS Code and GitHub pre-release, npm `next`); each preview raises the minor. 0.5.0 is skipped: the npm name placeholder 1.0.0-beta.1 held it and is withdrawn, with no tag, GitHub Release or changelog entry. The candidate prepared as beta.2 becomes 0.6.0 and the final release is 1.0.0 (REPO-003). |

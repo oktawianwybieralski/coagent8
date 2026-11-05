@@ -21,13 +21,17 @@ conflict and stop the dependent work.
 
 ## Project and documents
 
-Use [docs/ROADMAP.md](./docs/ROADMAP.md) as the single active plan,
-[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for contracts and design, and
-[docs/HANDOFF.md](./docs/HANDOFF.md) for current work and evidence. These are the
-three active project documents; optional ignored local notes are not instructions.
+[GitHub Issues](https://github.com/oktawianwybieralski/coagent8/issues) hold the backlog: every planned result is an issue,
+and a milestone names its release (owner decision 2026-11-05,
+[`project.md`](./.agents/project.md#backlog)). Use
+[docs/ROADMAP.md](./docs/ROADMAP.md) for the direction and the order of the
+milestones, [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for contracts and
+design, and [docs/HANDOFF.md](./docs/HANDOFF.md) for current work and evidence.
+These are the three active project documents; optional ignored local notes are
+not instructions.
 [docs/delivered/](./docs/delivered/README.md) is the permanent record of what each
-version delivered, per card, with its evidence (owner decision 2026-10-20): history,
-not instructions. The PR that delivers a card's subtasks adds or extends its record.
+version delivered, per card or issue, with its evidence (owner decision 2026-10-20): history,
+not instructions. The PR that delivers an issue's steps adds or extends its record.
 
 The product is a client-independent system for delegating complete tasks to
 cooperating agents (owner decision, 2026-10-08). Roles and model/provider choices are independent;
