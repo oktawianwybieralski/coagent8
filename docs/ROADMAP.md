@@ -16,7 +16,7 @@ scopes in one work tree and delegated coordination are not implemented yet.
 This file holds the direction and the order of the milestones. The work itself
 is in [GitHub Issues](https://github.com/oktawianwybieralski/coagent8/issues):
 each planned result is one issue with its context, dated decisions,
-`Done when` and open steps, and a
+`Acceptance criteria` and open steps, and a
 [milestone](https://github.com/oktawianwybieralski/coagent8/milestones) names
 the release it is planned for (owner decision 2026-11-05; core rule 02
 "Backlog" in
@@ -114,7 +114,7 @@ on release day), the tag and publication.
   its early handles stay in `0.8.0`), the documentation site (#183) and the
   connectome research (#182). Asynchronous review stays deferred (2026-10-21, #192).
   Issues the plan does not order carry no milestone; #152, #163 and #183 carry
-  "After 0.8.0" because the proposal covers all their open steps.
+  `1.0.0` because the proposal covers all their open steps.
 
 ## Full coagent direction
 
