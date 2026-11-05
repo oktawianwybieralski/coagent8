@@ -10,6 +10,7 @@ CHANGELOG.md
 # .agents/standards.lock.json; it changes only through agent-standards.mjs sync.
 .agents/rules/core/
 .agents/standards/
+.agents/standards.lock.json
 
 # Verbatim Claude Code CLI output recorded for the fixtures.
 tests/fixtures/claude-cli/recordings/

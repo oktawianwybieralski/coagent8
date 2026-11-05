@@ -22,7 +22,10 @@
 ## Linting
 
 - One lint policy for correctness and conventions. Warnings of the presets are
-  errors in CI.
+  errors in CI. A warning that cannot be fixed in the change that meets it
+  stays a warning only while an issue names its removal and
+  the lint configuration lists it with that reference; CI fails on any other
+  warning.
 - No disable comment makes a new rule pass: fix the code, or narrow the rule's
   configuration with a comment that states why.
 
@@ -48,6 +51,6 @@
   documentation or an upstream issue, a review finding, a measured cause.
 - A behavior found while documenting is stated as it is, not changed in the
   same change; a defect goes to an issue (rule 02, "Findings").
-- No commented-out code, no TODO without a ROADMAP card or an issue.
+- No commented-out code, no TODO without an issue.
 - Where tooling can check comments (documentation lint, generated API docs
   with warnings as errors), CI runs it and no suppression is accepted.

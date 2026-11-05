@@ -7,7 +7,8 @@ Replace the comments, mark sections that do not apply N/A. -->
 
 ## Links
 
-<!-- ROADMAP card, ARCHITECTURE decision, issue. None if nothing applies. -->
+<!-- Issues it closes (`Fixes #N`) or advances (`Refs #N`), ARCHITECTURE
+decision. None if nothing applies. -->
 
 ## Changes
 
@@ -26,6 +27,6 @@ Independent review: NOT_RUN; pending review of the current head.
 ## Checklist
 
 - [ ] Core rule 01 checked: no secrets, personal data or hard-coded hosts.
-- [ ] Env template, docs and ROADMAP/HANDOFF updated where needed.
+- [ ] Env template, docs and the task lists of the linked issues updated where needed.
 - [ ] No dead code or unused dependencies left behind.
 - [ ] No AI attribution in commits or this description.
