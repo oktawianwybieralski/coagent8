@@ -1360,7 +1360,9 @@ turns, fix rounds and every review attempt of a loop), `maxConcurrent` 4, `maxDe
 lock, also across server processes; a task's budget is its `timeout_ms` or the default, cut to
 what is left of the root's time. At a limit a start fails with `ROOT_LIMIT` and a loop ends with
 `needs_input`. A continued session keeps its root and depth even without naming it, by
-reading the root records; a parent names its root; conflicting names are refused. Consult and review
+reading the root records; a parent names its root; conflicting names are refused, as is another parent for a
+continued session. Root records are kept for 7 days without a running task, past any root's time; a session continued
+later starts a new root under the user's limits. Consult and review
 calls of the coordinator are not charged, and no monetary limit is claimed. A root has no
 succeeded state: a worker finishing never accepts the work. A root belongs to its data directory;
 one from another is refused as unknown, so clients with different data directories share

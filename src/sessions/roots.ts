@@ -153,7 +153,8 @@ function charge(record: RootRecord): void {
  * @param request - The task, its parent, and the worker session it continues, whose place in the tree it keeps.
  * @returns The task's depth, its parent, named or inherited, and the root's deadline in epoch milliseconds.
  * @throws `ROOT_LIMIT` at a limit, `ABORTED` for a cancelled root, `SESSION_BUSY` while the same task
- * is reserved, `INPUT_LIMIT` for a parent outside the root, `SESSION_INVALID` without such a root.
+ * is reserved, `INPUT_LIMIT` for a parent outside the root or another than a continued session has,
+ * `SESSION_INVALID` without such a root.
  */
 export function reserveRootTask(
   handle: string,
@@ -167,7 +168,11 @@ export function reserveRootTask(
     const parent = request.parentTask ? record.tasks.find(task => task.taskHandle === request.parentTask) : undefined;
     if (request.parentTask && !parent) throw new ToolError('INPUT_LIMIT', `Task ${request.parentTask.slice(0, 80)} is not in this root.`);
     const earlier = request.continues ? record.tasks.findLast(task => task.sessionHandle === request.continues) : undefined;
-    const depth = parent ? parent.depth + 1 : (earlier?.depth ?? 1);
+    // A continuation keeps its place, so naming a shallower parent cannot buy depth.
+    if (earlier && request.parentTask && request.parentTask !== earlier.parentTask) {
+      throw new ToolError('INPUT_LIMIT', 'A continued session keeps its parent; omit parent_task.');
+    }
+    const depth = earlier?.depth ?? (parent ? parent.depth + 1 : 1);
     if (depth > record.limits.maxDepth) throw new ToolError('ROOT_LIMIT', `Root ${handle} allows a depth of ${record.limits.maxDepth}.`);
     const running = record.tasks.filter(isRootTaskActive).length;
     if (running >= record.limits.maxConcurrent) {

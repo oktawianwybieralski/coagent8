@@ -471,6 +471,17 @@ test('a task keeps the parent of the session it continues', async () => {
   const task = readTask(next.structuredContent.taskHandle);
   assert.equal(task.parentTask, first.structuredContent.taskHandle);
   assert.equal(task.depth, 2);
+  await assert.rejects(
+    handleDelegate(
+      { ...REQUEST, session_handle: child.structuredContent.sessionHandle, parent_task: next.structuredContent.taskHandle },
+      repo,
+      null,
+      null,
+      approve,
+    ),
+    code('INPUT_LIMIT'),
+    'a continuation cannot move in the tree',
+  );
 });
 
 test('a worker that may outlive its dead server still counts as running', async () => {
