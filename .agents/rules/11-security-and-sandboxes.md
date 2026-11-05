@@ -57,7 +57,7 @@ every client's server process sees them; no `scope` or `loop: true` holds the wh
 tree, and an overlapping start is refused (0.8.0 plan, owner decision 2026-11-02).
 A path claim schedules writers and is no sandbox: the limits above are the only
 containment, and Claude's `Edit` and `Write` rules narrow to the scope. The server
-reports the Git changes it observed before and after the turn, all of them, whoever
+reports the Git changes it observed before and after the turn, whoever
 may have made them, and never commits, resets or cleans up. Root limits come from the
 user's `rootLimits`; a calling agent, skill or worker cannot raise them. On Windows `delegate` refuses to run without the job helper,
 which ends a cancelled worker's descendants with it
