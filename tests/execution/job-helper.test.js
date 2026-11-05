@@ -163,8 +163,13 @@ const beats = marker => {
 };
 async function waitForBeat(marker) {
   const deadline = Date.now() + 10000;
-  while (!beats(marker) && Date.now() < deadline) await delay(25);
-  assert.ok(beats(marker) > 0, 'the descendant started');
+  // One read decides: a second one can catch the heartbeat truncating the file and read nothing.
+  let seen = beats(marker);
+  while (!seen && Date.now() < deadline) {
+    await delay(25);
+    seen = beats(marker);
+  }
+  assert.ok(seen > 0, 'the descendant started');
 }
 async function assertStopped(marker) {
   const before = beats(marker);
