@@ -59,11 +59,7 @@ tool's configuration, for CoAgent8 `~/.coagent8/config.json`.
   cannot finish (quota, deadline) is waited for, or the owner decides; the
   others never replace it (core rule 03). Bugs another agent reports are fixed
   as they come. Tags, releases, publication, force pushes and repository
-  settings stay with the owner. Owner decision 2026-11-04: this departs on
-  purpose from core rule 02's per-PR merge row; it is the owner's instruction,
-  which the precedence in [AGENTS.md](../AGENTS.md) puts above the core rules,
-  until the core rule accepts it
-  ([agent-standards#5](https://github.com/oktawianwybieralski/agent-standards/issues/5)).
+  settings stay with the owner.
 
 ## Findings labels
 
@@ -85,9 +81,7 @@ identifiers. A finding issue has a title that states the problem, then what is w
 `Acceptance criteria` with a condition that can be checked. It carries one kind label and,
 except for questions, one priority label. Whatever a change finds and does not fix becomes an
 issue, not a note in a PR. Issues, PRs and comments for people outside the project cite issue
-numbers, not internal identifiers. The pinned core rules (v0.1.0) still name ROADMAP cards;
-issues satisfy them, and the next standards update replaces that wording
-([agent-standards#6](https://github.com/oktawianwybieralski/agent-standards/issues/6)).
+numbers, not internal identifiers.
 
 ## Commands
 

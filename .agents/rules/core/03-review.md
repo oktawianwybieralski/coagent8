@@ -32,8 +32,9 @@
 A reviewer checks what it is given. The review instructions carry the
 requirements, not an implementation summary or a list of touched files:
 
-- the acceptance text of every ROADMAP card the change closes, and the dated
-  ARCHITECTURE decisions it implements, quoted or linked by heading;
+- the `Acceptance criteria` text and the dated decisions of every issue the change
+  closes or advances, quoted, and the dated ARCHITECTURE decisions it
+  implements, quoted or linked by heading;
 - the proposed PR title and description, which the reviewer cannot read from
   Git;
 - for an export of material the reviewer cannot reach (issues, external
@@ -59,7 +60,7 @@ against the same head, as long as the parts cover the whole diff.
   merge.
 - P2 important (robustness, edge cases, missing tests for changed behavior):
   fix before merge, or record the owner's dated decision to defer it together
-  with a tracked issue or ROADMAP card. `.agents/project.md` may forbid
+  with a tracked issue. `.agents/project.md` may forbid
   deferral.
 - P3 minor: optional.
 

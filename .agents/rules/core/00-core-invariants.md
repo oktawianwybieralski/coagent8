@@ -30,8 +30,8 @@ never relax these (README "Precedence").
 ## No hacks
 
 - Fix the root cause. No temporary workarounds, monkey patches, mock bypasses
-  in production code or "for now" branches without a roadmap card that removes
-  them.
+  in production code or "for now" branches without an issue that removes
+  them (rule 02, "Backlog").
 - No edits to installed packages, imports of private build output, copied
   framework internals or no-op replacements of framework validators. Do not
   suppress a framework error to make a demo work. An approved business
@@ -92,7 +92,7 @@ integration) is allowed only when:
 
 - it is isolated in its own file or function, named as temporary or demo,
 - it never runs in production,
-- a ROADMAP card names its removal.
+- an issue names its removal.
 
 ## Fix procedure
 

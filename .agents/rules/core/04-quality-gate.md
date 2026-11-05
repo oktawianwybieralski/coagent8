@@ -27,7 +27,8 @@ the affected scopes. The commands are in `.agents/project.md` and AGENTS.md.
   test asserts the measured property, not a proxy such as string presence.
 - Static inspection is not a runtime reproduction, and a successful build does
   not prove runtime behavior.
-- Lint warnings in code you touch are fixed in the same PR.
+- Lint warnings in code you touch are fixed in the same PR, except a warning
+  tracked as core rule 05 "Linting" allows.
 - Once the applicable checks pass, repeat or broaden them only for new
   changes, failures or unresolved risks.
 - Agents keep their own scripts, logs and drafts in their session scratch

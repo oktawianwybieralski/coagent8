@@ -36,9 +36,15 @@ tool's configuration, for CoAgent8 `~/.coagent8/config.json`.
 - 2026-10-29: when every required review is READY, the agent pushes the topic
   branch and opens the PR without asking again. Merge stays with the owner. -->
 
+## Backlog
+
+- Direction document: <!-- for example `docs/ROADMAP.md`: goals and the
+  milestones in order, linking their issues (rule 02, "Backlog") -->
+- Milestones: <!-- one per planned release, for example `1.0.0` -->
+
 ## Findings labels
 
-- Kind: `bug`, `dead-code`, `cleanup`, `needs-verification`
+- Kind: `bug`, `tech-debt`, `needs-triage`
 - Priority: `priority: high`, `priority: medium`, `priority: low`
 - Provenance: <!-- for example `found-in-docs` -->
 

@@ -1,20 +1,23 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/oktawianwybieralski/agent-standards.git",
-  "ref": "v0.1.0",
-  "commit": "e69b2d0c4545368340fe01360ddbe368d4db6bd0",
-  "managedDirectories": [".agents/rules/core", ".agents/standards"],
+  "ref": "v0.5.0",
+  "commit": "cf2c92ca26cea29178e3af627caf599a7632dcee",
+  "managedDirectories": [
+    ".agents/rules/core",
+    ".agents/standards"
+  ],
   "files": {
-    ".agents/rules/core/00-core-invariants.md": "b63d00113f67ffd6da86f1da52c8384f5553e924385d289a94efeb97ed306e88",
+    ".agents/rules/core/00-core-invariants.md": "68364ae309a45887385762aaf52031504761de718de04de8fbdad0ad7132db86",
     ".agents/rules/core/01-data-and-secrets.md": "390d1c1ac33e112e971ad78bb5980d1a017791f042f0a919b5ac9321f3a4a2d5",
-    ".agents/rules/core/02-git-workflow.md": "7942576295702cf90623869a131ee2a8db5f176b080427ec5c05d48d377e5d43",
-    ".agents/rules/core/03-review.md": "db6822e412e6eb7f6092894ceacc7e2be8560ad476af4374b51ecca9f1d2e5dd",
-    ".agents/rules/core/04-quality-gate.md": "37ba33d8466d7736e3afa8a28c0cb5c5725731bedc661adfc3d56ef0a162dd2a",
-    ".agents/rules/core/05-language-and-style.md": "f5a373f52f0cec593d1b2185327626e5149e64fa3fe1ce7de1257238421a6262",
-    ".agents/standards/project.template.md": "fb02b185fcdecedcc6dae679599aecf72a94c91be9dd715d682c608f5879142d",
+    ".agents/rules/core/02-git-workflow.md": "d771abe9f1fbdf20e30b61701887d86cab55b0d1b1feac9cfeaa1f104d8c32b1",
+    ".agents/rules/core/03-review.md": "70ff821480de32d3185eb4f45da2074abde76579f0c5978376a177665fc4a1f0",
+    ".agents/rules/core/04-quality-gate.md": "5b3e8913892f0d15e0e082a93bd4768a2add5f19a46bd7f56402323ab909b31c",
+    ".agents/rules/core/05-language-and-style.md": "02242d093b52a9c81a1edb298769f3010ad467cf6ecf83ffe27562c99e6fca20",
+    ".agents/standards/project.template.md": "e7867b6dcfac8af8f34b340c71e1b33350f765ccf84936e20d7f57012305915a",
     ".agents/standards/agent-standards.mjs": "051027943c7d32f93e17e40cf650ec62c46ac270caefa83118cf911ba9d99f48",
     ".agents/standards/check-keyboard-characters.mjs": "6cdc2a0656776f8bb89322136a0881061f74ffebeb938fc20f35625fddfe104e",
     ".agents/standards/forbidden-html-entities.mjs": "db121c991a031fdbdb096152290900b981d63832ea086121dbf02b4c485b7f9b",
-    ".agents/standards/pull_request_template.md": "6ba1a342ad421ce563609acf326524db8a89bcae13d31fceb1aef840d17e7ea3"
+    ".agents/standards/pull_request_template.md": "7c52b14545c177556241a398eba4ba1134183819b856e636158369da5e83ad3a"
   }
 }
