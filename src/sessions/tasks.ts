@@ -44,6 +44,8 @@ export interface DelegationTask {
   parentTask?: string;
   /** Place in the root's tree, the first level being 1. */
   depth?: number;
+  /** Whether this task coordinates workers instead of changing files (#164). */
+  coordinator?: boolean;
   /** Workspace-relative paths the worker may change; empty or absent means the whole workspace. */
   scope?: readonly string[];
   /** The complete result as the delegate tool formats it, written before the state turns terminal. */

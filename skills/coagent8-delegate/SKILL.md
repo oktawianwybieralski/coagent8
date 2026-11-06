@@ -79,6 +79,18 @@ Git worktree on its own branch (`git worktree add ../repo-a -b task-a`) and
 `workspace_path`; integrate the branches yourself. Create worktrees only where
 the user agrees to them.
 
+**Coordinator.** With `coordinate: true` an agent plans a larger objective and the
+server runs its workers: put the objective and acceptance criteria in `task`, and the
+paths its workers may hold in `scope`. You get a `task_handle` as usual, and its result
+is the coordinator's report and the list of workers. Check each worker's result with
+`session`, action `task`, and review the whole change yourself: a coordinator accepts
+nothing. Its workers cannot show a form, so list the checks they need in
+`allowedChecks` first, and leave out `checks`, `loop` and `mode: "sync"` on the
+coordinator itself. `cancel` with its `session_handle` or `root_handle` stops the workers.
+After an `interrupted` coordinator, call again with `coordinate: true`, its
+`session_handle` and a `task` saying how to go on: it hears what became of each
+worker, and nothing restarts by itself.
+
 Codex writes only inside the workspace; Claude's `Edit` and `Write` do too, but
 its `Bash` and every Antigravity command can reach any file the user can. Check
 `git status` after a cancel or timeout: partial changes stay. If the server ended

@@ -60,7 +60,10 @@ containment, and Claude's `Edit` and `Write` rules narrow to the scope unless an
 has a pattern character. The server
 reports the Git changes it observed before and after the turn, whoever
 may have made them, and never commits, resets or cleans up. Root limits come from the
-user's `rootLimits`; a calling agent, skill or worker cannot raise them. On Windows `delegate` refuses to run without the job helper,
+user's `rootLimits`; a calling agent, skill or worker cannot raise them. A coordinator
+(`delegate` with `coordinate: true`, #164) runs the read-only profile with no MCP server added. Its
+answer is untrusted data that the server validates; root, parent, session and profile
+come from the server's records, and no one can approve a model or a check for its workers. On Windows `delegate` refuses to run without the job helper,
 which ends a cancelled worker's descendants with it
 ([contract](../../docs/ARCHITECTURE.md#windows-per-call-containment-windows-001)).
 

@@ -124,10 +124,12 @@ export interface CheckResult {
 
 /** What the delegated tasks of one root may use together (#161). */
 export interface RootLimits {
-  /** Backend turns: first turns, fix rounds and review attempts of a loop. */
+  /** Backend turns: first turns, turns of a coordinator, fix rounds and review attempts of a loop. */
   maxCalls: number;
-  /** Tasks running at once. */
+  /** Workers running at once; a coordinator, which mostly waits for them, is not counted. */
   maxConcurrent: number;
+  /** Tasks that may name one task as their parent. */
+  maxChildren: number;
   /** Tasks in a chain of parents, the first level included. */
   maxDepth: number;
   /** Minutes from the root's creation to the end of its last task. */
@@ -135,10 +137,22 @@ export interface RootLimits {
 }
 
 /** Limits of a root when the user's configuration sets none. */
-export const DEFAULT_ROOT_LIMITS: Readonly<RootLimits> = Object.freeze({ maxCalls: 32, maxConcurrent: 4, maxDepth: 3, maxMinutes: 240 });
+export const DEFAULT_ROOT_LIMITS: Readonly<RootLimits> = Object.freeze({
+  maxCalls: 64,
+  maxConcurrent: 8,
+  maxChildren: 16,
+  maxDepth: 3,
+  maxMinutes: 240,
+});
 
 /** Highest value the configuration accepts for each limit. */
-export const ROOT_LIMIT_BOUNDS: Readonly<RootLimits> = Object.freeze({ maxCalls: 1000, maxConcurrent: 64, maxDepth: 16, maxMinutes: 1440 });
+export const ROOT_LIMIT_BOUNDS: Readonly<RootLimits> = Object.freeze({
+  maxCalls: 1000,
+  maxConcurrent: 64,
+  maxChildren: 256,
+  maxDepth: 16,
+  maxMinutes: 1440,
+});
 
 /** The last round of the server-owned loop of a delegated change. */
 export interface LoopReport {

@@ -107,7 +107,7 @@ test('two workers run at once on disjoint scopes; an overlapping start is refuse
 
   const report = await handleSession({ action: 'root', root_handle: first.rootHandle }, repo);
   assert.equal(report.structuredContent.calls, 2, 'refused starts are not charged to this root');
-  assert.match(report.content[0].text, /running: 2 of 4/);
+  assert.match(report.content[0].text, /running: 2 of 8/);
   assert.match(report.content[0].text, /do not make the root accepted/);
 
   const cancelled = await handleCancelSession({ root_handle: first.rootHandle });
@@ -536,7 +536,7 @@ test(
     const entry = readRoot(worker.rootHandle).tasks[0];
     assert.equal(entry.endedAt, undefined);
     const report = await handleSession({ action: 'root', root_handle: worker.rootHandle }, repo);
-    assert.match(report.content[0].text, /running: 1 of 4/);
+    assert.match(report.content[0].text, /running: 1 of 8/);
   },
 );
 

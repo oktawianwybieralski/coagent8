@@ -33,6 +33,8 @@ export interface RootTask {
   pidIdentity?: string;
   parentTask?: string;
   depth: number;
+  /** A coordinator: it plans and waits, so it holds no place among the workers running at once. */
+  coordinator?: boolean;
   startedAt: string;
   endedAt?: string;
 }
@@ -101,6 +103,16 @@ export function isRootTaskActive(task: RootTask): boolean {
   return isRootTaskServerAlive(task) || (task.writer ? writerMayStillRun(task.writer.file, task.writer.token) : false);
 }
 
+/** The workers using a root's places; a coordinator holds none. */
+export function runningWorkers(root: RootRecord): RootTask[] {
+  return root.tasks.filter(task => !task.coordinator && isRootTaskActive(task));
+}
+
+/** Whether a worker could start now as far as the root's concurrency goes. */
+export function rootHasFreeSlot(root: RootRecord): boolean {
+  return runningWorkers(root).length < root.limits.maxConcurrent;
+}
+
 /**
  * Creates a root.
  * @param limits - The user's limits; later configuration changes do not touch this root.
@@ -158,13 +170,15 @@ function charge(record: RootRecord): void {
  */
 export function reserveRootTask(
   handle: string,
-  request: { taskHandle: string; parentTask?: string; continues?: string },
+  request: { taskHandle: string; parentTask?: string; continues?: string; coordinator?: boolean },
 ): Promise<{ depth: number; parentTask?: string; deadlineMs: number }> {
   return updateRoot(handle, record => {
     assertUsable(record);
     if (record.tasks.some(task => task.taskHandle === request.taskHandle && isRootTaskActive(task))) {
       throw new ToolError('SESSION_BUSY', `Task ${request.taskHandle} is already starting in this root.`);
     }
+    // A parent must exist before its child, so the tree has no cycle; a repeated handle could otherwise name itself.
+    if (request.parentTask === request.taskHandle) throw new ToolError('INPUT_LIMIT', 'A task cannot be its own parent.');
     const parent = request.parentTask ? record.tasks.find(task => task.taskHandle === request.parentTask) : undefined;
     if (request.parentTask && !parent) throw new ToolError('INPUT_LIMIT', `Task ${request.parentTask.slice(0, 80)} is not in this root.`);
     const earlier = request.continues ? record.tasks.findLast(task => task.sessionHandle === request.continues) : undefined;
@@ -172,11 +186,24 @@ export function reserveRootTask(
     if (earlier && request.parentTask && request.parentTask !== earlier.parentTask) {
       throw new ToolError('INPUT_LIMIT', 'A continued session keeps its parent; omit parent_task.');
     }
+    // A coordinator waits between turns with no turn lease held, which alone could not refuse a second one.
+    if (earlier?.coordinator && request.coordinator && isRootTaskActive(earlier)) {
+      throw new ToolError('SESSION_BUSY', 'This coordinator is still running; cancel it or wait for it.');
+    }
     const depth = earlier?.depth ?? (parent ? parent.depth + 1 : 1);
     if (depth > record.limits.maxDepth) throw new ToolError('ROOT_LIMIT', `Root ${handle} allows a depth of ${record.limits.maxDepth}.`);
-    const running = record.tasks.filter(isRootTaskActive).length;
-    if (running >= record.limits.maxConcurrent) {
-      throw new ToolError('ROOT_LIMIT', `Root ${handle} already runs ${running} tasks, its limit; wait for one to finish.`);
+    if (request.parentTask && !earlier) {
+      const maxChildren = record.limits.maxChildren ?? DEFAULT_ROOT_LIMITS.maxChildren;
+      const children = new Set(record.tasks.filter(task => task.parentTask === request.parentTask).map(task => task.taskHandle));
+      if (children.size >= maxChildren) {
+        throw new ToolError('ROOT_LIMIT', `Task ${request.parentTask} already has ${children.size} children, the limit of root ${handle}.`);
+      }
+    }
+    if (!request.coordinator) {
+      const running = runningWorkers(record).length;
+      if (running >= record.limits.maxConcurrent) {
+        throw new ToolError('ROOT_LIMIT', `Root ${handle} already runs ${running} tasks, its limit; wait for one to finish.`);
+      }
     }
     charge(record);
     const parentTask = request.parentTask ?? earlier?.parentTask;
@@ -186,6 +213,7 @@ export function reserveRootTask(
       pidIdentity: ownProcessIdentity(),
       ...(parentTask ? { parentTask } : {}),
       depth,
+      ...(request.coordinator ? { coordinator: true } : {}),
       startedAt: new Date().toISOString(),
     });
     return { depth, ...(parentTask ? { parentTask } : {}), deadlineMs: Date.parse(record.deadlineAt) };
