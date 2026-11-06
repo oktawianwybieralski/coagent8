@@ -84,7 +84,7 @@ Antigravity) plans a larger objective and the server runs its workers: put the o
 paths its workers may hold in `scope`. You get a `task_handle` as usual, and its result
 is the coordinator's report and the list of workers. Check each worker's result with
 `session`, action `task`, and review the whole change yourself: a coordinator accepts
-nothing. Its workers cannot show a form, so list the checks they need in
+nothing. Its workers cannot show a form, so list the checks of their `loop` in
 `allowedChecks` first, and leave out `checks`, `loop` and `mode: "sync"` on the
 coordinator itself. `cancel` with its `session_handle` or `root_handle` stops the workers.
 After an `interrupted` coordinator, call again with `coordinate: true`, its

@@ -1416,7 +1416,7 @@ charged correction turn; a second ends the task `failed` with nothing started.
 child takes only `id`, `task`, `scope`, `checks`, `loop`, `backend`, `model`, `reasoning_effort`, `timeout_ms` and
 `continues` (an earlier child's id); any other field refuses the answer, so a forged identity has no field to travel in.
 A child's scope stays inside the coordinator's. A request runs no further than a caller's would without a form: no one
-can approve for it, so a model that needs asking and a check outside `allowedChecks` are refused and reported. A repository
+can approve for it, so a model that needs asking and a check of a worker's `loop` outside `allowedChecks` are refused and reported; without `loop`, `checks` are only text for the worker, under its own profile. A repository
 file can still persuade a coordinator to ask for work: the limits above bound that, and the caller reviews the result.
 
 **Limits.** Every coordinator turn and worker turn is charged to the root. A coordinator holds a place in
@@ -1439,7 +1439,7 @@ the root record within a second, and `root_handle` as for any root. From the req
 cannot stop one worker of a running round: it is not running then, which is why it has no cancel request.
 
 **Restart.** Nothing resumes by itself and no worker restarts by itself. The coordinator's record reads `interrupted` like any task of a dead server, and
-`delegate` with `coordinate: true` and its `session_handle` continues: it waits for workers another live server still runs, then tells it
+`delegate` with `coordinate: true` and its `session_handle` continues: it waits for any worker still storing its end, then tells it
 which ended, which were interrupted and which never started, in its root, under the same parent. A worker
 that may outlive its server on POSIX keeps its writer record (#186), so a duplicate writer is refused. A second coordinator of a session gets `SESSION_BUSY` from its reservation on, while the first is still reading its workers, and so does any other turn in that session, or closing it, while one runs. Its session counts as used while it waits, so it does not expire. These refusals look at the root record without a lock shared with the session, so a call racing a coordinator's start can still get in; the coordinator's next turn then fails closed, with its workers' results kept. A continuation can narrow the scope of the first start but not widen it, and naming none keeps it.
 

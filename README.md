@@ -323,8 +323,9 @@ an objective; it reads the workspace in read-only turns and ends each turn by as
 for workers or by finishing. CoAgent8 checks each request, runs the workers under the
 coordinator's root, with scopes inside its `scope` (an agreement, as above, not a sandbox),
 waits for all of them and resumes it with their reports. It has no CoAgent8 tools and cannot name a root, a parent or a session.
-Workers cannot ask you anything: a model that needs your approval, or a check not in
-`allowedChecks`, is refused and reported to the coordinator. Cancelling the coordinator's
+Workers cannot ask you anything: a model that needs your approval, or a check the server
+would run in a worker's `loop` that is not in `allowedChecks`, is refused and reported to the
+coordinator. Without `loop`, `checks` are only an instruction to the worker, under its own profile. Cancelling the coordinator's
 session or its root stops its workers. After a server restart nothing starts by itself:
 `delegate` with `coordinate: true` and its `session_handle` tells it what became of
 each worker. Its final report and its workers' changes are still yours to check.
