@@ -1374,7 +1374,8 @@ exclusive file while its task has no record, so two identical starts run one wor
 approved, consent obtained, the root checked and bound to the session once more, and the task record
 written, in that order, just before the turn. The time of a form counts against the task's budget, and the
 task's cancellation or deadline closes it. A start that this process knows reached no turn is refunded; a later turn is
-charged just before it starts, each part and synthesis of a loop's review included. After a crash
+charged just before it starts, each part and synthesis of a loop's review included. A deadline that passes
+during that charge leaves it spent, which costs nothing: the task's time is over. After a crash
 the charge stays; an entry without a session started no turn, and one with a session reads as possibly
 interrupted, as its record says. A task of a dead server stops counting as running only when its writer
 record shows no worker that can have outlived it (#186). A task whose process tree could not be confirmed
