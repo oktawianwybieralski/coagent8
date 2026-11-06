@@ -529,6 +529,18 @@ export function setExecutionCanceller(fn: ExecutionCanceller): void {
  * to another live CoAgent8 server process, cancellation is refused rather than
  * signalling a foreign process.
  */
+/**
+ * Refuses a session of another workspace, before anything acts on it.
+ * @throws When the handle is invalid or the session belongs to another workspace; a missing session passes.
+ */
+export function assertSessionWorkspace(handle: string, workspace: string): void {
+  const sanitized = sanitizeHandle(handle);
+  const file = sanitized ? getSessionFilePath(sanitized) : null;
+  if (!sanitized || !file) throw new Error(`Invalid session handle: '${handle}'.`);
+  const stored = readRecord(file, sanitized);
+  if (stored && canonicalPath(stored.workspace) !== canonicalPath(workspace)) throw new Error('Session workspace mismatch.');
+}
+
 export async function cancelSession(handle: string, workspace?: string): Promise<{ cancelled: boolean; message: string }> {
   const sanitized = sanitizeHandle(handle);
   if (!sanitized) throw new Error(`Invalid session handle: '${handle}'.`);

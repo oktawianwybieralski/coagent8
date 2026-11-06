@@ -640,3 +640,99 @@ test('agy cannot coordinate, named or chosen', async () => {
     await saveConfig({ ...CONFIG, rootLimits: {} });
   }
 });
+
+test('a worker cannot start once its coordinator was asked to stop, before or after its reservation', async () => {
+  const root = await createRoot();
+  const coordinator = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: coordinator, coordinator: true });
+  await bindRootTask(root.rootHandle, coordinator, 'syn_sess_stops');
+  const reserved = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: reserved, parentTask: coordinator });
+  assert.equal(await requestCoordinatorCancel('syn_sess_stops'), true);
+  await assert.rejects(bindRootTask(root.rootHandle, reserved, 'syn_sess_worker'), err => err.code === 'ABORTED');
+  await assert.rejects(
+    reserveRootTask(root.rootHandle, { taskHandle: createTaskHandle(), parentTask: coordinator }),
+    err => err.code === 'ABORTED',
+  );
+});
+
+test('a worker of a continued coordinator hears of a cancel of its later task', async () => {
+  const root = await createRoot();
+  const first = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: first, coordinator: true });
+  await bindRootTask(root.rootHandle, first, 'syn_sess_later');
+  await endRootTask(root.rootHandle, first);
+  await reserveRootTask(root.rootHandle, { taskHandle: createTaskHandle(), coordinator: true, continues: 'syn_sess_later' });
+  assert.equal(await requestCoordinatorCancel('syn_sess_later'), true);
+  await assert.rejects(
+    reserveRootTask(root.rootHandle, { taskHandle: createTaskHandle(), parentTask: first }),
+    err => err.code === 'ABORTED',
+  );
+});
+
+test('a continuing coordinator needs no free place to read its workers, and a later turn does', async () => {
+  const root = await createRoot({ maxConcurrent: 1 });
+  const first = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: first, coordinator: true });
+  await bindRootTask(root.rootHandle, first, 'syn_sess_full');
+  await endCoordinatorTurn(root.rootHandle, first);
+  await endRootTask(root.rootHandle, first);
+  const worker = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: worker, parentTask: first });
+  const again = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: again, coordinator: true, continues: 'syn_sess_full' });
+  await assert.rejects(beginCoordinatorTurn(root.rootHandle, again), err => err.code === 'ROOT_LIMIT');
+  await endRootTask(root.rootHandle, worker);
+  await beginCoordinatorTurn(root.rootHandle, again);
+});
+
+test('a cancel during a partial launch starts nothing more', async () => {
+  const repo = fixtureRepo();
+  process.env.CODEX_FIXTURE_WORKERS_HANG = '1';
+  await saveConfig({ ...CONFIG, rootLimits: { maxConcurrent: 1 } });
+  try {
+    script(
+      start({ id: 'one', task: 'WRITE a/new.txt', scope: ['a'] }, { id: 'two', task: 'WRITE b/new.txt', scope: ['b'] }),
+      finish('Never read'),
+    );
+    const started = await coordinate(repo);
+    const deadline = Date.now() + 15000;
+    while (!readRoot(started.rootHandle).tasks.some(entry => !entry.coordinator && entry.sessionHandle)) {
+      assert.ok(Date.now() < deadline, 'the first worker started');
+      await delay(25);
+    }
+    // The second waits for the only place the first holds.
+    await handleCancelSession({ session_handle: started.sessionHandle });
+    const task = await ended(started.taskHandle);
+    assert.equal(task.state, 'cancelled', task.result?.text);
+    assert.match(task.result.text, /- two: not started/);
+    assert.equal(fs.existsSync(path.join(repo, 'b', 'new.txt')), false);
+    assert.equal(readRoot(started.rootHandle).tasks.filter(entry => !entry.coordinator).length, 1);
+  } finally {
+    delete process.env.CODEX_FIXTURE_WORKERS_HANG;
+    await saveConfig({ ...CONFIG, rootLimits: {} });
+  }
+});
+
+test('a cancel naming another workspace stops nothing', async () => {
+  const repo = fixtureRepo();
+  process.env.CODEX_FIXTURE_WORKERS_HANG = '1';
+  try {
+    script(start({ id: 'one', task: 'WRITE a/new.txt', scope: ['a'] }), finish());
+    const started = await coordinate(repo);
+    const deadline = Date.now() + 15000;
+    while (!readRoot(started.rootHandle).tasks.some(entry => !entry.coordinator && entry.sessionHandle)) {
+      assert.ok(Date.now() < deadline, 'the worker started');
+      await delay(25);
+    }
+    await assert.rejects(
+      handleCancelSession({ session_handle: started.sessionHandle, workspace_path: fixtureRepo() }),
+      /workspace mismatch/,
+    );
+    assert.equal(readTask(started.taskHandle).state, 'running');
+    await handleCancelSession({ session_handle: started.sessionHandle });
+    await ended(started.taskHandle);
+  } finally {
+    delete process.env.CODEX_FIXTURE_WORKERS_HANG;
+  }
+});

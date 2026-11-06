@@ -159,6 +159,16 @@ function assertUsable(record: RootRecord): void {
   if (!(remainingMs > 0)) throw new ToolError('ROOT_LIMIT', `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes.`);
 }
 
+/** Refuses a worker of a coordinator someone asked to stop, also before its server has looked at the root. */
+function assertParentNotCancelled(record: RootRecord, parentTask: string | undefined): void {
+  const parent = parentTask ? record.tasks.find(task => task.taskHandle === parentTask) : undefined;
+  if (!parent?.sessionHandle) return;
+  // A continued coordinator has later tasks in the same session; its workers name the first.
+  if (record.tasks.some(task => task.sessionHandle === parent.sessionHandle && task.cancelRequested)) {
+    throw new ToolError('ABORTED', `The coordinator of task ${parentTask} was cancelled.`);
+  }
+}
+
 function assertFreeSlot(record: RootRecord): void {
   const running = runningTasks(record).length;
   if (running >= record.limits.maxConcurrent) {
@@ -214,7 +224,10 @@ export function reserveRootTask(
         throw new ToolError('ROOT_LIMIT', `Task ${request.parentTask} already has ${children.size} children, the limit of root ${handle}.`);
       }
     }
-    assertFreeSlot(record);
+    assertParentNotCancelled(record, request.parentTask ?? earlier?.parentTask);
+    // A continuing coordinator first reads what became of its workers, which may hold every place.
+    const continuing = request.coordinator && request.continues;
+    if (!continuing) assertFreeSlot(record);
     charge(record);
     const parentTask = request.parentTask ?? earlier?.parentTask;
     record.tasks.push({
@@ -223,7 +236,7 @@ export function reserveRootTask(
       pidIdentity: ownProcessIdentity(),
       ...(parentTask ? { parentTask } : {}),
       depth,
-      ...(request.coordinator ? { coordinator: true, turning: true } : {}),
+      ...(request.coordinator ? { coordinator: true, turning: !continuing } : {}),
       ...(earlier ? { continuation: true } : {}),
       // Held from here on: a continuation reads its workers before its turn binds the session.
       ...(request.coordinator && request.continues ? { sessionHandle: request.continues } : {}),
@@ -248,6 +261,7 @@ export function bindRootTask(
     assertUsable(record);
     const task = record.tasks.findLast(entry => entry.taskHandle === taskHandle);
     if (!task) throw new ToolError('PROTOCOL_ERROR', `Task ${taskHandle} has no reservation in root ${handle}.`);
+    assertParentNotCancelled(record, task.parentTask);
     task.sessionHandle = sessionHandle;
     if (writer) task.writer = writer;
   });

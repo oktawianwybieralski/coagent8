@@ -250,8 +250,8 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
     let sessionHandle = continued;
     let ledger: CoordinationRecord | null = continued ? readCoordination(continued) : null;
     let first = true;
-    /** Whether this coordinator holds a place among the root's running tasks; its reservation took one. */
-    let holdsPlace = true;
+    /** Whether this coordinator holds a place among the root's running tasks; a first start's reservation took one. */
+    let holdsPlace = !continued;
 
     const stopError = () =>
       budget.isExecutionExpired() || budget.isTimedOut()
@@ -449,8 +449,6 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
       // A continuation starts from what became of its workers; none starts by itself.
       let prompt = coordinatorPrompt(input.objective, input.scope);
       if (ledger) {
-        // Its workers may need the place it holds.
-        await givePlaceBack();
         const reports = await pendingReports(ledger);
         if (stopped()) throw stopError();
         prompt = [
@@ -471,6 +469,8 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
           if (!ledger?.children.length) return last;
           return { ...last, result: { ...last.result, output: [last.result.output, workersLine()].filter(Boolean).join('\n\n') } };
         }
+        // Stopped while the turn ended: its answer is not acted on, and it stays untold.
+        if (stopped()) return stoppedResult(last);
         await markReported();
         sessionHandle = last.sessionHandle ?? sessionHandle;
         let answer: CoordinatorAnswer;

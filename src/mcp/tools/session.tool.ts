@@ -1,5 +1,5 @@
 import type { ToolArguments, ToolProgress } from '../arguments.js';
-import { closeSession, cancelSession, listSessions } from '../../sessions/session.js';
+import { closeSession, assertSessionWorkspace, cancelSession, listSessions } from '../../sessions/session.js';
 import { cancelCoordinator, cancelRootTasks, captureDelegation } from '../../execution/delegation.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { WORKSPACE_PARAMETER } from '../schema.js';
@@ -183,10 +183,15 @@ export async function handleCancelSession(args: { session_handle?: string; root_
   const workspace = args.workspace_path ? resolveWorkspacePath(args.workspace_path) : undefined;
   // Looked up before the cancel, so a delegation that ends during it still reports its outcome.
   const awaitDelegation = captureDelegation(args.session_handle);
+  // Before anything acts on it: a wrong workspace must stop nothing.
+  if (workspace) assertSessionWorkspace(args.session_handle, workspace);
   // A coordinator between turns has no turn to cancel: this stops it, and it stops its workers.
   // One of another server process hears of it through its root, within its next look.
   const coordinator = cancelCoordinator(args.session_handle) || (await requestCoordinatorCancel(args.session_handle));
-  const result = await cancelSession(args.session_handle, workspace);
+  // A turn of a coordinator on another server refuses this; the request above reaches that server anyway.
+  const result = coordinator
+    ? await cancelSession(args.session_handle, workspace).catch(() => ({ cancelled: true, message: '' }))
+    : await cancelSession(args.session_handle, workspace);
   if (coordinator) {
     result.cancelled = true;
     result.message = `Coordinator ${args.session_handle} is stopping, with its workers.`;
