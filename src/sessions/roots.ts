@@ -317,17 +317,14 @@ export async function requestCoordinatorCancel(sessionHandle: string): Promise<b
 }
 
 /**
- * Whether a coordinator of this session runs now, between its turns too.
- * @returns False when the records cannot say: a damaged root must not stop an unrelated session.
+ * Whether a coordinator of this session runs now, between its turns too. A damaged root is skipped:
+ * it must not stop unrelated sessions, and a coordinator that cannot read its root stops itself.
  */
 export function isCoordinatorRunning(sessionHandle: string): boolean {
-  try {
-    const task = findRootOfSession(sessionHandle)?.tasks.findLast(entry => entry.sessionHandle === sessionHandle);
+  return eachRoot({ skipDamaged: true }).some(root => {
+    const task = root.tasks.findLast(entry => entry.sessionHandle === sessionHandle);
     return Boolean(task?.coordinator && isRootTaskActive(task));
-  } catch (err) {
-    process.stderr.write(`CoAgent8: root records could not be read: ${(err as Error).message}\n`);
-    return false;
-  }
+  });
 }
 
 /** Marks a task ended; its charge stays. */
@@ -368,7 +365,7 @@ export function removeUnusedRoot(handle: string): Promise<void> {
   });
 }
 
-function eachRoot(): RootRecord[] {
+function eachRoot(options: { skipDamaged?: boolean } = {}): RootRecord[] {
   let names: string[];
   try {
     names = fs.readdirSync(rootsDir());
@@ -379,8 +376,13 @@ function eachRoot(): RootRecord[] {
   return names
     .filter(name => name.endsWith('.json') && ROOT_HANDLE.test(name.slice(0, -'.json'.length)))
     .flatMap(name => {
-      const record = parseRoot(path.join(rootsDir(), name));
-      return record ? [record] : [];
+      try {
+        const record = parseRoot(path.join(rootsDir(), name));
+        return record ? [record] : [];
+      } catch (err) {
+        if (!options.skipDamaged) throw err;
+        return [];
+      }
     });
 }
 

@@ -27,6 +27,7 @@ import {
 } from '../sessions/coordinations.js';
 import { beginCoordinatorTurn, endCoordinatorTurn, readRoot, rootHasFreeSlot } from '../sessions/roots.js';
 import { inScope, normalizeScopeEntry } from '../workspace/changes.js';
+import { keepSessionAlive } from '../sessions/session.js';
 import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
 import type { DelegationOperation, TaskCompletion } from './delegation.js';
 import { createExecutionBudget } from './runtime/budget.js';
@@ -265,6 +266,10 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
     let ledger: CoordinationRecord | null = continued ? readCoordination(continued) : null;
     // The caller of a continuation can narrow what the first start allowed, and leaving it out keeps it.
     const scope = continuedScope(input.scope, ledger?.scope);
+    // Its record may have aged out with its root: this attempt's workers belong to this one.
+    if (ledger && ledger.rootHandle !== rootHandle) ledger = { ...ledger, rootHandle, parentTask: taskHandle };
+    /** Stops refreshing the session, which stays idle for as long as its workers run. */
+    let releaseSession = continued ? keepSessionAlive(continued) : () => undefined;
     let first = true;
     /** Whether this coordinator holds a place among the root's running tasks; a first start's reservation took one. */
     let holdsPlace = !continued;
@@ -328,6 +333,9 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
             onTurnStart: isFirst
               ? async start => {
                   assertCoordinatorBackend(start.backend);
+                  // First, as a refused start leaves its root and task refunded, which a ledger must not name.
+                  await onTurnStart(start);
+                  if (!continued) releaseSession = keepSessionAlive(start.sessionHandle);
                   if (!ledger) {
                     ledger = {
                       schemaVersion: 1,
@@ -339,7 +347,6 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
                     };
                     await writeCoordination(ledger);
                   }
-                  await onTurnStart(start);
                 }
               : beforeRound,
             beforeExtraTurn: beforeRound,
@@ -561,6 +568,7 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
       await settleWorkers();
       throw err;
     } finally {
+      releaseSession();
       workers.abort();
       budget.executionSignal.removeEventListener('abort', stopWorkers);
     }

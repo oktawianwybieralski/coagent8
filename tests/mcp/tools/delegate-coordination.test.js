@@ -18,7 +18,7 @@ const CAPTURE = path.join(tempDir, 'capture.jsonl');
 process.env.CODEX_FIXTURE_REPLIES = REPLIES;
 process.env.CODEX_FIXTURE_PROMPT_WRITES = '1';
 const { handleDelegate } = require('../../../src/mcp/tools/delegate.tool.ts');
-const { handleCancelSession } = require('../../../src/mcp/tools/session.tool.ts');
+const { handleCancelSession, handleSession } = require('../../../src/mcp/tools/session.tool.ts');
 const { saveConfig } = require('../../../src/config.ts');
 const { stopActiveDelegations } = require('../../../src/execution/delegation.ts');
 const { continuedScope, parseCoordinatorAnswer } = require('../../../src/execution/coordination.ts');
@@ -362,7 +362,13 @@ test('a time limit on a coordinator ends its workers too', async () => {
   process.env.CODEX_FIXTURE_WORKERS_HANG = '1';
   try {
     script(start({ id: 'one', task: 'WRITE a/new.txt', scope: ['a'] }), finish());
-    const started = await coordinate(repo, { timeout_ms: 4000 });
+    // Long enough for the worker to start also on a loaded machine; the point is what ends it.
+    const started = await coordinate(repo, { timeout_ms: 20000 });
+    const deadline = Date.now() + 19000;
+    while (!readRoot(started.rootHandle).tasks.some(entry => !entry.coordinator && entry.sessionHandle)) {
+      assert.ok(Date.now() < deadline, 'the worker started');
+      await delay(25);
+    }
     const task = await ended(started.taskHandle);
     assert.equal(task.state, 'timed_out', task.result?.text);
     const worker = readRoot(started.rootHandle).tasks.find(entry => !entry.coordinator);
@@ -545,7 +551,7 @@ test('a failed ledger write stops the workers it started', async () => {
     while (!names.length) {
       assert.ok(Date.now() < deadline, 'the request was stored');
       names = fs.existsSync(dir)
-        ? fs.readdirSync(dir).filter(name => readCoordinationFile(path.join(dir, name)) === started.sessionHandle)
+        ? fs.readdirSync(dir).filter(name => name.endsWith('.json') && readCoordinationFile(path.join(dir, name)) === started.sessionHandle)
         : [];
       await delay(5);
     }
@@ -564,9 +570,11 @@ test('a failed ledger write stops the workers it started', async () => {
   }
 });
 
+/** The session of a stored ledger that has a request in it; a ledger exists from the first turn on. */
 function readCoordinationFile(file) {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8')).sessionHandle;
+    const record = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return record.children.length ? record.sessionHandle : null;
   } catch {
     return null;
   }
@@ -794,8 +802,20 @@ test('no other call enters the session of a running coordinator', async () => {
       assert.ok(Date.now() < deadline, 'the worker started');
       await delay(25);
     }
+    const consulted = await handleConsult(
+      'consult',
+      { proposal: 'What now?', backend: 'codex', model: REQUEST.model, session_handle: started.sessionHandle },
+      repo,
+      null,
+      null,
+      approve,
+    ).catch(err => err);
+    assert.match(
+      consulted instanceof Error ? consulted.message : consulted.content.map(part => part.text).join(),
+      /A coordinator runs in this session/,
+    );
     await assert.rejects(
-      handleConsult({ proposal: 'What now?', backend: 'codex', session_handle: started.sessionHandle }, repo, null, null, approve),
+      handleSession({ action: 'close', session_handle: started.sessionHandle }, repo),
       err => err.code === 'SESSION_BUSY',
     );
     await handleCancelSession({ session_handle: started.sessionHandle });
@@ -803,4 +823,35 @@ test('no other call enters the session of a running coordinator', async () => {
   } finally {
     delete process.env.CODEX_FIXTURE_WORKERS_HANG;
   }
+});
+
+test('a session stays used while its coordinator waits, and a damaged root hides no one else', async () => {
+  const { createSession, keepSessionAlive, getSession } = require('../../../src/sessions/session.ts');
+  const repo = fixtureRepo();
+  const session = createSession('codex', repo);
+  const before = session.lastUsedAt;
+  await delay(5);
+  const stop = keepSessionAlive(session.sessionHandle, 10);
+  const deadline = Date.now() + 5000;
+  while (getSession(session.sessionHandle, { workspace: repo })?.lastUsedAt === before) {
+    assert.ok(Date.now() < deadline, 'the session was refreshed');
+    await delay(10);
+  }
+  stop();
+
+  const { isCoordinatorRunning } = require('../../../src/sessions/roots.ts');
+  const root = await createRoot();
+  const coordinator = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: coordinator, coordinator: true });
+  await bindRootTask(root.rootHandle, coordinator, 'syn_sess_seen');
+  const damaged = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `root_${'0'.repeat(32)}.json`);
+  fs.writeFileSync(damaged, '{broken');
+  try {
+    assert.equal(isCoordinatorRunning('syn_sess_seen'), true);
+    assert.equal(isCoordinatorRunning('syn_sess_other'), false);
+  } finally {
+    fs.rmSync(damaged);
+    await endRootTask(root.rootHandle, coordinator);
+  }
+  assert.equal(isCoordinatorRunning('syn_sess_seen'), false);
 });

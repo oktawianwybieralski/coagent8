@@ -9,7 +9,7 @@ import { ToolError } from '../../contracts/index.js';
 import { DEFAULT_ROOT_LIMITS } from '../../contracts/execution.js';
 import { redactDiagnostic } from '../../security/redaction.js';
 import { finishedTaskText, readTask } from '../../sessions/tasks.js';
-import { isRootTaskActive, readRoot, requestCoordinatorCancel, runningTasks } from '../../sessions/roots.js';
+import { isCoordinatorRunning, isRootTaskActive, readRoot, requestCoordinatorCancel, runningTasks } from '../../sessions/roots.js';
 import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {
@@ -222,6 +222,8 @@ export async function handleCancelSession(args: { session_handle?: string; root_
 export async function handleCloseSession(args: ToolArguments, workspace = resolveWorkspacePath(args.workspace_path)) {
   if (typeof args.session_handle !== 'string' || !args.session_handle)
     throw new ToolError('INPUT_LIMIT', 'Validation Error: session_handle is required for action "close".');
+  if (isCoordinatorRunning(args.session_handle))
+    throw new ToolError('SESSION_BUSY', 'A coordinator runs in this session; cancel it first.');
   const closed = await closeSession(args.session_handle, workspace);
   if (args.delete_history) await deleteHistory(args.session_handle, workspace);
   return {

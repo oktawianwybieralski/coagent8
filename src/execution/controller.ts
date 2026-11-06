@@ -238,10 +238,6 @@ async function executeTaskInternal(
   onProgress?: ((info: { message?: string }) => void) | null,
   options: TaskOptions = {},
 ): Promise<TaskExecutionResult> {
-  // Its session lease ends with each turn, and a turn from elsewhere would change what it resumes.
-  if (!options.coordinatorTurn && typeof args.session_handle === 'string' && isCoordinatorRunning(args.session_handle)) {
-    throw new ToolError('SESSION_BUSY', 'A coordinator runs in this session; cancel it or wait for it.');
-  }
   const isOwnedBudget = !options.budget && !options.context?.budget;
   const budget =
     options.budget ??
@@ -586,6 +582,10 @@ async function executeTaskInternal(
           ...(options.beforeExtraTurn ? { beforeExtraTurn: options.beforeExtraTurn } : {}),
           ...(options.requireEnvelope ? { requireCompleteTurn: true } : {}),
         };
+        // Checked with the session's lease held: a coordinator releases it between turns, and a turn from elsewhere would change what it resumes.
+        if (!options.coordinatorTurn && typeof args.session_handle === 'string' && isCoordinatorRunning(session.sessionHandle)) {
+          throw new ToolError('SESSION_BUSY', 'A coordinator runs in this session; cancel it or wait for it.');
+        }
         await options.onTurnStart?.({ sessionHandle: session.sessionHandle, backend: backend.id, model: model ?? null });
         const raw: ExecutionResult = await backend.adapter.execute(
           withAnswerLanguage(prompt, configSnapshot.config.answerLanguage),
