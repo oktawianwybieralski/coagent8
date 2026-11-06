@@ -199,7 +199,7 @@ export async function executeDelegation(
     const ownChanges = changes.changed.filter(change => !changes.possiblyOtherWriter?.includes(change.path));
     if (outcome.result.denials?.length && !ownChanges.length && !changes.unavailable) {
       const seen = changes.changed.length
-        ? 'The worker was denied access, and the only changes seen are in paths another worker held.'
+        ? 'The worker was denied access, and the only changes seen are in paths another worker held, so either may have changed them.'
         : 'The worker was denied access and changed no file.';
       outcome = {
         ...outcome,
