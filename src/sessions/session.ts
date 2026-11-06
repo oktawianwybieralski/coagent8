@@ -535,12 +535,15 @@ export function setExecutionCanceller(fn: ExecutionCanceller): void {
  * @returns Stops it.
  */
 export function keepSessionAlive(handle: string, everyMs = DEFAULT_SESSION_TTL_MS / 4): () => void {
-  const timer = setInterval(() => {
+  const refresh = () => {
     updateSession(handle, {}).catch((err: unknown) => {
       // The next look tries again, well before the session could expire.
       process.stderr.write(`CoAgent8: session ${handle} was not refreshed: ${(err as Error).message}\n`);
     });
-  }, everyMs);
+  };
+  // At once as well: a continuation may start close to the end of the session's time.
+  refresh();
+  const timer = setInterval(refresh, everyMs);
   timer.unref();
   return () => clearInterval(timer);
 }
