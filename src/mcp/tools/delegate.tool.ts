@@ -47,7 +47,7 @@ const MAX_LIST_ENTRIES = 50;
 export function getCanonicalDelegateToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.DELEGATE,
-    description: 'Another agent edits code here, no commits; returns a task handle, then its report and changed files. Review it.',
+    description: 'Another agent edits code here, no commits; returns a task handle, then report and files seen changing. Review it.',
     inputSchema: {
       type: 'object',
       properties: {

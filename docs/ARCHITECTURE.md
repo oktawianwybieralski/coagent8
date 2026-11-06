@@ -1431,7 +1431,7 @@ time, and each of its turns at most 30 minutes.
 the child's id, which goes through the `request_id` claim of a normal start. An id used earlier in the session refuses the answer, so a replayed answer starts no second
 worker. Workers start in order. One refused `SESSION_BUSY` or `ROOT_LIMIT` waits while a sibling runs, and a `ROOT_LIMIT` also
 while other tasks of the root hold every place; otherwise the refusal is its report, and the coordinator decides. All must end
-before the session resumes, so it reads no half-finished work of its own workers; a writer outside this root can still change the tree. A report is cut at 8 KiB and sent as data, and the caller reads
+before the session resumes, so it reads no half-finished work of its own workers; a writer outside this root can still change the tree. A report is cut at 8,192 characters and sent as data, and the caller reads
 the whole result with `session`; it counts as told only once a turn has ended, so a crash repeats it rather than loses it. A failed ledger write stops the workers and fails the task. `finish` ends the task with the report and the server's list of workers; a root still has no succeeded state.
 
 **Cancel.** `cancel` with the coordinator's `session_handle` works also between its turns and from another server process, which it reaches through

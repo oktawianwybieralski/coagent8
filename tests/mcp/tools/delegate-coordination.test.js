@@ -724,6 +724,33 @@ test('a cancel during a partial launch starts nothing more', async () => {
   }
 });
 
+test('a cancel on the same server is recorded too, so a start racing it is refused', async () => {
+  const repo = fixtureRepo();
+  process.env.CODEX_FIXTURE_WORKERS_HANG = '1';
+  try {
+    script(start({ id: 'one', task: 'WRITE a/new.txt', scope: ['a'] }), finish());
+    const started = await coordinate(repo);
+    const deadline = Date.now() + 15000;
+    while (!readRoot(started.rootHandle).tasks.some(entry => !entry.coordinator && entry.sessionHandle)) {
+      assert.ok(Date.now() < deadline, 'the worker started');
+      await delay(25);
+    }
+    const stopping = handleCancelSession({ session_handle: started.sessionHandle });
+    while (!readRoot(started.rootHandle).tasks.some(entry => entry.cancelRequested)) {
+      assert.ok(Date.now() < deadline, 'the cancel was recorded');
+      await delay(5);
+    }
+    await assert.rejects(
+      reserveRootTask(started.rootHandle, { taskHandle: createTaskHandle(), parentTask: started.taskHandle }),
+      err => err.code === 'ABORTED',
+    );
+    await stopping;
+    await ended(started.taskHandle);
+  } finally {
+    delete process.env.CODEX_FIXTURE_WORKERS_HANG;
+  }
+});
+
 test('a cancel naming another workspace stops nothing', async () => {
   const repo = fixtureRepo();
   process.env.CODEX_FIXTURE_WORKERS_HANG = '1';

@@ -187,7 +187,9 @@ export async function handleCancelSession(args: { session_handle?: string; root_
   if (workspace) assertSessionWorkspace(args.session_handle, workspace);
   // A coordinator between turns has no turn to cancel: this stops it, and it stops its workers.
   // One of another server process hears of it through its root, within its next look.
-  const coordinator = cancelCoordinator(args.session_handle) || (await requestCoordinatorCancel(args.session_handle));
+  // Recorded here too, so that a worker's start racing this cancel is refused at its reservation or binding.
+  const stoppedHere = cancelCoordinator(args.session_handle);
+  const coordinator = (await requestCoordinatorCancel(args.session_handle)) || stoppedHere;
   // A turn of a coordinator on another server refuses this; the request above reaches that server anyway.
   const result = coordinator
     ? await cancelSession(args.session_handle, workspace).catch(() => ({ cancelled: true, message: '' }))
