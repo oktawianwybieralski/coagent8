@@ -777,5 +777,20 @@ test('a limit met before a later turn ends the loop with the change as it was', 
     review: async () => assert.fail('no review of a failing check'),
   });
   assert.equal(fix.loop.outcome, 'needs_input');
+  assert.equal(fix.loop.checks.length, 1, 'the failure that asked for the fix stays in the report');
   assert.equal(fix.isError, false, 'the last turn that ran stays the result');
+  const aborted = {
+    ...refused,
+    result: { ...refused.result, error: { code: 'ABORTED', message: 'Root was cancelled.', retryable: false } },
+  };
+  const cancelledReview = await superviseChange(first, { ...base, fix: async () => first, review: async () => aborted });
+  assert.equal(cancelledReview.loop.outcome, 'cancelled');
+  assert.equal(cancelledReview.result.status, 'cancelled');
+  const cancelledFix = await superviseChange(first, {
+    ...base,
+    checks: [`${JSON.stringify(process.execPath)} -e "process.exit(3)"`],
+    fix: async () => aborted,
+    review: async () => assert.fail('no review of a failing check'),
+  });
+  assert.equal(cancelledFix.loop.outcome, 'cancelled');
 });

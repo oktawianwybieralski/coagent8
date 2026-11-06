@@ -142,6 +142,7 @@ export async function superviseChange(first: TaskExecutionResult, steps: LoopSte
         sessionHandle: reviewed.sessionHandle,
       };
       if (reviewed.isError) {
+        if (reviewed.result.error?.code === 'ABORTED') return interrupted(last, report, 'cancelled');
         if (reviewed.result.error?.code === 'ROOT_LIMIT') return ended(last, report, 'needs_input', reviewed.result.error.message);
         return reviewed.result.status === 'cancelled' || reviewed.result.status === 'timed_out'
           ? interrupted(last, report, reviewed.result.status)
@@ -156,12 +157,18 @@ export async function superviseChange(first: TaskExecutionResult, steps: LoopSte
     if (round >= LOOP_FIX_ROUNDS) return ended(last, report, failed.length ? 'checks_failed' : 'review_blocked');
     const prompt = fixPrompt(round + 1, failed, findings);
     // A later change invalidates earlier evidence, also when the turn making it fails.
+    const evidence = { checks: report.checks, review: report.review };
     report.checks = [];
     delete report.review;
     try {
       const fixed = await steps.fix(prompt);
       // Refused before its turn: the change is what it was, and the caller decides.
-      if (fixed.result.error?.code === 'ROOT_LIMIT') return ended(last, report, 'needs_input', fixed.result.error.message);
+      if (fixed.result.error?.code === 'ROOT_LIMIT' || fixed.result.error?.code === 'ABORTED') {
+        const unchanged: LoopReport = { ...report, checks: evidence.checks, ...(evidence.review ? { review: evidence.review } : {}) };
+        return fixed.result.error.code === 'ABORTED'
+          ? interrupted(last, unchanged, 'cancelled')
+          : ended(last, unchanged, 'needs_input', fixed.result.error.message);
+      }
       last = fixed;
       report.fixRounds = round + 1;
     } catch (err) {
