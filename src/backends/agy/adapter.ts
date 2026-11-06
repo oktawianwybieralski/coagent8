@@ -447,7 +447,8 @@ export async function execute(
     !options.abortSignal?.aborted;
 
   let recoveryAllowed = canRetryEmptyDenial;
-  if (canRetryEmptyDenial) {
+  // Charged only when time is left for the turn to start.
+  if (canRetryEmptyDenial && effectiveTimeoutMs - Math.max(0, Math.round(clock() - startedAtMs)) > 0) {
     try {
       await options.beforeExtraTurn?.();
     } catch (err) {
