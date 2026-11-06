@@ -317,8 +317,8 @@ another agent held is marked as possibly changed by either, and a check an agent
 sees the half-finished work of the others. Roots belong to a CoAgent8 data directory:
 a client with another one does not see them.
 
-Codex or Claude Code can also coordinate the others (agy cannot: it can start subagents
-that no limit sees). `delegate` with `coordinate: true` gives the agent
+Codex or Claude Code can also coordinate workers on Codex or Claude Code (agy takes no part:
+it can start subagents that no limit sees). `delegate` with `coordinate: true` gives the agent
 an objective; it reads the workspace in read-only turns and ends each turn by asking
 for workers or by finishing. CoAgent8 checks each request, runs the workers under the
 coordinator's root, with scopes inside its `scope` (an agreement, as above, not a sandbox),

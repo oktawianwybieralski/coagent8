@@ -237,6 +237,7 @@ function workerStart(
     exclusive: request.loop,
     root: { handle: link.rootHandle, parentTask: link.parentTask },
     ownerSignal: link.ownerSignal,
+    assertBackend: assertCoordinatorBackend,
     args: {
       ...(request.backend ? { backend: request.backend as ExecutionRequest['backend'] } : {}),
       ...(request.model ? { model: request.model } : {}),

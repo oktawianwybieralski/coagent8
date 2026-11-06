@@ -644,7 +644,7 @@ test('agy cannot coordinate, named or chosen', async () => {
   try {
     const answer = await handleDelegate({ task: 'x', coordinate: true }, repo, null, null, approve).catch(err => err);
     const text = answer instanceof Error ? answer.message : answer.content.map(part => part.text).join('\n');
-    assert.match(text, /agy cannot coordinate/);
+    assert.match(text, /agy cannot take part/);
   } finally {
     delete process.env.AGY_PATH;
     await saveConfig({ ...CONFIG, rootLimits: {} });
@@ -881,4 +881,32 @@ test('a session stays used while its coordinator waits, and a damaged root hides
     await endRootTask(root.rootHandle, coordinator);
   }
   assert.equal(isCoordinatorRunning('syn_sess_seen'), false);
+});
+
+test('no worker of a coordinator runs on agy, named or chosen', async () => {
+  assert.throws(() => parseCoordinatorAnswer(start({ id: 'one', task: 'x', backend: 'agy' }), []), /agy cannot take part/);
+  const { assertCoordinatorBackend } = require('../../../src/execution/coordination.ts');
+  const { startDelegation } = require('../../../src/execution/delegation.ts');
+  assert.throws(
+    () => assertCoordinatorBackend('agy'),
+    err => err.code === 'POLICY_DENIED',
+  );
+  assertCoordinatorBackend('codex');
+  assertCoordinatorBackend('claude');
+  assertCoordinatorBackend(undefined);
+  // A backend routing chose reaches the same refusal before the turn: nothing is written.
+  const repo = fixtureRepo();
+  const started = await startDelegation({
+    prompt: 'WRITE a/new.txt',
+    publicInput: 'x',
+    args: { backend: 'codex', model: REQUEST.model },
+    cwd: repo,
+    scope: ['a'],
+    assertBackend: assertCoordinatorBackend.bind(null, 'agy'),
+    format: outcome => ({ text: String(outcome.result.error?.message), isError: true }),
+    options: { requireEnvelope: false, ...approve },
+  }).catch(err => err);
+  const message = started instanceof Error ? started.message : started.outcome?.result.error?.message;
+  assert.match(String(message), /agy cannot take part/);
+  assert.equal(fs.existsSync(path.join(repo, 'a', 'new.txt')), false);
 });

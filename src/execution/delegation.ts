@@ -426,6 +426,8 @@ export interface DelegationStart {
   operation?: DelegationOperation;
   /** Marks the task a coordinator: no place among running workers, and its time is the root's unless it names its own. */
   coordinator?: boolean;
+  /** Refuses the backend the turn is about to use, also one chosen by routing, before the turn runs. */
+  assertBackend?: (backend: string) => void;
   /** Stops the task whenever it aborts, also after the start: a worker ends with its coordinator. */
   ownerSignal?: AbortSignal;
   /** Formats the outcome the way the tool returns it. */
@@ -599,6 +601,7 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
   }, ROOT_WATCH_MS);
   watch.unref();
   const onTurnStart: NonNullable<TaskOptions['onTurnStart']> = async turn => {
+    start.assertBackend?.(turn.backend);
     const callerSession = process.env.CLAUDE_CODE_SESSION_ID;
     const initial: DelegationTask = {
       schemaVersion: 1,
