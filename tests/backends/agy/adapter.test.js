@@ -169,12 +169,23 @@ test('a recovery turn is announced first, and a refusal means it does not run', 
       cwd: tempDir,
       onEvent: event => event.type === 'warning' && warnings.push(event.message),
       beforeExtraTurn: async () => {
-        throw new Error('Root used its calls.');
+        throw new (require('../../../src/contracts/error.ts').ToolError)('ROOT_LIMIT', 'Root used its calls.');
       },
     });
     assert.equal(refused.status, 'failed');
     assert.equal(refused.error.code, 'POLICY_DENIED');
     assert.ok(warnings.some(warning => /No recovery turn ran: Root used its calls/.test(warning)));
+    await assert.rejects(
+      execute('Change it', {
+        model: MODEL,
+        cwd: tempDir,
+        beforeExtraTurn: async () => {
+          throw new (require('../../../src/contracts/error.ts').ToolError)('ABORTED', 'Root was cancelled.');
+        },
+      }),
+      err => err.code === 'ABORTED',
+      'a cancelled root ends the turn as cancelled',
+    );
   } finally {
     delete process.env.coagent8_FIXTURE_MODE;
   }

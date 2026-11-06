@@ -452,6 +452,8 @@ export async function execute(
     try {
       await options.beforeExtraTurn?.();
     } catch (err) {
+      // A limit stops only the optional recovery; a cancellation or a deadline ends the turn as such.
+      if (!(err instanceof ToolError && err.code === 'ROOT_LIMIT')) throw err;
       recoveryAllowed = false;
       options.onEvent?.({ type: 'warning', message: `No recovery turn ran: ${(err as Error).message}` });
     }
