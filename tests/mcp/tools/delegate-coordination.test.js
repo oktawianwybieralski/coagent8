@@ -21,7 +21,8 @@ const { handleDelegate } = require('../../../src/mcp/tools/delegate.tool.ts');
 const { handleCancelSession } = require('../../../src/mcp/tools/session.tool.ts');
 const { saveConfig } = require('../../../src/config.ts');
 const { stopActiveDelegations } = require('../../../src/execution/delegation.ts');
-const { parseCoordinatorAnswer } = require('../../../src/execution/coordination.ts');
+const { continuedScope, parseCoordinatorAnswer } = require('../../../src/execution/coordination.ts');
+const { handleConsult } = require('../../../src/mcp/tools/consult.tool.ts');
 require('../../../src/execution/controller.ts').composeExecutionCancellation();
 const { readTask, createTaskHandle, writeTask } = require('../../../src/sessions/tasks.ts');
 const {
@@ -414,6 +415,7 @@ test('after a crash a continuation reports what became of each worker and restar
     sessionHandle: first.sessionHandle,
     rootHandle: first.rootHandle,
     parentTask: first.taskHandle,
+    scope: [],
     children: [
       { id: 'never', taskHandle: never, reported: false },
       { id: 'died', taskHandle: died, reported: false },
@@ -730,6 +732,72 @@ test('a cancel naming another workspace stops nothing', async () => {
       /workspace mismatch/,
     );
     assert.equal(readTask(started.taskHandle).state, 'running');
+    await handleCancelSession({ session_handle: started.sessionHandle });
+    await ended(started.taskHandle);
+  } finally {
+    delete process.env.CODEX_FIXTURE_WORKERS_HANG;
+  }
+});
+
+test('a continuation can narrow its scope but not widen it, and naming none keeps it', async () => {
+  assert.deepEqual(continuedScope([], ['src']), ['src']);
+  assert.deepEqual(continuedScope(['src/a'], ['src']), ['src/a']);
+  assert.throws(() => continuedScope(['lib'], ['src']), /only stay within src/);
+  assert.deepEqual(continuedScope(['lib'], []), ['lib']);
+
+  const repo = fixtureRepo();
+  script(finish('Scoped'));
+  const first = await coordinate(repo, { scope: ['a'] });
+  await ended(first.taskHandle);
+  script(start({ id: 'out', task: 'WRITE b/new.txt', scope: ['b'] }), finish('Stopped'));
+  const again = await coordinate(repo, { task: 'Go on', session_handle: first.sessionHandle });
+  const task = await ended(again.taskHandle);
+  assert.equal(fs.existsSync(path.join(repo, 'b', 'new.txt')), false);
+  assert.equal(task.state, 'completed', task.result?.text);
+  await assert.rejects(
+    handleDelegate({ task: 'Wider', ...REQUEST, scope: ['b'], session_handle: first.sessionHandle }, repo, null, null, approve),
+    /only stay within a/,
+  );
+});
+
+test('a cancel ends one attempt: a later continuation can start workers again', async () => {
+  const repo = fixtureRepo();
+  process.env.CODEX_FIXTURE_WORKERS_HANG = '1';
+  let first;
+  try {
+    script(start({ id: 'one', task: 'WRITE a/new.txt', scope: ['a'] }), finish());
+    first = await coordinate(repo);
+    const deadline = Date.now() + 15000;
+    while (!readRoot(first.rootHandle).tasks.some(entry => !entry.coordinator && entry.sessionHandle)) {
+      assert.ok(Date.now() < deadline, 'the worker started');
+      await delay(25);
+    }
+    assert.equal(await requestCoordinatorCancel(first.sessionHandle), true);
+    await ended(first.taskHandle);
+  } finally {
+    delete process.env.CODEX_FIXTURE_WORKERS_HANG;
+  }
+  script(start({ id: 'two', task: 'WRITE b/new.txt', scope: ['b'] }), finish('Done after all'));
+  const task = await ended((await coordinate(repo, { task: 'Go on', session_handle: first.sessionHandle })).taskHandle);
+  assert.equal(task.state, 'completed', task.result?.text);
+  assert.equal(fs.existsSync(path.join(repo, 'b', 'new.txt')), true);
+});
+
+test('no other call enters the session of a running coordinator', async () => {
+  const repo = fixtureRepo();
+  process.env.CODEX_FIXTURE_WORKERS_HANG = '1';
+  try {
+    script(start({ id: 'one', task: 'WRITE a/new.txt', scope: ['a'] }), finish());
+    const started = await coordinate(repo);
+    const deadline = Date.now() + 15000;
+    while (!readRoot(started.rootHandle).tasks.some(entry => !entry.coordinator && entry.sessionHandle)) {
+      assert.ok(Date.now() < deadline, 'the worker started');
+      await delay(25);
+    }
+    await assert.rejects(
+      handleConsult({ proposal: 'What now?', backend: 'codex', session_handle: started.sessionHandle }, repo, null, null, approve),
+      err => err.code === 'SESSION_BUSY',
+    );
     await handleCancelSession({ session_handle: started.sessionHandle });
     await ended(started.taskHandle);
   } finally {

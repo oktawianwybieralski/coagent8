@@ -164,7 +164,8 @@ function assertParentNotCancelled(record: RootRecord, parentTask: string | undef
   const parent = parentTask ? record.tasks.find(task => task.taskHandle === parentTask) : undefined;
   if (!parent?.sessionHandle) return;
   // A continued coordinator has later tasks in the same session; its workers name the first.
-  if (record.tasks.some(task => task.sessionHandle === parent.sessionHandle && task.cancelRequested)) {
+  // Only a running attempt counts: a later continuation is the caller's new decision.
+  if (record.tasks.some(task => task.sessionHandle === parent.sessionHandle && task.cancelRequested && isRootTaskActive(task))) {
     throw new ToolError('ABORTED', `The coordinator of task ${parentTask} was cancelled.`);
   }
 }
@@ -313,6 +314,20 @@ export async function requestCoordinatorCancel(sessionHandle: string): Promise<b
     task.cancelRequested = true;
     return true;
   });
+}
+
+/**
+ * Whether a coordinator of this session runs now, between its turns too.
+ * @returns False when the records cannot say: a damaged root must not stop an unrelated session.
+ */
+export function isCoordinatorRunning(sessionHandle: string): boolean {
+  try {
+    const task = findRootOfSession(sessionHandle)?.tasks.findLast(entry => entry.sessionHandle === sessionHandle);
+    return Boolean(task?.coordinator && isRootTaskActive(task));
+  } catch (err) {
+    process.stderr.write(`CoAgent8: root records could not be read: ${(err as Error).message}\n`);
+    return false;
+  }
 }
 
 /** Marks a task ended; its charge stays. */

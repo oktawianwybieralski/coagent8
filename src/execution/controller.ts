@@ -49,6 +49,7 @@ import {
   type CancelOutcome,
 } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history/index.js';
+import { isCoordinatorRunning } from '../sessions/roots.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
 import { combineSignals } from '../storage/lock.js';
@@ -104,6 +105,8 @@ export interface TurnStart {
 }
 
 export interface TaskOptions {
+  /** This turn belongs to the coordinator of its session, which other calls leave alone while it runs. */
+  coordinatorTurn?: boolean;
   /** Called once when consent and session acquisition passed and the backend turn starts. */
   onTurnStart?: (start: TurnStart) => Promise<void> | void;
   /** Runs before a further turn the adapter itself starts within this one. */
@@ -235,6 +238,10 @@ async function executeTaskInternal(
   onProgress?: ((info: { message?: string }) => void) | null,
   options: TaskOptions = {},
 ): Promise<TaskExecutionResult> {
+  // Its session lease ends with each turn, and a turn from elsewhere would change what it resumes.
+  if (!options.coordinatorTurn && typeof args.session_handle === 'string' && isCoordinatorRunning(args.session_handle)) {
+    throw new ToolError('SESSION_BUSY', 'A coordinator runs in this session; cancel it or wait for it.');
+  }
   const isOwnedBudget = !options.budget && !options.context?.budget;
   const budget =
     options.budget ??

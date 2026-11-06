@@ -35,6 +35,8 @@ export interface CoordinationRecord {
   rootHandle: string;
   /** The first task of this session: the parent of all its workers, also after a continuation. */
   parentTask: string;
+  /** What the first start allowed its workers; a continuation can only narrow it. */
+  scope: readonly string[];
   children: CoordinationChild[];
 }
 
@@ -66,7 +68,13 @@ export function readCoordination(sessionHandle: string): CoordinationRecord | nu
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw new ToolError('PROTOCOL_ERROR', 'The coordination record cannot be read.');
   }
-  if (!record || record.schemaVersion !== 1 || record.sessionHandle !== sessionHandle || !Array.isArray(record.children)) {
+  if (
+    !record ||
+    record.schemaVersion !== 1 ||
+    record.sessionHandle !== sessionHandle ||
+    !Array.isArray(record.children) ||
+    !Array.isArray(record.scope)
+  ) {
     throw new ToolError('PROTOCOL_ERROR', 'The coordination record is not valid.');
   }
   return record as CoordinationRecord;

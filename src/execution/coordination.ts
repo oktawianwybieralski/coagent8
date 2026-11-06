@@ -235,6 +235,20 @@ function reportOf(child: CoordinationChild, task: DelegationTask | null): string
   return `<worker id="${child.id}" state="${task.state}">\n${cut}\n</worker>`;
 }
 
+/**
+ * The scope of a continued coordination.
+ * @param given - What this call names.
+ * @param recorded - What the first start allowed, if this session has a ledger.
+ * @returns `given` when it stays inside; nothing named keeps `recorded`.
+ * @throws `INPUT_LIMIT` for a scope wider than the first start's.
+ */
+export function continuedScope(given: readonly string[], recorded: readonly string[] | undefined): readonly string[] {
+  if (!recorded || !recorded.length) return given;
+  if (!given.length) return recorded;
+  if (!given.every(path => inScope(path, recorded))) refuse(`This coordination may only stay within ${recorded.join(', ')}.`);
+  return given;
+}
+
 /** Runs a coordination as the operation of its task. */
 export function coordinationOperation(input: CoordinationInput): DelegationOperation {
   return async ({ taskHandle, rootHandle, signal, budget, onTurnStart, beforeRound }) => {
@@ -249,9 +263,17 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
     const continued = typeof input.args.session_handle === 'string' ? input.args.session_handle : undefined;
     let sessionHandle = continued;
     let ledger: CoordinationRecord | null = continued ? readCoordination(continued) : null;
+    // The caller of a continuation can narrow what the first start allowed, and leaving it out keeps it.
+    const scope = continuedScope(input.scope, ledger?.scope);
     let first = true;
     /** Whether this coordinator holds a place among the root's running tasks; a first start's reservation took one. */
     let holdsPlace = !continued;
+
+    /** What the root record says now, ahead of this server's next look at it. */
+    const cancelRecorded = (): boolean => {
+      const root = readRoot(rootHandle);
+      return root?.state === 'cancelled' || Boolean(root?.tasks.findLast(entry => entry.taskHandle === taskHandle)?.cancelRequested);
+    };
 
     const stopError = () =>
       budget.isExecutionExpired() || budget.isTimedOut()
@@ -295,6 +317,7 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
           null,
           {
             requireEnvelope: false,
+            coordinatorTurn: true,
             warnings: input.warnings,
             clock: input.clock,
             // The call that could show a form has ended by the second turn.
@@ -305,6 +328,17 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
             onTurnStart: isFirst
               ? async start => {
                   assertCoordinatorBackend(start.backend);
+                  if (!ledger) {
+                    ledger = {
+                      schemaVersion: 1,
+                      sessionHandle: start.sessionHandle,
+                      rootHandle,
+                      parentTask: taskHandle,
+                      scope,
+                      children: [],
+                    };
+                    await writeCoordination(ledger);
+                  }
                   await onTurnStart(start);
                 }
               : beforeRound,
@@ -447,7 +481,7 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
 
     const coordinate = async (): Promise<TaskExecutionResult> => {
       // A continuation starts from what became of its workers; none starts by itself.
-      let prompt = coordinatorPrompt(input.objective, input.scope);
+      let prompt = coordinatorPrompt(input.objective, scope);
       if (ledger) {
         const reports = await pendingReports(ledger);
         if (stopped()) throw stopError();
@@ -469,13 +503,13 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
           if (!ledger?.children.length) return last;
           return { ...last, result: { ...last.result, output: [last.result.output, workersLine()].filter(Boolean).join('\n\n') } };
         }
-        // Stopped while the turn ended: its answer is not acted on, and it stays untold.
-        if (stopped()) return stoppedResult(last);
         await markReported();
+        // Stopped while the turn ended, or asked to on another server: its answer is not acted on.
+        if (stopped() || cancelRecorded()) return stoppedResult(last);
         sessionHandle = last.sessionHandle ?? sessionHandle;
         let answer: CoordinatorAnswer;
         try {
-          answer = parseCoordinatorAnswer(last.result.output ?? '', input.scope);
+          answer = parseCoordinatorAnswer(last.result.output ?? '', scope);
           const used = new Set(ledger?.children.map(child => child.id));
           const replayed = answer.action === 'start' ? answer.children.find(child => used.has(child.id)) : undefined;
           if (replayed)
@@ -495,16 +529,9 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
         if (answer.action === 'finish') {
           return { ...last, result: { ...last.result, output: `${answer.report}\n\n${workersLine()}` } };
         }
-        if (!sessionHandle) return ended(last, 'failed', 'PROTOCOL_ERROR', 'The coordinator has no session to resume.');
-        const owner: string = sessionHandle;
-        const record: CoordinationRecord = ledger ?? {
-          schemaVersion: 1,
-          sessionHandle: owner,
-          rootHandle,
-          parentTask: taskHandle,
-          children: [],
-        };
-        ledger = record;
+        if (!ledger) return ended(last, 'failed', 'PROTOCOL_ERROR', 'The coordinator has no record to resume from.');
+        const record: CoordinationRecord = ledger;
+        const owner = record.sessionHandle;
         for (const child of answer.children) {
           record.children.push({
             id: child.id,

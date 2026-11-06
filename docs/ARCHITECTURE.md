@@ -1420,7 +1420,7 @@ can approve for it, so a model that needs asking and a check outside `allowedChe
 file can still persuade a coordinator to ask for work: the limits above bound that, and the caller reviews the result.
 
 **Limits.** Every coordinator turn and worker turn is charged to the root. A coordinator holds a place in
-`maxConcurrent` during its turns and gives it back while it waits, since its workers may need it; a later turn waits for a free place.
+`maxConcurrent` during its turns and gives it back while it waits, since its workers may need it; a later turn waits for a free place, and a continuation takes none until its first turn, as its workers may hold them all.
 `maxChildren` bounds the tasks
 naming one parent, under the root's lock, also for a caller's `parent_task`, and a continuation does not count again. One answer asks for at most 64 children, and one ledger names at most 2000.
 A coordinator is one level of depth, so `maxDepth` 1 refuses its workers. Workers cannot coordinate. A parent must exist before
@@ -1435,13 +1435,13 @@ before the session resumes, so it reads no half-finished work of its own workers
 the whole result with `session`; it counts as told only once a turn has ended, so a crash repeats it rather than loses it. A failed ledger write stops the workers and fails the task. `finish` ends the task with the report and the server's list of workers; a root still has no succeeded state.
 
 **Cancel.** `cancel` with the coordinator's `session_handle` works also between its turns and from another server process, which it reaches through
-the root record within a second, and `root_handle` as for any root. Either stops its workers, like the end of its time, and it waits up to 15 seconds for them to store their final state. It
+the root record within a second, and `root_handle` as for any root. From the request on, no worker of the running attempt can be reserved or bound, also before its server has looked, and an answer arriving with a stop is not acted on. Either stops its workers, like the end of its time, and it waits up to 15 seconds for them to store their final state. It
 cannot stop one worker of a running round: it is not running then, which is why it has no cancel request.
 
 **Restart.** Nothing resumes by itself and no worker restarts by itself. The coordinator's record reads `interrupted` like any task of a dead server, and
 `delegate` with `coordinate: true` and its `session_handle` continues: it waits for workers another live server still runs, then tells it
 which ended, which were interrupted and which never started, in its root, under the same parent. A worker
-that may outlive its server on POSIX keeps its writer record (#186), so a duplicate writer is refused. A second coordinator of a session gets `SESSION_BUSY` from its reservation on, while the first is still reading its workers.
+that may outlive its server on POSIX keeps its writer record (#186), so a duplicate writer is refused. A second coordinator of a session gets `SESSION_BUSY` from its reservation on, while the first is still reading its workers, and so does any other call in that session while one runs. A continuation can narrow the scope of the first start but not widen it, and naming none keeps it.
 
 **Native subagents.** Claude's read-only tool list has no agent tool and Codex's subagents stay off, as the profiles verify. agy's read-only turn reports
 `invoke_subagent` and `schedule` among its tools (its own answer, agy 1.5.1, 2026-11-06, not an observed use), and no setting that turns them off is established. So agy cannot coordinate, whether named or chosen by `auto`, which fails
