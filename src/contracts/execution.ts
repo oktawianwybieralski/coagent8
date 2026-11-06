@@ -229,6 +229,8 @@ export interface TerminalExecutionResult extends ExecutionResult {
  * Options configuring adapter execution.
  */
 export interface ExecutionOptions {
+  /** Runs before a further turn the adapter itself starts; a refusal means that turn does not run. */
+  beforeExtraTurn?: () => Promise<void>;
   /** Current working directory for CLI execution. */
   cwd?: string;
   /** Model override name. */

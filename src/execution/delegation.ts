@@ -135,6 +135,8 @@ export async function executeDelegation(
     const turn = (text: string, turnArgs: ExecutionRequest, turnOptions: typeof taskOptions) =>
       executeTask(text, publicInput, turnArgs, cwd, abortSignal, onProgress, {
         ...turnOptions,
+        // An adapter's own recovery turn is a backend turn too, in the first turn as in a later one.
+        ...(beforeRound ? { beforeExtraTurn: beforeRound } : {}),
         profile: 'workspace-write',
         writeScope: scope,
       });
@@ -155,6 +157,7 @@ export async function executeDelegation(
             budget,
             context: { abortSignal: budget.executionSignal, budget, timeoutMs: budget.remainingExecutionMs() },
             onTurnStart: beforeRound,
+            beforeExtraTurn: beforeRound,
           });
         } finally {
           budget.dispose();
@@ -357,6 +360,8 @@ export interface Supervision {
       context: NonNullable<TaskOptions['context']>;
       /** Pass to the turn, so it runs just before each backend turn of the round. */
       onTurnStart: (() => Promise<void>) | undefined;
+      /** Pass to the turn too, for a recovery turn its adapter starts. */
+      beforeExtraTurn: (() => Promise<void>) | undefined;
     }) => Promise<T>,
   ) => Promise<T>;
   fix: (prompt: string) => Promise<TaskExecutionResult>;

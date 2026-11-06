@@ -1355,7 +1355,7 @@ does not see changes outside it. A check a worker runs sees the half-finished wo
 
 **Root.** `delegate` without `root_handle` starts a root, in `<data>/delegations/roots/`. The limits
 are `rootLimits` of the user's configuration when the root is created: `maxCalls` 32 (first
-turns and every later backend turn of a loop), `maxConcurrent` 4, `maxDepth` 3 and
+turns, every later backend turn of a loop and agy's recovery turn), `maxConcurrent` 4, `maxDepth` 3 and
 `maxMinutes` 240. A calling agent cannot raise them. Every reservation runs under the record's
 lock, also across server processes; a task's budget is its `timeout_ms` or the default, cut to
 what is left of the root's time. At a limit a start fails with `ROOT_LIMIT` and a loop ends with

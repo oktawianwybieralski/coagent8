@@ -106,6 +106,8 @@ export interface TurnStart {
 export interface TaskOptions {
   /** Called once when consent and session acquisition passed and the backend turn starts. */
   onTurnStart?: (start: TurnStart) => Promise<void> | void;
+  /** Runs before a further turn the adapter itself starts within this one. */
+  beforeExtraTurn?: () => Promise<void>;
   /** Gate review results on the State Envelope. */
   requireEnvelope?: boolean;
   /** Notices added to the result, such as a deprecated tool name. */
@@ -574,6 +576,7 @@ async function executeTaskInternal(
           onEvent: receive,
           profile: options.profile ?? 'read-only',
           ...(options.writeScope ? { writeScope: options.writeScope } : {}),
+          ...(options.beforeExtraTurn ? { beforeExtraTurn: options.beforeExtraTurn } : {}),
           ...(options.requireEnvelope ? { requireCompleteTurn: true } : {}),
         };
         await options.onTurnStart?.({ sessionHandle: session.sessionHandle, backend: backend.id, model: model ?? null });

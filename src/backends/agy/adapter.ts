@@ -446,7 +446,16 @@ export async function execute(
     !s.output.trim() &&
     !options.abortSignal?.aborted;
 
+  let recoveryAllowed = canRetryEmptyDenial;
   if (canRetryEmptyDenial) {
+    try {
+      await options.beforeExtraTurn?.();
+    } catch (err) {
+      recoveryAllowed = false;
+      options.onEvent?.({ type: 'warning', message: `No recovery turn ran: ${(err as Error).message}` });
+    }
+  }
+  if (recoveryAllowed) {
     const elapsedMs = Math.max(0, Math.round(clock() - startedAtMs));
     const remainingTimeoutMs = effectiveTimeoutMs - elapsedMs;
     if (remainingTimeoutMs > 0) {

@@ -150,6 +150,36 @@ test('Gemini protocol errors are authoritative at exit zero and failures have ty
   delete process.env.coagent8_FIXTURE_MODE;
 });
 
+test('a recovery turn is announced first, and a refusal means it does not run', async () => {
+  process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-recover';
+  try {
+    let charged = 0;
+    const recovered = await execute('Change it', {
+      model: MODEL,
+      cwd: tempDir,
+      beforeExtraTurn: async () => {
+        charged++;
+      },
+    });
+    assert.equal(charged, 1);
+    assert.equal(recovered.status, 'completed', JSON.stringify(recovered.error));
+    const warnings = [];
+    const refused = await execute('Change it', {
+      model: MODEL,
+      cwd: tempDir,
+      onEvent: event => event.type === 'warning' && warnings.push(event.message),
+      beforeExtraTurn: async () => {
+        throw new Error('Root used its calls.');
+      },
+    });
+    assert.equal(refused.status, 'failed');
+    assert.equal(refused.error.code, 'POLICY_DENIED');
+    assert.ok(warnings.some(warning => /No recovery turn ran: Root used its calls/.test(warning)));
+  } finally {
+    delete process.env.coagent8_FIXTURE_MODE;
+  }
+});
+
 test('#92: a workspace-write turn names the denied action and recovers once inside the workspace (fixture)', async () => {
   const capture = path.join(tempDir, 'write-denial-capture.json');
   Object.assign(process.env, {
