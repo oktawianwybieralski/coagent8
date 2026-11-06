@@ -14,9 +14,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { ToolError } from '../contracts/index.js';
 import { getDataDir } from '../paths.js';
-import { atomicWrite } from '../storage/lock.js';
+import { atomicWrite, withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
-import { isRecordedProcessAlive } from './activity.js';
+import { isRecordedProcessAlive, ownProcessIdentity } from './activity.js';
 
 export type TaskState = 'running' | 'completed' | 'failed' | 'cancelled' | 'timed_out' | 'interrupted';
 
@@ -38,6 +38,14 @@ export interface DelegationTask {
   callerSession?: string;
   /** Hash of the request behind a caller's request id. */
   requestFingerprint?: string;
+  /** The root whose budget and cancellation this task shares; absent on a synchronous-era record. */
+  rootHandle?: string;
+  /** The task the caller named as this one's parent. */
+  parentTask?: string;
+  /** Place in the root's tree, the first level being 1. */
+  depth?: number;
+  /** Workspace-relative paths the worker may change; empty or absent means the whole workspace. */
+  scope?: readonly string[];
   /** The complete result as the delegate tool formats it, written before the state turns terminal. */
   result?: { text: string; isError: boolean };
 }
@@ -84,6 +92,49 @@ export async function writeTask(task: DelegationTask): Promise<void> {
   if (task.state === 'running') removeEndNote(task.taskHandle);
   fs.mkdirSync(tasksDir(), { recursive: true, mode: 0o700 });
   await atomicWrite(taskFile(task.taskHandle), JSON.stringify(task));
+}
+
+/**
+ * Claims a request id while its task has no record yet, so two identical starts cannot both run.
+ * A task's record is written before its turn starts, so a dead owner without one started no turn.
+ * Every step runs under the claim's lock: a reader never sees half a claim, and a release or a
+ * takeover removes only the claim it read.
+ * @returns Gives the claim up; idempotent, and it never rejects: the claim then ages out.
+ * @throws `SESSION_BUSY` while a live server process holds the claim.
+ */
+export async function claimTaskRequest(handle: string): Promise<() => Promise<void>> {
+  const file = `${taskFile(handle)}.starting`;
+  const token = crypto.randomUUID();
+  const readHolder = (): { pid?: unknown; identity?: unknown; token?: unknown } | null => {
+    try {
+      return JSON.parse(readBoundedFileSync(file, 1024)) as { pid?: unknown; identity?: unknown; token?: unknown };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      // Written atomically under this lock, so unreadable means damaged, and nobody can own it.
+      return {};
+    }
+  };
+  await withFileLock(file, async () => {
+    const holder = readHolder();
+    if (holder && typeof holder.pid === 'number') {
+      if (isRecordedProcessAlive(holder.pid, typeof holder.identity === 'string' ? holder.identity : undefined)) {
+        throw new ToolError('SESSION_BUSY', 'The same request_id is still starting; read its task shortly.');
+      }
+    }
+    await atomicWrite(file, JSON.stringify({ pid: process.pid, identity: ownProcessIdentity(), token }));
+  });
+  let released = false;
+  return async () => {
+    if (released) return;
+    released = true;
+    try {
+      await withFileLock(file, async () => {
+        if (readHolder()?.token === token) fs.rmSync(file, { force: true });
+      });
+    } catch (err) {
+      process.stderr.write(`CoAgent8: the claim on ${handle} was not removed: ${(err as Error).message}\n`);
+    }
+  };
 }
 
 /** Attempts to store a final record before the result is given up; a full disk may clear. */
@@ -269,6 +320,13 @@ export function pruneTasks(now = Date.now()): void {
     throw err;
   }
   for (const name of names) {
+    // A claim left by a dead process is taken over by its request; one that never returns ages out.
+    if (name.endsWith('.json.starting')) {
+      const claimed = path.join(tasksDir(), name);
+      const at = fs.statSync(claimed, { throwIfNoEntry: false })?.mtimeMs;
+      if (at !== undefined && now - at >= TASK_RETENTION_MS) fs.rmSync(claimed, { force: true });
+      continue;
+    }
     if (!name.endsWith('.json')) continue;
     const file = path.join(tasksDir(), name);
     const modified = fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs;

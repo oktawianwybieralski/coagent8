@@ -112,10 +112,10 @@ The retired src/constants.ts forwarding module has no compatibility exemption.
 | --- | --- |
 | consult | Plain second opinion; proposal required, optional architecture/debug/implementation analysis |
 | review | Bounded Git review, State Envelope and server-derived READY/BLOCKED; large diffs in parts (REVIEW-002); approved `checks` run by the server first (REVIEW-003) |
-| delegate | Workspace-write turn with task, scope and checks; one writer per workspace; observed Git changes reported apart from the answer ([DELEGATE-001w](#write-delegation-delegate-001w)); returns a task handle at once, `wait` and caller wake-up, optional server-owned `loop` ([DELEGATE-001c](#asynchronous-delegation-and-caller-wake-up-delegate-001c)) |
+| delegate | Workspace-write turn with task, scope and checks; disjoint writers per work tree under a root budget; observed Git changes reported apart from the answer ([DELEGATE-001w](#write-delegation-delegate-001w)); returns a task handle at once, `wait` and caller wake-up, optional server-owned `loop` ([DELEGATE-001c](#asynchronous-delegation-and-caller-wake-up-delegate-001c)) |
 | doctor | Default model view (cached): per backend its models, efforts, output prices, default and approval need; scope health: installation/auth/profile evidence, server version, runtime path, defaults, quotas |
-| session | Workspace-scoped list (`mine`), history or messages only, a delegation's task record, close; continuation uses session_handle |
-| cancel | Stops a known active/abandoned session turn; idle returns false |
+| session | Workspace-scoped list (`mine`), history or messages only, a delegation's task record, a root's limits and tasks, close; continuation uses session_handle |
+| cancel | Stops a known active/abandoned session turn, idle returns false; or every task of a root ([parallel workers](#parallel-workers-159-to-162)) |
 | issue | Sanitized report to paste and a GitHub bug report form link; does not submit it |
 
 Deprecated analyze/debug/implement and legacy run remain callable, unadvertised.
@@ -1252,10 +1252,11 @@ commands the worker runs before it reports. Shared execution parameters:
 `timeout_ms`. Model consent, price limits, routing and cancellation are the
 existing ones; `cancel` stops a running worker.
 
-**Preconditions.** The workspace is a Git work tree. One writer per work tree: a
-second `delegate` there is refused while one runs. The writer record lives in
-the work tree's Git directory (`coagent8-writer.json`, `sessions/writer.ts`), so
-every client's server process sees it whatever its data directory; each linked
+**Preconditions.** The workspace is a Git work tree. Writers of a work tree hold
+disjoint paths ([parallel workers](#parallel-workers-159-to-162)); without a `scope`
+a writer holds the whole tree and any other `delegate` there is refused while it runs. The writer records live in
+the work tree's Git directory (`coagent8-writer.json` and `coagent8-writers/`, `sessions/writer.ts`), so
+every client's server process sees them whatever its data directory; each linked
 worktree has its own, which permits parallel writers in separate worktrees.
 `consult` and `review` are not blocked. The nested-turn refusal stays: a worker
 cannot call CoAgent8.
@@ -1311,6 +1312,89 @@ gets a note about it.
 can. On Windows, `delegate` requires the job helper, so a cancelled or timed-out
 worker's descendants end with it. Checks are
 reported by the worker, not observed by the server (`COAGENT-004b`).
+
+## Parallel workers (#159 to #162)
+
+Owner decisions 2026-10-15 and 2026-11-02: `0.8.0` runs several `delegate` tasks under
+one root budget, in separate worktrees or in disjoint `scope`s of one work tree. A Codex
+consultation (`syn_sess_aefd355734534ae73f28805a`, 2026-11-05) changed the design in three places:
+scope never hides a change, the whole-tree record stays where it was, and a request id is
+claimed before anything else happens.
+
+**Task contract.** Start is `delegate`, inspect is `session` with `action: task` or `root`,
+continue is `delegate` with `session_handle`, and cancel is `cancel`. A task record carries its
+`taskHandle`, `rootHandle`, optional `parentTask`, `depth`, `scope`, `sessionHandle`, actual
+backend and model. States stay those of the task records as built: `running`, `completed`,
+`failed`, `cancelled`, `timed_out`, `interrupted`. Roles and profiles per task belong to
+group 3 of the [0.8.0 plan](ROADMAP.md#080-plan). `mode: "sync"` has no task, so it refuses
+`root_handle`, `parent_task` and the continuation of a session in a root.
+
+**Writer ownership.** A scope becomes a claim: repository-relative paths, following the
+symbolic links that exist at the start, refused when they leave the repository or enter
+`.git`, compared whole segment by whole segment and without regard to case. Two claims that can
+reach a common file overlap, and the later start gets `SESSION_BUSY` before it asks the user
+anything, on the check form or the model form. No `scope`, a scope covering the repository, and `loop: true` hold the whole tree: the
+loop's checks and review read all of it, and the review gate refuses a tree that changes. A
+claim has its own file in `<gitDir>/coagent8-writers/`, so its holder's synchronous updates around
+a process start need no lock; the whole tree keeps `coagent8-writer.json`. The lock on that file
+serializes every acquire and release. A dead server's writer stops blocking only when no
+recorded process group lives and it was not starting a worker, and then only for what overlaps.
+
+A claim schedules writers; it is not a sandbox. Codex and agy get it as an instruction, Claude's
+`Edit` and `Write` allow rules narrow to it (verified natively with Claude Code 2.1.318, 2026-11-05: a new file under a directory entry and an edit of a file entry succeeded, a new file and an edit outside were denied), and Claude's `Bash` reaches everything. A scope entry
+with a pattern character keeps Claude's rule at the workspace. A link replaced after the start is
+not seen, and neither is a hard link between two claims, which compare paths and not files.
+
+**Evidence.** The result still lists the paths the server saw change, up to 200 with a notice that
+more changed, and those outside the scope among them. A path that another writer held during the turn is also in `possiblyOtherWriter`,
+because the snapshots say what changed and not who changed it: either may have, and a write
+that was later restored is seen by neither. An ended writer stays as a tombstone until no
+writer of a claim is left, so one still running can name it; a writer that ended before another
+started is not its peer. The comparison covers the task's own workspace, so a worker in a subfolder
+does not see changes outside it. A check a worker runs sees the half-finished work of the others.
+
+**Root.** `delegate` without `root_handle` starts a root, in `<data>/delegations/roots/`. The limits
+are `rootLimits` of the user's configuration when the root is created: `maxCalls` 32 (first
+turns, every later backend turn of a loop and agy's recovery turn), `maxConcurrent` 4, `maxDepth` 3 and
+`maxMinutes` 240. A calling agent cannot raise them. Every reservation runs under the record's
+lock, also across server processes; a task's budget is its `timeout_ms` or the default, cut to
+what is left of the root's time. At a limit a start fails with `ROOT_LIMIT` and a loop ends with
+`needs_input`. A continued session keeps its root and depth even without naming it, by
+reading the root records; a parent names its root; conflicting names are refused, as is another parent for a
+continued session. Root records are kept for 7 days without a running task, past any root's time; a session continued
+later starts a new root under the user's limits. Consult and review
+calls of the coordinator are not charged, and no monetary limit is claimed. A root has no
+succeeded state: a worker finishing never accepts the work. A root belongs to its data directory;
+one from another is refused as unknown, so clients with different data directories share
+writer exclusion but not a budget.
+
+**Start, in order.** A repeated `request_id` returns its task. Otherwise the id is claimed with an
+exclusive file while its task has no record, so two identical starts run one worker: the other gets
+`SESSION_BUSY`, or the task once it exists. Then the root is reserved, the writer acquired, the checks
+approved, consent obtained, the root checked and bound to the session once more, and the task record
+written, in that order, just before the turn. The time of a form counts against the task's budget, and the
+task's cancellation or deadline closes it. A start that this process knows reached no turn is refunded; a later turn is
+charged just before it starts, each part and synthesis of a loop's review included. A deadline that passes
+during that charge leaves it spent, which costs nothing: the task's time is over. After a crash
+the charge stays; an entry without a session started no turn, and one with a session reads as possibly
+interrupted, as its record says. A task of a dead server stops counting as running only when its writer
+record shows no worker that can have outlived it (#186). A task whose process tree could not be confirmed
+ended keeps its place in the root until its server ends, like its writer slot, and a cancel reports it as still stopping.
+
+**Cancel.** `cancel` with `root_handle` marks the root cancelled under the same lock, so no
+reservation succeeds from then on, aborts this server's tasks at once, and waits up to 15
+seconds for each to store its evidence and end. Every running delegation also reads its root once
+a second, which reaches other server processes and also stops the checks and reviews of a loop. So
+another server's turn past its last check can still start, and it stops within that second; five
+failed reads in a row stop the worker too, as a root nobody can read could not cancel it. Nothing
+signals a process by a recorded PID. The answer lists what ended, what is still stopping, and tasks
+whose server died, whose processes can outlive it on POSIX (#186).
+
+**Native runs (Windows, 2026-11-05, real Codex, Claude Code and agy through the built server over MCP stdio).** On each backend: two workers ran at once on disjoint scopes and wrote their files, an overlapping start was refused, and cancelling the root ended two running workers as `cancelled`. Claude ran below a price limit, as this client shows no form. POSIX is not run.
+
+**Not covered.** A worker calling CoAgent8 stays refused until the gateway (#164). Published
+versions have no `delegate`, so no released server ignores `coagent8-writers/`; a development
+build of an earlier commit does, and must be restarted.
 
 ## Windows per-call containment (WINDOWS-001)
 
@@ -1401,7 +1485,7 @@ uses the open request, the session handle is known, and a refusal is still the c
 there is no `queued` state on disk, because a task is recorded only when its turn starts. The
 task record (`<data>/delegations/`) stores the result before the writer is released and turns
 final after the release, so a woken caller can delegate again at once. A `request_id` reused for
-another request is refused. A task of a dead server reads `interrupted` with a warning, because
+another request is refused, the root and parent included in what it stands for. A task of a dead server reads `interrupted` with a warning, because
 on POSIX its process group can outlive the server (`CUR-011`); the writer record stores those groups
 and is not taken over while one lives, so a second delegation cannot overlap that worker. A Codex scope reaching a folder that does not inherit the workspace's permissions is refused before the
 turn on Windows, because Codex's grant stops above it (#127). A worker
@@ -1417,7 +1501,7 @@ be in use; the `coagent8-delegate` skill tells the caller. Three things
 differ from the draft below: completed, notified and fetched are not separate states, because
 the waiter only reads the record and needs no delivery bookkeeping; the writer record is not
 released on an unconfirmed end of the tree, so it stays until the server restarts; and a repeat
-of `request_id` is recognized only once its turn has started. Only clients whose wake-up was
+of `request_id` returns its task only once its turn has started, and is refused before that. Only clients whose wake-up was
 observed get `wakeup: background_wait`; today that is Claude Code. Others get `none` and
 the same `wait_argv`.
 
@@ -1597,6 +1681,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-11-02 | `delegate` with `loop: true` runs a server-owned loop: after the worker the server runs the approved `checks` itself (an exact `allowedChecks` entry or the user's MCP form, parsed without a shell, outside any sandbox), then an independent review on a backend other than the worker's, avoiding the client's own CLI while another remains (#142), and returns failures to the worker for up to two fix rounds (DELEGATE-001f2). Without `loop` the 2026-10-21 rule stands: the caller runs the checks. |
 | 2026-11-02 | A form the client declines or closes without showing it (Claude Code 2.1.317, Codex 0.164) is reported as the client's answer with the user's ways to approve, never as the user's refusal (#135, #140). |
 | 2026-11-03 | A diff above 200,000 characters is reviewed in parts, each in its own session, then in one synthesis turn over their findings; more than 15 parts refuse the review (REVIEW-002). |
+| 2026-11-05 | Proposed by the agent, for the owner to change: root limit defaults of 32 calls, 4 concurrent tasks, depth 3 and 240 minutes; `loop: true` holds the whole work tree; every asynchronous delegation has a root, so a single worker needs no new argument. |
 | 2026-11-03 | The reviewer stays read-only; `review.checks` are run by the server before the turn under the same approval as the loop's checks, a check that does not pass blocks, and a check that changed the reviewed state refuses the review (REVIEW-003). |
 
 ## Known limitations

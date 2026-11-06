@@ -60,7 +60,7 @@ export async function handleReview(
 }
 
 /** Per-call options of a review. */
-export type ReviewOptions = Pick<TaskOptions, 'askConsent'> & {
+export type ReviewOptions = Pick<TaskOptions, 'askConsent' | 'onTurnStart' | 'beforeExtraTurn'> & {
   /** Asks the user about checks outside `allowedChecks`; absent when the client has no form. */
   askChecks?: CheckApprovalPrompt;
   onTiming?: TimingObserver;
@@ -313,6 +313,9 @@ export async function executeReview(
         turnOptions: {
           tracker,
           askConsent: options.askConsent,
+          // Before every backend turn, each part and the synthesis included.
+          onTurnStart: options.onTurnStart,
+          beforeExtraTurn: options.beforeExtraTurn,
           onTiming: options.onTiming,
           clock: options.clock,
           budget,
@@ -332,6 +335,8 @@ export async function executeReview(
         tracker,
         requireEnvelope: true,
         askConsent: options.askConsent,
+        onTurnStart: options.onTurnStart,
+        beforeExtraTurn: options.beforeExtraTurn,
         reviewContext: context,
         // A repeat with checks runs again: a verdict reached with other check results must not return.
         ...(serverChecks?.length ? {} : { reviewIdentity: { snapshot, scope: scopeInfo.label } }),
@@ -364,7 +369,10 @@ interface PartsReview {
   abortSignal: AbortSignal | null;
   onProgress: ToolProgress;
   context: ReviewGateContext;
-  turnOptions: Pick<TaskOptions, 'tracker' | 'askConsent' | 'onTiming' | 'clock' | 'budget' | 'context'>;
+  turnOptions: Pick<
+    TaskOptions,
+    'onTurnStart' | 'beforeExtraTurn' | 'tracker' | 'askConsent' | 'onTiming' | 'clock' | 'budget' | 'context'
+  >;
   verifyReviewSnapshot: () => Promise<string | undefined>;
 }
 

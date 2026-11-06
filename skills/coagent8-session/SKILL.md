@@ -13,7 +13,10 @@ description: List CoAgent8 sessions, read a session's history, close a session o
 - Continue: call consult or review again with the same `session_handle`. That
   keeps the other agent's context; a call without it starts from nothing.
 - Cancel: call `cancel` with the `session_handle` to stop the running turn. The
-  session is not closed.
+  session is not closed. With a `root_handle` instead it stops every delegated
+  agent of that root and no new one starts in it.
+- Root: call `session` with `action: root` and the `root_handle` to see the limits,
+  what they used and the state of each delegated task.
 - Close: call `session` with `action: close` when the conversation is finished.
   `delete_history: true` also deletes its history; ask the user before deleting.
 

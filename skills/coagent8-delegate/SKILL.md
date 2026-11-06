@@ -63,11 +63,21 @@ to 10 then shrink to reading the diff: only `passed` means the checks and the re
 went through, and the review is still another model's opinion. `needs_input` means
 a turn needed the user's approval: the change stays for you.
 
-One writer per Git work tree: a second delegate in the same work tree is
-refused while one runs, also from another client. For parallel work, give each agent its own Git worktree on its
-own branch (`git worktree add ../repo-a -b task-a`), call delegate for each with
-`workspace_path`, then integrate the branches yourself, run the checks on the
-result and review it once. Create worktrees only where the user agrees to them.
+**Parallel agents.** Several agents can work at once when their `scope`s do not
+overlap; an overlapping start is refused with `SESSION_BUSY`, also from another
+client. No `scope` or `loop: true` takes the whole work tree. Pass the first
+result's `root_handle` to each further delegate, so they share the user's limits
+(`ROOT_LIMIT` when one is reached: wait, or ask the user; you cannot raise it) and
+`cancel` with `root_handle` stops them all. `session` with `action: root` shows them.
+Start one wait per task. Split only work that does not touch the same files: a scope
+is checked at the start and observed at the end, not enforced, so read each result's
+warnings. A note that another worker held a path means either may have changed it.
+Each agent's own checks see the others' half-finished work, so run the checks and
+the review once on the whole result, after all have finished. A finished agent
+does not make the work accepted. Work that cannot be split by path needs its own
+Git worktree on its own branch (`git worktree add ../repo-a -b task-a`) and
+`workspace_path`; integrate the branches yourself. Create worktrees only where
+the user agrees to them.
 
 Codex writes only inside the workspace; Claude's `Edit` and `Write` do too, but
 its `Bash` and every Antigravity command can reach any file the user can. Check

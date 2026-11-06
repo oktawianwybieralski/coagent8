@@ -11,6 +11,7 @@ import { isValidModelIdentifier } from './contracts/models.js';
 import { MODEL_RULES, type GovernanceSettings, type ModelRules } from './contracts/governance.js';
 import { applyEditorSetting, readEditorSettings, type EditorSettingKey } from './config-overrides.js';
 import { COAGENT_SKILL_NAME, type SkillSelection } from './contracts/skills.js';
+import { ROOT_LIMIT_BOUNDS, type RootLimits } from './contracts/execution.js';
 
 /** Compatibility alias: config defaults may select a strategy, sessions may not. */
 export type BackendId = ProviderId | 'smart_quota';
@@ -47,6 +48,8 @@ export interface CoAgent8Config {
   answerLanguage?: string | null;
   /** Commands the server may run after a delegated change without asking, each exactly as written. */
   allowedChecks?: string[];
+  /** What the delegated tasks of one root may use together; a calling agent cannot raise it. */
+  rootLimits?: Partial<RootLimits>;
   routing: RoutingConfig;
   /** Per-backend settings; doctor records a default model here when it finds none. */
   backends: Partial<Record<ProviderId, BackendSettings>>;
@@ -189,6 +192,21 @@ export function validateConfig(value: unknown): CoAgent8Config {
     throw new Error('Configuration Error: Invalid allowedChecks: expected a list of commands.');
   }
 
+  const rootLimits = config.rootLimits;
+  if (rootLimits !== undefined) {
+    if (!rootLimits || typeof rootLimits !== 'object' || Array.isArray(rootLimits)) {
+      throw new Error('Configuration Error: Invalid rootLimits: expected an object.');
+    }
+    for (const [key, value] of Object.entries(rootLimits)) {
+      const most = Object.hasOwn(ROOT_LIMIT_BOUNDS, key) ? ROOT_LIMIT_BOUNDS[key as keyof RootLimits] : undefined;
+      if (most === undefined || !Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > most) {
+        throw new Error(
+          `Configuration Error: Invalid rootLimits.${key.slice(0, 40)}: expected a whole number from 1${most ? ` to ${most}` : ''}.`,
+        );
+      }
+    }
+  }
+
   const routing = config.routing;
   let strategy = DEFAULT_CONFIG.routing.strategy;
   let allowedBackends = [...DEFAULT_CONFIG.routing.allowedBackends];
@@ -315,6 +333,7 @@ export function validateConfig(value: unknown): CoAgent8Config {
     defaultBackend: defaultBackend as BackendId | null,
     ...(answerLanguage === undefined ? {} : { answerLanguage }),
     ...(allowedChecks === undefined ? {} : { allowedChecks: allowedChecks as string[] }),
+    ...(rootLimits === undefined ? {} : { rootLimits: rootLimits as Partial<RootLimits> }),
     routing: {
       strategy,
       allowedBackends,
@@ -430,6 +449,7 @@ function computeChangeIdentity(config: CoAgent8Config, provenance: ConfigProvena
     defaultBackend: config.defaultBackend,
     answerLanguage: config.answerLanguage,
     allowedChecks: config.allowedChecks,
+    rootLimits: config.rootLimits,
     routing: config.routing,
     backends: config.backends,
     governance: config.governance,

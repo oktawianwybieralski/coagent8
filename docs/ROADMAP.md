@@ -7,11 +7,10 @@ title: Roadmap
 Updated 2026-11-05. CoAgent8 is becoming a client-independent MCP system for
 orchestrating complete agent tasks. Roles, models and providers are
 independent. Read-only consultation is one execution profile, not the product
-boundary. `consult` and `review` run read-only; `delegate` runs one
-workspace-write worker per work tree in the background, optionally in a
-server-owned loop of checks, review and fix rounds. Separate linked worktrees
-can each run a writer at once; parallel workers under one root budget, disjoint
-scopes in one work tree and delegated coordination are not implemented yet.
+boundary. `consult` and `review` run read-only; `delegate` runs workspace-write
+workers in the background under one root budget, in disjoint scopes of a work
+tree or in separate linked worktrees, optionally in a server-owned loop of
+checks, review and fix rounds. Delegated coordination is not implemented yet.
 
 This file holds the direction and the order of the milestones. The work itself
 is in [GitHub Issues](https://github.com/oktawianwybieralski/coagent8/issues):
@@ -41,10 +40,10 @@ tags, publication and repository settings stay the owner's.
 
 | Area | Present on `develop` | Remaining for `0.8.0` |
 | --- | --- | --- |
-| Execution | Seven tools, three CLI adapters, plain consult, explicit model/effort, asynchronous `delegate` with task records and `wait`, a server-owned loop, one writer per linked worktree | Parallel workers under one root budget, disjoint scopes, delegated coordination (#159 to #166) |
+| Execution | Seven tools, three CLI adapters, plain consult, explicit model/effort, asynchronous `delegate` with task records and `wait`, a server-owned loop, parallel workers under one root budget in disjoint scopes or linked worktrees | Roles and verified profiles, delegated coordination (#160, #161, #164 to #166) |
 | Safety | Owned cleanup, hidden Windows launches, per-call Windows containment, redaction, explicit model and check consent, Codex/Claude inherited-tool controls | POSIX parent-death cleanup (#186); `arm64` and SmartScreen (#111); signing (#112) |
 | Review | Completeness, snapshot gate, post-turn recheck, reviews in parts, checks the server runs before the turn | Release hashes bound to the review (#148); other-tree review (#187, unscheduled) |
-| Storage/routing | Leases, bounded archives, cached catalogs/prices, writer records across server processes, caller label (Claude Code) | Ephemeral calls and early handles for consult and review (#188), end-to-end deadlines (the time reservation of the root budget, #161) |
+| Storage/routing | Leases, bounded archives, cached catalogs/prices, writer records across server processes, root reservations, caller label (Claude Code) | Ephemeral calls and early handles for consult and review (#188) |
 | Agent usability | Cached model view with CLI catalogs, per-model prices and release dates, price limit, result footer, client-declined forms reported as the client's answer | Fresh-client acceptance (#156), form-less consent (#154) |
 | Integrations | Shared config, setup, VSIX, owned registration/uninstall, client skills, Claude Code wake-up | Codex and agy wake-up (#113, #114), plugins (#151) |
 
@@ -65,18 +64,14 @@ wake-up, the caller label (Claude Code only) and the first slice of the
 server-owned loop; Windows per-call containment, accepted natively on `x64`;
 reviews of large changes in parts and checks the server runs before a review;
 the shared agent standards, one formatter and the documentation audit of
-2026-11-03.
+2026-11-03; parallel workers under one root
+([contract](ARCHITECTURE.md#parallel-workers-159-to-162)).
 
-**Remaining, in order.** Groups 1-3 are the orchestra; 4 needs the owner in the
-clients; 5 is the release-candidate gate.
+**Remaining, in order.** Groups 2-3 are the orchestra; 4 needs the owner in the
+clients; 5 is the release-candidate gate. Group 1, parallel workers, is delivered:
+the task contract (#159) reconciled with the task records as built, writer ownership
+of disjoint scopes (#160), root reservations (#161) and the writer lifecycle (#162).
 
-1. **Parallel workers.** Several `delegate` tasks under one root budget, in
-   separate worktrees or in disjoint `scope`s of one work tree: the task
-   contract (#159) reconciled with the task records as built, writer ownership
-   beyond one writer per work tree (#160), root reservations for calls,
-   concurrency, time and depth (#161) and the writer lifecycle (#162).
-   Acceptance: two workers in parallel on disjoint scopes; an overlapping start
-   refused; cancelling the root stops every worker; native per backend.
 2. **Delegated coordination** (#164): a task-scoped gateway with root and
    parent identity, fan-out and depth limits, cycle and replay refusal and tree
    cancellation. The nested-turn refusal stays until the gateway is accepted.

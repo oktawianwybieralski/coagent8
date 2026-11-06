@@ -446,7 +446,19 @@ export async function execute(
     !s.output.trim() &&
     !options.abortSignal?.aborted;
 
-  if (canRetryEmptyDenial) {
+  let recoveryAllowed = canRetryEmptyDenial;
+  // Charged only when time is left for the turn to start.
+  if (canRetryEmptyDenial && effectiveTimeoutMs - Math.max(0, Math.round(clock() - startedAtMs)) > 0) {
+    try {
+      await options.beforeExtraTurn?.();
+    } catch (err) {
+      // A limit stops only the optional recovery; a cancellation or a deadline ends the turn as such.
+      if (!(err instanceof ToolError && err.code === 'ROOT_LIMIT')) throw err;
+      recoveryAllowed = false;
+      options.onEvent?.({ type: 'warning', message: `No recovery turn ran: ${(err as Error).message}` });
+    }
+  }
+  if (recoveryAllowed) {
     const elapsedMs = Math.max(0, Math.round(clock() - startedAtMs));
     const remainingTimeoutMs = effectiveTimeoutMs - elapsedMs;
     if (remainingTimeoutMs > 0) {

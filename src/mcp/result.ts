@@ -120,6 +120,10 @@ export function formatObservedChanges(changes: WorkspaceChanges): string {
     lines.push(`${change.kind === 'added' ? 'A' : change.kind === 'deleted' ? 'D' : 'M'} ${p(change.path)}`);
   if (changes.truncated) lines.push('More paths changed than are listed.');
   if (changes.outsideScope.length) lines.push(`Warning: changed outside scope: ${changes.outsideScope.map(p).join(', ')}`);
+  if (changes.possiblyOtherWriter?.length)
+    lines.push(
+      `Note: another worker held these paths during this turn, so either may have changed them: ${changes.possiblyOtherWriter.map(p).join(', ')}`,
+    );
   if (changes.dirtyBefore.length)
     lines.push(`Warning: already had uncommitted changes before the turn: ${changes.dirtyBefore.map(p).join(', ')}`);
   const moved = changes.headMoved;

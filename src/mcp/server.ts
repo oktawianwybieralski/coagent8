@@ -409,7 +409,7 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
           return await handleIssue(args);
         case CANONICAL_TOOL_NAMES.CANCEL:
           // Without workspace_path, cancel stays unscoped: the handle alone identifies the turn.
-          return await handleCancelSession(args as { session_handle: string; workspace_path?: string });
+          return await handleCancelSession(args as { session_handle?: string; root_handle?: string; workspace_path?: string });
         case CANONICAL_TOOL_NAMES.SESSION: {
           // Sessions of a deleted directory can still be listed, read and closed.
           const deleted = deletedSessionWorkspace(args.workspace_path);
