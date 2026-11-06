@@ -49,6 +49,7 @@ import {
   type CancelOutcome,
 } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history/index.js';
+import { isCoordinatorRunning } from '../sessions/roots.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
 import { combineSignals } from '../storage/lock.js';
@@ -104,6 +105,8 @@ export interface TurnStart {
 }
 
 export interface TaskOptions {
+  /** This turn belongs to the coordinator of its session, which other calls leave alone while it runs. */
+  coordinatorTurn?: boolean;
   /** Called once when consent and session acquisition passed and the backend turn starts. */
   onTurnStart?: (start: TurnStart) => Promise<void> | void;
   /** Runs before a further turn the adapter itself starts within this one. */
@@ -579,6 +582,10 @@ async function executeTaskInternal(
           ...(options.beforeExtraTurn ? { beforeExtraTurn: options.beforeExtraTurn } : {}),
           ...(options.requireEnvelope ? { requireCompleteTurn: true } : {}),
         };
+        // Checked with the session's lease held: a coordinator releases it between turns, and a turn from elsewhere would change what it resumes.
+        if (!options.coordinatorTurn && typeof args.session_handle === 'string' && isCoordinatorRunning(session.sessionHandle)) {
+          throw new ToolError('SESSION_BUSY', 'A coordinator runs in this session; cancel it or wait for it.');
+        }
         await options.onTurnStart?.({ sessionHandle: session.sessionHandle, backend: backend.id, model: model ?? null });
         const raw: ExecutionResult = await backend.adapter.execute(
           withAnswerLanguage(prompt, configSnapshot.config.answerLanguage),

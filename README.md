@@ -305,8 +305,8 @@ with it; partial changes stay, so check `git status` after a cancel or timeout.
 
 Agents can work side by side. Every asynchronous `delegate` belongs to a root and
 returns its `root_handle`; pass it to the next call to share the limits, which
-come from `rootLimits` in your configuration (`maxCalls` 32, `maxConcurrent` 4,
-`maxDepth` 3, `maxMinutes` 240) and which a calling agent cannot raise. At a limit
+come from `rootLimits` in your configuration (`maxCalls` 64, `maxConcurrent` 8,
+`maxChildren` 16, `maxDepth` 3, `maxMinutes` 240) and which a calling agent cannot raise. At a limit
 the call fails with `ROOT_LIMIT`. `parent_task` records which task a new one follows
 from. `session` with `action: root` shows the use and the tasks; a finished agent
 does not make the work accepted. A `scope` is an agreement that the server checks at
@@ -316,6 +316,19 @@ scope entry contains a pattern character such as `*` or `[`), a path
 another agent held is marked as possibly changed by either, and a check an agent runs
 sees the half-finished work of the others. Roots belong to a CoAgent8 data directory:
 a client with another one does not see them.
+
+Codex or Claude Code can also coordinate workers on Codex or Claude Code (agy takes no part:
+it can start subagents that no limit sees). `delegate` with `coordinate: true` gives the agent
+an objective; it reads the workspace in read-only turns and ends each turn by asking
+for workers or by finishing. CoAgent8 checks each request, runs the workers under the
+coordinator's root, with scopes inside its `scope` (an agreement, as above, not a sandbox),
+waits for all of them and resumes it with their reports. It has no CoAgent8 tools and cannot name a root, a parent or a session.
+Workers cannot ask you anything: a model that needs your approval, or a check the server
+would run in a worker's `loop` that is not in `allowedChecks`, is refused and reported to the
+coordinator. Without `loop`, `checks` are only an instruction to the worker, under its own profile. Cancelling the coordinator's
+session or its root stops its workers. After a server restart nothing starts by itself:
+`delegate` with `coordinate: true` and its `session_handle` tells it what became of
+each worker. Its final report and its workers' changes are still yours to check.
 
 ### Approving expensive models
 

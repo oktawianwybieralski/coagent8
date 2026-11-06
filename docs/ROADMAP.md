@@ -10,7 +10,8 @@ independent. Read-only consultation is one execution profile, not the product
 boundary. `consult` and `review` run read-only; `delegate` runs workspace-write
 workers in the background under one root budget, in disjoint scopes of a work
 tree or in separate linked worktrees, optionally in a server-owned loop of
-checks, review and fix rounds. Delegated coordination is not implemented yet.
+checks, review and fix rounds, and a read-only coordinator can ask the server for
+such workers.
 
 This file holds the direction and the order of the milestones. The work itself
 is in [GitHub Issues](https://github.com/oktawianwybieralski/coagent8/issues):
@@ -40,7 +41,7 @@ tags, publication and repository settings stay the owner's.
 
 | Area | Present on `develop` | Remaining for `0.8.0` |
 | --- | --- | --- |
-| Execution | Seven tools, three CLI adapters, plain consult, explicit model/effort, asynchronous `delegate` with task records and `wait`, a server-owned loop, parallel workers under one root budget in disjoint scopes or linked worktrees | Roles and verified profiles, delegated coordination (#160, #161, #164 to #166) |
+| Execution | Seven tools, three CLI adapters, plain consult, explicit model/effort, asynchronous `delegate` with task records and `wait`, a server-owned loop, parallel workers under one root budget in disjoint scopes or linked worktrees, a read-only coordinator of workers | Roles and verified profiles, compatibility and benchmarks (#160, #161, #165, #166) |
 | Safety | Owned cleanup, hidden Windows launches, per-call Windows containment, redaction, explicit model and check consent, Codex/Claude inherited-tool controls | POSIX parent-death cleanup (#186); `arm64` and SmartScreen (#111); signing (#112) |
 | Review | Completeness, snapshot gate, post-turn recheck, reviews in parts, checks the server runs before the turn | Release hashes bound to the review (#148); other-tree review (#187, unscheduled) |
 | Storage/routing | Leases, bounded archives, cached catalogs/prices, writer records across server processes, root reservations, caller label (Claude Code) | Ephemeral calls and early handles for consult and review (#188) |
@@ -65,16 +66,16 @@ server-owned loop; Windows per-call containment, accepted natively on `x64`;
 reviews of large changes in parts and checks the server runs before a review;
 the shared agent standards, one formatter and the documentation audit of
 2026-11-03; parallel workers under one root
-([contract](ARCHITECTURE.md#parallel-workers-159-to-162)).
+([contract](ARCHITECTURE.md#parallel-workers-159-to-162)); delegated coordination
+([contract](ARCHITECTURE.md#delegated-coordination-164)).
 
-**Remaining, in order.** Groups 2-3 are the orchestra; 4 needs the owner in the
+**Remaining, in order.** Group 3 completes the orchestra; 4 needs the owner in the
 clients; 5 is the release-candidate gate. Group 1, parallel workers, is delivered:
 the task contract (#159) reconciled with the task records as built, writer ownership
 of disjoint scopes (#160), root reservations (#161) and the writer lifecycle (#162).
+Group 2, delegated coordination (#164), is delivered too: the gateway is the end of a
+read-only turn, and the nested-turn refusal stays.
 
-2. **Delegated coordination** (#164): a task-scoped gateway with root and
-   parent identity, fan-out and depth limits, cycle and replay refusal and tree
-   cancellation. The nested-turn refusal stays until the gateway is accepted.
 3. **Profiles and roles:** verified capabilities per backend, version and OS
    (#160), with POSIX parent-death cleanup (#186) and the Windows containment
    (#169) before any write or command profile is claimed; role defaults
@@ -129,7 +130,7 @@ author.
 | Routing/limits | #161 | Role/task defaults independent of provider/model/effort; explicit choices and opt-in cost/latency/quality/quota preferences. Open question: whether external benchmark scores may inform an opt-in quality preference; they lag new releases, measure models through APIs rather than CLI harnesses, and could enter only as validated numbers, never as text in tool descriptions. Atomic root reservations for calls/concurrency/time/depth shared by children/retries. No silent explicit-model fallback, fabricated monetary cap or self-approved escalation. Reconcile request identity before replaying writers; test contention/lost replies. |
 | Lifecycle/evidence | #162 | Minimal durable state/leases independent of transcript archival or a daemon. Early handles, progress, inspect/cancel, recovery; disconnect cancels by default. Detached execution requires verified supervision. Preserve original requirements, bounded context/omissions. Capture checks in the actual candidate with commands/exits/logs; separate observed from reported evidence. Test interruption, stale evidence and root-incomplete results. |
 | Skills | #163 | Builds on `SKILLS-001/002` ownership records. Composable coordination/planning/work/verification/review/recovery `SKILL.md` packages; catalog/install/update/uninstall through shared integration logic. Owned manifests/digests, atomic rollback, conflict/path-traversal checks; preserve custom instructions and execute no bundled scripts. Verify discovery/use per advertised client. |
-| Delegation | #164 | After host-led execution, add a task-scoped gateway with verified root/parent identity, capabilities and shared limits. Keep nested refusal until accepted. Bound fan-out/depth, reject cycles/replay, propagate cancellation and recover partial launches. Account for or disable unobservable native subagents where limits require it. Test forged delegation/restarts/launch races. |
+| Delegation | #164 | Delivered as a server-read end of a read-only turn ([contract](ARCHITECTURE.md#delegated-coordination-164)). After host-led execution, add a task-scoped gateway with verified root/parent identity, capabilities and shared limits. Keep nested refusal until accepted. Bound fan-out/depth, reject cycles/replay, propagate cancellation and recover partial launches. Account for or disable unobservable native subagents where limits require it. Test forged delegation/restarts/launch races. |
 | Migration | #165 | Update schemas/profiles/security rules/README/skills together before writes. Preserve compatible config, sessions, registrations and legacy read-only calls. Commit/push/merge/deploy/publication need task/user authority; skills cannot grant it. Reuse owners, not a parallel orchestration stack. |
 | Acceptance | #166 | Compare direct/host-led/delegated runs on identical starting trees: feature, bug, refactor, docs, investigation, failed-test repair, ambiguous plan, interruption. Cover strong/small, small/strong, peers and one worker. Measure correctness, regressions, time, calls, overhead, repairs and available usage, including failures. Native evidence, exact-package six-job CI and independent boundary review before RC. |
 

@@ -529,6 +529,37 @@ export function setExecutionCanceller(fn: ExecutionCanceller): void {
  * to another live CoAgent8 server process, cancellation is refused rather than
  * signalling a foreign process.
  */
+/**
+ * Keeps an idle session from expiring while its owner still needs it, such as a coordinator waiting for workers.
+ * @param everyMs - How often it counts as used; shorter than the session's time to live.
+ * @returns Stops it.
+ */
+export function keepSessionAlive(handle: string, everyMs = DEFAULT_SESSION_TTL_MS / 4): () => void {
+  const refresh = () => {
+    updateSession(handle, {}).catch((err: unknown) => {
+      // The next look tries again, well before the session could expire.
+      process.stderr.write(`CoAgent8: session ${handle} was not refreshed: ${(err as Error).message}\n`);
+    });
+  };
+  // At once as well: a continuation may start close to the end of the session's time.
+  refresh();
+  const timer = setInterval(refresh, everyMs);
+  timer.unref();
+  return () => clearInterval(timer);
+}
+
+/**
+ * Refuses a session of another workspace, before anything acts on it.
+ * @throws When the handle is invalid or the session belongs to another workspace; a missing session passes.
+ */
+export function assertSessionWorkspace(handle: string, workspace: string): void {
+  const sanitized = sanitizeHandle(handle);
+  const file = sanitized ? getSessionFilePath(sanitized) : null;
+  if (!sanitized || !file) throw new Error(`Invalid session handle: '${handle}'.`);
+  const stored = readRecord(file, sanitized);
+  if (stored && canonicalPath(stored.workspace) !== canonicalPath(workspace)) throw new Error('Session workspace mismatch.');
+}
+
 export async function cancelSession(handle: string, workspace?: string): Promise<{ cancelled: boolean; message: string }> {
   const sanitized = sanitizeHandle(handle);
   if (!sanitized) throw new Error(`Invalid session handle: '${handle}'.`);

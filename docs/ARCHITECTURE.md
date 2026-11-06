@@ -19,10 +19,11 @@ the server enforces capabilities, limits and task state.
 
 Today the server is a stdio MCP bridge to Codex, Claude Code and Antigravity
 (`agy`). Consultation and review run read-only with the profiles below; `delegate`
-runs one workspace-write worker per work tree (each linked worktree its own) in the background, and with
+runs workspace-write workers in the background under one root budget, in disjoint scopes of a work
+tree or in separate linked worktrees, and with
 `loop: true` the server runs the approved checks and an independent review and
-returns failures to the worker. Parallel workers under one root budget, delegated coordinators and
-task-scoped command profiles are planned (0.8.0).
+returns failures to the worker. With `coordinate: true` a read-only agent asks the server for such
+workers. Task-scoped command profiles are planned (0.8.0).
 
 ## Request path and ownership
 
@@ -1259,7 +1260,7 @@ the work tree's Git directory (`coagent8-writer.json` and `coagent8-writers/`, `
 every client's server process sees them whatever its data directory; each linked
 worktree has its own, which permits parallel writers in separate worktrees.
 `consult` and `review` are not blocked. The nested-turn refusal stays: a worker
-cannot call CoAgent8.
+cannot call CoAgent8; a [coordinator](#delegated-coordination-164) asks the server at the end of its turn instead.
 
 **Write profiles.** Approvals stay off, tool features and inherited MCP servers
 stay disabled and verified as in the read-only profiles.
@@ -1354,8 +1355,9 @@ started is not its peer. The comparison covers the task's own workspace, so a wo
 does not see changes outside it. A check a worker runs sees the half-finished work of the others.
 
 **Root.** `delegate` without `root_handle` starts a root, in `<data>/delegations/roots/`. The limits
-are `rootLimits` of the user's configuration when the root is created: `maxCalls` 32 (first
-turns, every later backend turn of a loop and agy's recovery turn), `maxConcurrent` 4, `maxDepth` 3 and
+are `rootLimits` of the user's configuration when the root is created: `maxCalls` 64 (first
+turns, every later backend turn of a loop or a coordinator and agy's recovery turn), `maxConcurrent` 8 (owner decision
+2026-11-06, with `maxCalls`), `maxChildren` 16, `maxDepth` 3 and
 `maxMinutes` 240. A calling agent cannot raise them. Every reservation runs under the record's
 lock, also across server processes; a task's budget is its `timeout_ms` or the default, cut to
 what is left of the root's time. At a limit a start fails with `ROOT_LIMIT` and a loop ends with
@@ -1392,9 +1394,60 @@ whose server died, whose processes can outlive it on POSIX (#186).
 
 **Native runs (Windows, 2026-11-05, real Codex, Claude Code and agy through the built server over MCP stdio).** On each backend: two workers ran at once on disjoint scopes and wrote their files, an overlapping start was refused, and cancelling the root ended two running workers as `cancelled`. Claude ran below a price limit, as this client shows no form. POSIX is not run.
 
-**Not covered.** A worker calling CoAgent8 stays refused until the gateway (#164). Published
+**Not covered.** A worker calling CoAgent8 stays refused. Published
 versions have no `delegate`, so no released server ignores `coagent8-writers/`; a development
 build of an earlier commit does, and must be restarted.
+
+## Delegated coordination (#164)
+
+Owner go-ahead 2026-11-06 for #164, with this form proposed by the author and open to the owner's change. A Codex
+consultation (`syn_sess_a1837063adffe783111be042`, 2026-11-06) preferred it over an MCP server inside the turn, which would
+relax the verified profiles of [rule 11](../.agents/rules/11-security-and-sandboxes.md), needs a local
+transport with a token, and has unverified behavior on Codex and agy without approvals.
+
+**The gateway is the end of a read-only turn.** `delegate` with `coordinate: true` runs the objective as a task in the
+read-only profile, under a root like any other. A coordinator has no CoAgent8 tool, and the nested-turn refusal stays
+set in its environment. Each answer ends with one JSON object, in a closing `json` fence or as the whole answer, and
+nothing after it: `{"action":"finish","report":...}` or `{"action":"start","children":[...]}`. Prose is never read as a
+request. A native schema flag is not used, so this form is the same on every backend. One refused answer gets one
+charged correction turn; a second ends the task `failed` with nothing started.
+
+**Identity and capabilities.** Root, parent, session, workspace and profile come from this server's records. A
+child takes only `id`, `task`, `scope`, `checks`, `loop`, `backend`, `model`, `reasoning_effort`, `timeout_ms` and
+`continues` (an earlier child's id); any other field refuses the answer, so a forged identity has no field to travel in.
+A child's scope stays inside the coordinator's. A request runs no further than a caller's would without a form: no one
+can approve for it, so a model that needs asking and a check of a worker's `loop` outside `allowedChecks` are refused and reported; without `loop`, `checks` are only text for the worker, under its own profile. A repository
+file can still persuade a coordinator to ask for work: the limits above bound that, and the caller reviews the result.
+
+**Limits.** Every coordinator turn and worker turn is charged to the root. A coordinator holds a place in
+`maxConcurrent` during its turns and gives it back while it waits, since its workers may need it; a later turn waits for a free place, and a continuation takes none until its first turn, as its workers may hold them all.
+`maxChildren` bounds the tasks
+naming one parent, under the root's lock, also for a caller's `parent_task`, and a continuation does not count again. One answer asks for at most 64 children, and one ledger names at most 2000.
+A coordinator is one level of depth, so `maxDepth` 1 refuses its workers. Workers cannot coordinate. A parent must exist before
+its child and a task cannot name itself, so the tree has no cycle. A coordinator that names no `timeout_ms` has the root's
+time, and each of its turns at most 30 minutes.
+
+**A round.** The ledger `<data>/delegations/coordinations/` stores the request before anything starts, with a handle derived from the session and
+the child's id, which goes through the `request_id` claim of a normal start. An id used earlier in the session refuses the answer, so a replayed answer starts no second
+worker. Workers start in order. One refused `SESSION_BUSY` or `ROOT_LIMIT` waits while a sibling runs, and a `ROOT_LIMIT` also
+while other tasks of the root hold every place; otherwise the refusal is its report, and the coordinator decides. All must end
+before the session resumes, so it reads no half-finished work of its own workers; a writer outside this root can still change the tree. A report is cut at 8,192 characters and sent as data, and the caller reads
+the whole result with `session`; it counts as told only once a turn has ended, so a crash repeats it rather than loses it. A failed ledger write stops the workers and fails the task. `finish` ends the task with the report and the server's list of workers; a root still has no succeeded state.
+
+**Cancel.** `cancel` with the coordinator's `session_handle` works also between its turns and from another server process, which it reaches through
+the root record within a second, and `root_handle` as for any root. From the request on, no worker of the running attempt can be reserved or bound, also before its server has looked, and an answer arriving with a stop is not acted on. Either stops its workers, like the end of its time, and it waits up to 15 seconds for them to store their final state. It
+cannot stop one worker of a running round: it is not running then, which is why it has no cancel request.
+
+**Restart.** Nothing resumes by itself and no worker restarts by itself. The coordinator's record reads `interrupted` like any task of a dead server, and
+`delegate` with `coordinate: true` and its `session_handle` continues: it waits for any worker still storing its end, then tells it
+which ended, which were interrupted and which never started, in its root, under the same parent. A worker
+that may outlive its server on POSIX keeps its writer record (#186), so a duplicate writer is refused. A second coordinator of a session gets `SESSION_BUSY` from its reservation on, while the first is still reading its workers, and so does any other turn in that session, or closing it, while one runs. Its session counts as used while it waits, so it does not expire. These refusals look at the root record without a lock shared with the session, so a call racing a coordinator's start can still get in; the coordinator's next turn then fails closed, with its workers' results kept. A continuation can narrow the scope of the first start but not widen it, and naming none keeps it.
+
+**Native subagents.** Claude's read-only tool list has no agent tool and Codex's subagents stay off, as the profiles verify. agy's read-only turn reports
+`invoke_subagent` and `schedule` among its tools (its own answer, agy 1.5.1, 2026-11-06, not an observed use), and no setting that turns them off is established. So neither a coordinator nor its workers run on agy, whether named or chosen by `auto`: a coordinator fails
+`POLICY_DENIED` before the turn, and a worker is reported as not started. A worker a caller starts on agy with `root_handle`, and a review a loop worker gets on agy, keep this limit (#200): `maxCalls` counts backend turns and claims no cost cap. Consult calls of the outer agent are not charged.
+
+**Native runs (Windows, 2026-11-06, real Codex 0.164, Claude Code 2.1.318 and agy 1.5.1 through the built server over MCP stdio).** On Codex and Claude Code a coordinator read the objective, asked for two workers on disjoint scopes, both ran at once and wrote their files, and it finished from their reports; Claude ran below a price limit, as this client shows no form. On Codex eight workers ran at once under the default limit. Before the refusal above agy did the same with one more charged turn. Cancellation, limits and restarts are covered by fixtures only, and POSIX by CI.
 
 ## Windows per-call containment (WINDOWS-001)
 

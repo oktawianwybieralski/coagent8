@@ -170,11 +170,27 @@ function runTurn() {
         aggregatedOutput: 'x'.repeat(100 * 1024),
         exitCode: 0,
       });
+  // CODEX_FIXTURE_PROMPT_WRITES: a write turn writes each file its prompt names as WRITE <path>.
+  if (threadWrites && process.env.CODEX_FIXTURE_PROMPT_WRITES) {
+    for (const [, file] of String(userPrompt).matchAll(/\bWRITE (\S+)/g)) {
+      const target = path.resolve(threadCwd, file);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, 'written\n');
+    }
+  }
+  // CODEX_FIXTURE_WORKERS_HANG: a write turn stays running until it is interrupted.
+  const workerHangs = threadWrites && process.env.CODEX_FIXTURE_WORKERS_HANG;
   item('item/started', { type: 'agentMessage', id: 'message-1', text: '' });
   notify('item/agentMessage/delta', { threadId, turnId: TURN, itemId: 'message-1', delta: 'Draft' });
-  const text = acceptance
-    ? acceptanceAnswer(userPrompt)
-    : 'Final **Markdown** 😀\n```js\nconst answer = 42;\n```\nsk-fixtureSecret1234567890abcdef';
+  // CODEX_FIXTURE_REPLIES: a JSON file listing the answers of read-only turns, each used once.
+  const replies =
+    !threadWrites && process.env.CODEX_FIXTURE_REPLIES ? JSON.parse(fs.readFileSync(process.env.CODEX_FIXTURE_REPLIES, 'utf8')) : null;
+  if (replies?.length) fs.writeFileSync(process.env.CODEX_FIXTURE_REPLIES, JSON.stringify(replies.slice(1)));
+  const text = replies?.length
+    ? replies[0]
+    : acceptance
+      ? acceptanceAnswer(userPrompt)
+      : 'Final **Markdown** 😀\n```js\nconst answer = 42;\n```\nsk-fixtureSecret1234567890abcdef';
   item('item/completed', { type: 'agentMessage', id: 'message-1', text, phase: 'final_answer' });
   item('item/completed', { type: 'agentMessage', id: 'message-1', text, phase: 'final_answer' });
   // `total` accumulates over the thread (100 input and 40 output tokens before this turn),
@@ -210,7 +226,7 @@ function runTurn() {
   notify('thread/tokenUsage/updated', usage(add(add(before, first), second), second));
   if (mode === 'server-request')
     send({ id: 'srv-1', method: 'item/commandExecution/requestApproval', params: { threadId, turnId: TURN, itemId: 'read-1' } });
-  if (mode === 'hang' || mode === 'interruptible' || mode === 'acceptance-slow') return;
+  if (workerHangs || mode === 'hang' || mode === 'interruptible' || mode === 'acceptance-slow') return;
   if (mode === 'no-terminal') process.exit(0);
   if (mode === 'auth') {
     completeTurn('failed', {

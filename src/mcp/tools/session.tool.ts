@@ -1,14 +1,15 @@
 import type { ToolArguments, ToolProgress } from '../arguments.js';
-import { closeSession, cancelSession, listSessions } from '../../sessions/session.js';
-import { cancelRootTasks, captureDelegation } from '../../execution/delegation.js';
+import { closeSession, assertSessionWorkspace, cancelSession, listSessions } from '../../sessions/session.js';
+import { cancelCoordinator, cancelRootTasks, captureDelegation } from '../../execution/delegation.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { WORKSPACE_PARAMETER } from '../schema.js';
 import { deleteHistory, getTurnMapping, sessionHistory } from '../../sessions/history/index.js';
 import { resolveWorkspacePath } from '../../workspace/workspace.js';
 import { ToolError } from '../../contracts/index.js';
+import { DEFAULT_ROOT_LIMITS } from '../../contracts/execution.js';
 import { redactDiagnostic } from '../../security/redaction.js';
 import { finishedTaskText, readTask } from '../../sessions/tasks.js';
-import { isRootTaskActive, readRoot } from '../../sessions/roots.js';
+import { isCoordinatorRunning, isRootTaskActive, readRoot, requestCoordinatorCancel, runningTasks } from '../../sessions/roots.js';
 import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {
@@ -128,6 +129,7 @@ function rootReport(handle: unknown) {
     taskHandle: task.taskHandle,
     ...(task.parentTask ? { parentTask: task.parentTask } : {}),
     depth: task.depth,
+    ...(task.coordinator ? { coordinator: true } : {}),
     // A reservation has no task record until its turn is about to start.
     state: readTask(task.taskHandle)?.state ?? (isRootTaskActive(task) ? 'starting' : 'not_started'),
   }));
@@ -135,11 +137,15 @@ function rootReport(handle: unknown) {
     `root_handle: ${root.rootHandle}`,
     `state: ${root.state}`,
     `calls: ${root.calls} of ${root.limits.maxCalls}`,
-    `running: ${root.tasks.filter(isRootTaskActive).length} of ${root.limits.maxConcurrent}`,
+    `running: ${runningTasks(root).length} of ${root.limits.maxConcurrent}`,
+    `children per task: ${root.limits.maxChildren ?? DEFAULT_ROOT_LIMITS.maxChildren}`,
     `depth limit: ${root.limits.maxDepth}`,
     `time until: ${root.deadlineAt}`,
     '',
-    ...tasks.map(task => `- ${task.taskHandle}: ${task.state}${task.parentTask ? ` (parent ${task.parentTask})` : ''}`),
+    ...tasks.map(
+      task =>
+        `- ${task.taskHandle}: ${task.state}${task.coordinator ? ' (coordinator)' : ''}${task.parentTask ? ` (parent ${task.parentTask})` : ''}`,
+    ),
     '',
     'Finished workers do not make the root accepted: check and review the work yourself.',
   ];
@@ -177,7 +183,21 @@ export async function handleCancelSession(args: { session_handle?: string; root_
   const workspace = args.workspace_path ? resolveWorkspacePath(args.workspace_path) : undefined;
   // Looked up before the cancel, so a delegation that ends during it still reports its outcome.
   const awaitDelegation = captureDelegation(args.session_handle);
-  const result = await cancelSession(args.session_handle, workspace);
+  // Before anything acts on it: a wrong workspace must stop nothing.
+  if (workspace) assertSessionWorkspace(args.session_handle, workspace);
+  // A coordinator between turns has no turn to cancel: this stops it, and it stops its workers.
+  // One of another server process hears of it through its root, within its next look.
+  // Recorded here too, so that a worker's start racing this cancel is refused at its reservation or binding.
+  const stoppedHere = cancelCoordinator(args.session_handle);
+  const coordinator = (await requestCoordinatorCancel(args.session_handle)) || stoppedHere;
+  // A turn of a coordinator on another server refuses this; the request above reaches that server anyway.
+  const result = coordinator
+    ? await cancelSession(args.session_handle, workspace).catch(() => ({ cancelled: true, message: '' }))
+    : await cancelSession(args.session_handle, workspace);
+  if (coordinator) {
+    result.cancelled = true;
+    result.message = `Coordinator ${args.session_handle} is stopping, with its workers.`;
+  }
   // A delegation's task turns final after its evidence and release: wait, so a read that follows
   // does not report the worker as running (#136).
   // Also when no turn was running any more: the delegation may still be storing its final state.
@@ -204,6 +224,8 @@ export async function handleCancelSession(args: { session_handle?: string; root_
 export async function handleCloseSession(args: ToolArguments, workspace = resolveWorkspacePath(args.workspace_path)) {
   if (typeof args.session_handle !== 'string' || !args.session_handle)
     throw new ToolError('INPUT_LIMIT', 'Validation Error: session_handle is required for action "close".');
+  if (isCoordinatorRunning(args.session_handle))
+    throw new ToolError('SESSION_BUSY', 'A coordinator runs in this session; cancel it first.');
   const closed = await closeSession(args.session_handle, workspace);
   if (args.delete_history) await deleteHistory(args.session_handle, workspace);
   return {
