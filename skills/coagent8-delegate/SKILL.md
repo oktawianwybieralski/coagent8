@@ -79,8 +79,8 @@ Git worktree on its own branch (`git worktree add ../repo-a -b task-a`) and
 `workspace_path`; integrate the branches yourself. Create worktrees only where
 the user agrees to them.
 
-**Coordinator.** With `coordinate: true` an agent plans a larger objective and the
-server runs its workers: put the objective and acceptance criteria in `task`, and the
+**Coordinator.** With `coordinate: true` an agent (Codex or Claude Code, not
+Antigravity) plans a larger objective and the server runs its workers: put the objective and acceptance criteria in `task`, and the
 paths its workers may hold in `scope`. You get a `task_handle` as usual, and its result
 is the coordinator's report and the list of workers. Check each worker's result with
 `session`, action `task`, and review the whole change yourself: a coordinator accepts

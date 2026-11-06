@@ -126,7 +126,7 @@ export interface CheckResult {
 export interface RootLimits {
   /** Backend turns: first turns, turns of a coordinator, fix rounds and review attempts of a loop. */
   maxCalls: number;
-  /** Workers running at once; a coordinator, which mostly waits for them, is not counted. */
+  /** Tasks running at once; a coordinator counts during its turns, not while it waits for workers. */
   maxConcurrent: number;
   /** Tasks that may name one task as their parent. */
   maxChildren: number;

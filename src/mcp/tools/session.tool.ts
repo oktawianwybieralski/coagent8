@@ -9,7 +9,7 @@ import { ToolError } from '../../contracts/index.js';
 import { DEFAULT_ROOT_LIMITS } from '../../contracts/execution.js';
 import { redactDiagnostic } from '../../security/redaction.js';
 import { finishedTaskText, readTask } from '../../sessions/tasks.js';
-import { isRootTaskActive, readRoot, runningWorkers } from '../../sessions/roots.js';
+import { isRootTaskActive, readRoot, requestCoordinatorCancel, runningTasks } from '../../sessions/roots.js';
 import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {
@@ -137,7 +137,7 @@ function rootReport(handle: unknown) {
     `root_handle: ${root.rootHandle}`,
     `state: ${root.state}`,
     `calls: ${root.calls} of ${root.limits.maxCalls}`,
-    `running: ${runningWorkers(root).length} of ${root.limits.maxConcurrent}`,
+    `running: ${runningTasks(root).length} of ${root.limits.maxConcurrent}`,
     `children per task: ${root.limits.maxChildren ?? DEFAULT_ROOT_LIMITS.maxChildren}`,
     `depth limit: ${root.limits.maxDepth}`,
     `time until: ${root.deadlineAt}`,
@@ -184,7 +184,8 @@ export async function handleCancelSession(args: { session_handle?: string; root_
   // Looked up before the cancel, so a delegation that ends during it still reports its outcome.
   const awaitDelegation = captureDelegation(args.session_handle);
   // A coordinator between turns has no turn to cancel: this stops it, and it stops its workers.
-  const coordinator = cancelCoordinator(args.session_handle);
+  // One of another server process hears of it through its root, within its next look.
+  const coordinator = cancelCoordinator(args.session_handle) || (await requestCoordinatorCancel(args.session_handle));
   const result = await cancelSession(args.session_handle, workspace);
   if (coordinator) {
     result.cancelled = true;

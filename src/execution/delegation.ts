@@ -17,7 +17,7 @@
  * @packageDocumentation
  */
 import crypto from 'node:crypto';
-import { ToolError, type TaskExecutionResult, type WorkspaceChanges } from '../contracts/index.js';
+import { errorCodeOf, ToolError, type TaskExecutionResult, type WorkspaceChanges } from '../contracts/index.js';
 import { DEFAULT_EXECUTION_TIMEOUT_MS, type RootLimits } from '../contracts/execution.js';
 import { redactDiagnostic } from '../security/index.js';
 import { ownProcessIdentity } from '../sessions/activity.js';
@@ -589,7 +589,8 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     try {
       const root = readRoot(rootHandle);
       watchFailures = root ? 0 : watchFailures + 1;
-      if (root?.state === 'cancelled') controller.abort();
+      if (root?.state === 'cancelled' || root?.tasks.findLast(entry => entry.taskHandle === taskHandle)?.cancelRequested)
+        controller.abort();
     } catch {
       // A rename by another process can fail one read on Windows; only repeated failures count.
       watchFailures++;
@@ -663,7 +664,11 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     async (err: unknown) => {
       const message = redactDiagnostic((err as Error).message, 1024);
       await closeInRoot();
-      await finish({ state: 'failed', result: { text: `The delegation failed: ${message}`, isError: true } });
+      // A coordinator stopped before any turn of this task has no result to carry its end.
+      const code = errorCodeOf(err);
+      const state =
+        start.coordinator && code === 'ABORTED' ? 'cancelled' : start.coordinator && code === 'TIMEOUT' ? 'timed_out' : 'failed';
+      await finish({ state, result: { text: `The delegation failed: ${message}`, isError: true } });
       return { error: err };
     },
   );

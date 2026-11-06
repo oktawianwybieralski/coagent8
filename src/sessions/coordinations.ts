@@ -24,7 +24,7 @@ export interface CoordinationChild {
   taskHandle: string;
   /** Why it did not start, when the server knows. */
   startError?: string;
-  /** Whether the coordinator was told how it ended. */
+  /** Whether a coordinator turn that was told how it ended has finished. */
   reported: boolean;
 }
 
@@ -38,8 +38,10 @@ export interface CoordinationRecord {
   children: CoordinationChild[];
 }
 
-/** Bounds reading a damaged file; a root has at most 1000 calls. */
-const MAX_RECORD_BYTES = 1024 * 1024;
+/** Bounds reading a damaged file; fits {@link MAX_COORDINATION_CHILDREN} entries with their refusals. */
+const MAX_RECORD_BYTES = 8 * 1024 * 1024;
+/** Workers one ledger may name, refused ones included. */
+export const MAX_COORDINATION_CHILDREN = 2000;
 /** Kept as long as the task records it names. */
 const RETENTION_MS = 7 * 24 * 3600 * 1000;
 

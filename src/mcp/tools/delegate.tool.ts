@@ -9,7 +9,13 @@ import { EXECUTION_PARAMETERS } from '../schema.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
 import { executeDelegation, startDelegation, type DelegationStart, type Supervise } from '../../execution/delegation.js';
-import { coordinationOperation, coordinatorPrompt, type WorkerLink, type WorkerRequest } from '../../execution/coordination.js';
+import {
+  assertCoordinatorBackend,
+  coordinationOperation,
+  coordinatorPrompt,
+  type WorkerLink,
+  type WorkerRequest,
+} from '../../execution/coordination.js';
 import { approveChecks, parseCheckCommand, type CheckApprovalPrompt } from '../../execution/checks.js';
 import { reviewOnAnotherBackend, superviseChange } from '../../execution/loop.js';
 import { getCallerProvider, resolveBackend } from '../../execution/routing.js';
@@ -300,6 +306,7 @@ export async function handleDelegate(
     if (mode === 'sync') throw new ToolError('INPUT_LIMIT', 'coordinate needs mode async: its workers outlive the call.');
     if (loop || checks.length)
       throw new ToolError('INPUT_LIMIT', 'A coordinator runs no checks or loop itself; ask for them on its workers.');
+    assertCoordinatorBackend(request.backend);
     const started = await startDelegation({
       prompt: coordinatorPrompt(task, effectiveScope),
       publicInput,

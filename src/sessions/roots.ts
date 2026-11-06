@@ -33,8 +33,14 @@ export interface RootTask {
   pidIdentity?: string;
   parentTask?: string;
   depth: number;
-  /** A coordinator: it plans and waits, so it holds no place among the workers running at once. */
+  /** A coordinator: it holds a place among the running tasks only during its turns. */
   coordinator?: boolean;
+  /** A coordinator's turn is running or about to. */
+  turning?: boolean;
+  /** Continues an earlier task's session, so it is no further child of its parent. */
+  continuation?: boolean;
+  /** Someone asked this coordinator to stop; its server reads this at its next look at the root. */
+  cancelRequested?: boolean;
   startedAt: string;
   endedAt?: string;
 }
@@ -103,14 +109,14 @@ export function isRootTaskActive(task: RootTask): boolean {
   return isRootTaskServerAlive(task) || (task.writer ? writerMayStillRun(task.writer.file, task.writer.token) : false);
 }
 
-/** The workers using a root's places; a coordinator holds none. */
-export function runningWorkers(root: RootRecord): RootTask[] {
-  return root.tasks.filter(task => !task.coordinator && isRootTaskActive(task));
+/** The tasks using a root's places: workers, and coordinators during their turns. */
+export function runningTasks(root: RootRecord): RootTask[] {
+  return root.tasks.filter(task => (!task.coordinator || task.turning) && isRootTaskActive(task));
 }
 
-/** Whether a worker could start now as far as the root's concurrency goes. */
+/** Whether a task could start now as far as the root's concurrency goes. */
 export function rootHasFreeSlot(root: RootRecord): boolean {
-  return runningWorkers(root).length < root.limits.maxConcurrent;
+  return runningTasks(root).length < root.limits.maxConcurrent;
 }
 
 /**
@@ -151,6 +157,13 @@ function assertUsable(record: RootRecord): void {
   if (record.state === 'cancelled') throw new ToolError('ABORTED', `Root ${record.rootHandle} was cancelled.`);
   const remainingMs = Date.parse(record.deadlineAt) - Date.now();
   if (!(remainingMs > 0)) throw new ToolError('ROOT_LIMIT', `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes.`);
+}
+
+function assertFreeSlot(record: RootRecord): void {
+  const running = runningTasks(record).length;
+  if (running >= record.limits.maxConcurrent) {
+    throw new ToolError('ROOT_LIMIT', `Root ${record.rootHandle} already runs ${running} tasks, its limit; wait for one to finish.`);
+  }
 }
 
 function charge(record: RootRecord): void {
@@ -194,17 +207,14 @@ export function reserveRootTask(
     if (depth > record.limits.maxDepth) throw new ToolError('ROOT_LIMIT', `Root ${handle} allows a depth of ${record.limits.maxDepth}.`);
     if (request.parentTask && !earlier) {
       const maxChildren = record.limits.maxChildren ?? DEFAULT_ROOT_LIMITS.maxChildren;
-      const children = new Set(record.tasks.filter(task => task.parentTask === request.parentTask).map(task => task.taskHandle));
+      const children = new Set(
+        record.tasks.filter(task => task.parentTask === request.parentTask && !task.continuation).map(task => task.taskHandle),
+      );
       if (children.size >= maxChildren) {
         throw new ToolError('ROOT_LIMIT', `Task ${request.parentTask} already has ${children.size} children, the limit of root ${handle}.`);
       }
     }
-    if (!request.coordinator) {
-      const running = runningWorkers(record).length;
-      if (running >= record.limits.maxConcurrent) {
-        throw new ToolError('ROOT_LIMIT', `Root ${handle} already runs ${running} tasks, its limit; wait for one to finish.`);
-      }
-    }
+    assertFreeSlot(record);
     charge(record);
     const parentTask = request.parentTask ?? earlier?.parentTask;
     record.tasks.push({
@@ -213,7 +223,10 @@ export function reserveRootTask(
       pidIdentity: ownProcessIdentity(),
       ...(parentTask ? { parentTask } : {}),
       depth,
-      ...(request.coordinator ? { coordinator: true } : {}),
+      ...(request.coordinator ? { coordinator: true, turning: true } : {}),
+      ...(earlier ? { continuation: true } : {}),
+      // Held from here on: a continuation reads its workers before its turn binds the session.
+      ...(request.coordinator && request.continues ? { sessionHandle: request.continues } : {}),
       startedAt: new Date().toISOString(),
     });
     return { depth, ...(parentTask ? { parentTask } : {}), deadlineMs: Date.parse(record.deadlineAt) };
@@ -248,6 +261,43 @@ export function reserveRootCall(handle: string): Promise<void> {
   return updateRoot(handle, record => {
     assertUsable(record);
     charge(record);
+  });
+}
+
+/**
+ * Takes a place for a coordinator's next turn, which is charged when it starts.
+ * @throws `ROOT_LIMIT` at a limit, `ABORTED` for a cancelled root.
+ */
+export function beginCoordinatorTurn(handle: string, taskHandle: string): Promise<void> {
+  return updateRoot(handle, record => {
+    assertUsable(record);
+    assertFreeSlot(record);
+    const task = record.tasks.findLast(entry => entry.taskHandle === taskHandle);
+    if (!task) throw new ToolError('PROTOCOL_ERROR', `Task ${taskHandle} has no reservation in root ${handle}.`);
+    task.turning = true;
+  });
+}
+
+/** Gives a coordinator's place back while it waits for its workers. */
+export function endCoordinatorTurn(handle: string, taskHandle: string): Promise<void> {
+  return updateRoot(handle, record => {
+    const task = record.tasks.findLast(entry => entry.taskHandle === taskHandle);
+    if (task) task.turning = false;
+  });
+}
+
+/**
+ * Asks the running coordinator of a session to stop, whichever server process runs it.
+ * @returns Whether such a coordinator exists.
+ */
+export async function requestCoordinatorCancel(sessionHandle: string): Promise<boolean> {
+  const root = findRootOfSession(sessionHandle);
+  if (!root) return false;
+  return updateRoot(root.rootHandle, record => {
+    const task = record.tasks.findLast(entry => entry.sessionHandle === sessionHandle);
+    if (!task?.coordinator || task.endedAt || !isRootTaskActive(task)) return false;
+    task.cancelRequested = true;
+    return true;
   });
 }
 

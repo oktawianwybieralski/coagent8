@@ -24,7 +24,16 @@ const { stopActiveDelegations } = require('../../../src/execution/delegation.ts'
 const { parseCoordinatorAnswer } = require('../../../src/execution/coordination.ts');
 require('../../../src/execution/controller.ts').composeExecutionCancellation();
 const { readTask, createTaskHandle, writeTask } = require('../../../src/sessions/tasks.ts');
-const { readRoot, createRoot, reserveRootTask } = require('../../../src/sessions/roots.ts');
+const {
+  readRoot,
+  createRoot,
+  reserveRootTask,
+  bindRootTask,
+  endRootTask,
+  beginCoordinatorTurn,
+  endCoordinatorTurn,
+  requestCoordinatorCancel,
+} = require('../../../src/sessions/roots.ts');
 const { readCoordination, writeCoordination } = require('../../../src/sessions/coordinations.ts');
 
 const CONFIG = { defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } };
@@ -106,7 +115,7 @@ test('a coordinator starts disjoint workers, reads their reports and finishes; t
   }
 });
 
-test('a coordinator holds no place: one running worker fits a limit of one, and siblings run in turn', async () => {
+test('a coordinator gives its place back while it waits: a limit of one still runs its workers, in turn', async () => {
   const repo = fixtureRepo();
   await saveConfig({
     defaultBackend: 'codex',
@@ -468,5 +477,166 @@ test('a coordinator turn runs read-only, while its worker runs the write profile
     assert.equal(nested, '1', 'the nested-turn refusal stays set in its environment');
   } finally {
     delete process.env.CODEX_FIXTURE_CAPTURE;
+  }
+});
+
+test('a coordinator holds a place only during its turns', async () => {
+  const root = await createRoot({ maxConcurrent: 1 });
+  const coordinator = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: coordinator, coordinator: true });
+  await assert.rejects(reserveRootTask(root.rootHandle, { taskHandle: createTaskHandle() }), err => err.code === 'ROOT_LIMIT');
+  await endCoordinatorTurn(root.rootHandle, coordinator);
+  const worker = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: worker });
+  await assert.rejects(beginCoordinatorTurn(root.rootHandle, coordinator), err => err.code === 'ROOT_LIMIT');
+  await endRootTask(root.rootHandle, worker);
+  await beginCoordinatorTurn(root.rootHandle, coordinator);
+  await assert.rejects(
+    reserveRootTask(root.rootHandle, { taskHandle: createTaskHandle(), coordinator: true }),
+    err => err.code === 'ROOT_LIMIT',
+  );
+});
+
+test('a continuing coordinator owns its session from its reservation on', async () => {
+  const root = await createRoot();
+  const first = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: first, coordinator: true });
+  await bindRootTask(root.rootHandle, first, 'syn_sess_owner');
+  await endRootTask(root.rootHandle, first);
+  await reserveRootTask(root.rootHandle, { taskHandle: createTaskHandle(), coordinator: true, continues: 'syn_sess_owner' });
+  await assert.rejects(
+    reserveRootTask(root.rootHandle, { taskHandle: createTaskHandle(), coordinator: true, continues: 'syn_sess_owner' }),
+    err => err.code === 'SESSION_BUSY',
+  );
+});
+
+test('a continued worker is no further child of its parent', async () => {
+  const root = await createRoot({ maxChildren: 2 });
+  const parent = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: parent });
+  const child = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: child, parentTask: parent });
+  await bindRootTask(root.rootHandle, child, 'syn_sess_child');
+  await endRootTask(root.rootHandle, child);
+  const again = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: again, parentTask: parent, continues: 'syn_sess_child' });
+  await endRootTask(root.rootHandle, again);
+  const second = createTaskHandle();
+  await reserveRootTask(root.rootHandle, { taskHandle: second, parentTask: parent });
+  await endRootTask(root.rootHandle, second);
+  await assert.rejects(
+    reserveRootTask(root.rootHandle, { taskHandle: createTaskHandle(), parentTask: parent }),
+    err => err.code === 'ROOT_LIMIT',
+  );
+});
+
+test('a failed ledger write stops the workers it started', async () => {
+  const repo = fixtureRepo();
+  process.env.CODEX_FIXTURE_WORKERS_HANG = '1';
+  try {
+    script(start({ id: 'one', task: 'WRITE a/new.txt', scope: ['a'] }, { id: 'two', task: 'WRITE b/new.txt', scope: ['b'] }), finish());
+    const started = await coordinate(repo);
+    // The next write replaces the record: a directory in its place makes that fail.
+    const dir = path.join(process.env.coagent8_DIR, 'delegations', 'coordinations');
+    const deadline = Date.now() + 15000;
+    let names = [];
+    while (!names.length) {
+      assert.ok(Date.now() < deadline, 'the request was stored');
+      names = fs.existsSync(dir)
+        ? fs.readdirSync(dir).filter(name => readCoordinationFile(path.join(dir, name)) === started.sessionHandle)
+        : [];
+      await delay(5);
+    }
+    const file = path.join(dir, names[0]);
+    fs.rmSync(file);
+    fs.mkdirSync(file);
+    const task = await ended(started.taskHandle, 40000);
+    assert.equal(task.state, 'failed', task.result?.text);
+    for (const worker of readRoot(started.rootHandle).tasks.filter(entry => !entry.coordinator)) {
+      assert.notEqual(readTask(worker.taskHandle)?.state, 'running');
+    }
+    assert.equal(fs.existsSync(path.join(repo, 'b', 'new.txt')), false, 'the next worker did not start');
+    fs.rmSync(file, { recursive: true, force: true });
+  } finally {
+    delete process.env.CODEX_FIXTURE_WORKERS_HANG;
+  }
+});
+
+function readCoordinationFile(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8')).sessionHandle;
+  } catch {
+    return null;
+  }
+}
+
+test('reports stay untold until a turn has ended, and an error turn still lists the workers', async () => {
+  const repo = fixtureRepo();
+  script(start({ id: 'one', task: 'WRITE a/new.txt', scope: ['a'] }), finish('Never read'));
+  const started = await coordinate(repo);
+  await ended(started.taskHandle);
+  const ledger = readCoordination(started.sessionHandle);
+  assert.equal(ledger.children[0].reported, true, 'a turn that ended was told');
+  // Told, then lost: a continuation whose turn fails keeps what it was to be told.
+  ledger.children[0].reported = false;
+  await writeCoordination(ledger);
+  process.env.CODEX_FIXTURE_MODE = 'auth';
+  try {
+    const failed = await coordinate(repo, { task: 'Go on', session_handle: started.sessionHandle });
+    const task = await ended(failed.taskHandle);
+    assert.equal(task.state, 'failed', task.result?.text);
+    assert.match(task.result.text, /- one: completed/);
+    assert.equal(readCoordination(started.sessionHandle).children[0].reported, false);
+  } finally {
+    delete process.env.CODEX_FIXTURE_MODE;
+  }
+});
+
+test('a cancel reaches a coordinator through its root, as from another server', async () => {
+  const repo = fixtureRepo();
+  process.env.CODEX_FIXTURE_WORKERS_HANG = '1';
+  try {
+    script(start({ id: 'one', task: 'WRITE a/new.txt', scope: ['a'] }), finish());
+    const started = await coordinate(repo);
+    const deadline = Date.now() + 15000;
+    while (!readRoot(started.rootHandle).tasks.some(entry => !entry.coordinator && entry.sessionHandle)) {
+      assert.ok(Date.now() < deadline, 'the worker started');
+      await delay(25);
+    }
+    assert.equal(await requestCoordinatorCancel(started.sessionHandle), true);
+    const task = await ended(started.taskHandle);
+    assert.equal(task.state, 'cancelled', task.result?.text);
+    assert.equal(await requestCoordinatorCancel(started.sessionHandle), false, 'it has ended');
+    assert.equal(await requestCoordinatorCancel('syn_sess_nobody'), false);
+    const worker = readRoot(started.rootHandle).tasks.find(entry => !entry.coordinator);
+    assert.equal(readTask(worker.taskHandle).state, 'cancelled');
+  } finally {
+    delete process.env.CODEX_FIXTURE_WORKERS_HANG;
+  }
+});
+
+test('one answer asks for a bounded number of children, and the closing fence wins over a leading brace', () => {
+  const many = Array.from({ length: 65 }, (_, i) => ({ id: `c${i}`, task: 'x' }));
+  assert.throws(() => parseCoordinatorAnswer(start(...many), []), /at most 64/);
+  const answer = `{not json} then a plan\n${fence({ action: 'finish', report: 'done' })}`;
+  assert.equal(parseCoordinatorAnswer(answer, []).report, 'done');
+});
+
+test('agy cannot coordinate, named or chosen', async () => {
+  const repo = fixtureRepo();
+  await assert.rejects(
+    handleDelegate({ task: 'x', coordinate: true, backend: 'agy' }, repo, null, null, approve),
+    err => err.code === 'POLICY_DENIED',
+  );
+  const fixture = path.resolve(__dirname, '../../fixtures/agy-cli/agy.cjs');
+  process.env.AGY_PATH = fixture;
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  try {
+    const answer = await handleDelegate({ task: 'x', coordinate: true }, repo, null, null, approve).catch(err => err);
+    const text = answer instanceof Error ? answer.message : answer.content.map(part => part.text).join('\n');
+    assert.match(text, /agy cannot coordinate/);
+  } finally {
+    delete process.env.AGY_PATH;
+    await saveConfig({ ...CONFIG, rootLimits: {} });
   }
 });
