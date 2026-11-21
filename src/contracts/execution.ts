@@ -170,6 +170,12 @@ export interface LoopReport {
  */
 export type ExecutionProfile = 'read-only' | 'workspace-write';
 
+/** The kinds of turn the server runs (#209). */
+export type TaskRole = 'consult' | 'review' | 'delegate' | 'coordinate';
+
+/** Every {@link TaskRole}. */
+export const TASK_ROLES: readonly TaskRole[] = Object.freeze(['consult', 'review', 'delegate', 'coordinate']);
+
 /** One changed path, relative to the workspace, as the server observed it. */
 export interface ObservedChange {
   path: string;

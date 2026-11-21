@@ -98,6 +98,7 @@ test('the runner passes the request unchanged and lets the role win', async () =
     assert.deepEqual(options.warnings, ['w']);
     assert.deepEqual(options.writeScope, ['src']);
     for (const [key, value] of Object.entries(ROLE_POLICIES[role])) assert.equal(options[key], value);
+    assert.equal(options.role, role);
   }
 });
 
@@ -152,4 +153,10 @@ test('a call scope ends with TIMEOUT or ABORTED before a turn', () => {
     () => aborted.assertLive('cancelled before work'),
     err => err instanceof ToolError && err.code === 'ABORTED' && err.message === 'cancelled before work',
   );
+});
+
+test('a forged role does not reach the controller', async () => {
+  const { calls, execute } = recorder();
+  await runTask('review', { prompt: 'p', publicInput: 'p', args: {}, cwd: '/work', options: { role: 'delegate' } }, execute);
+  assert.equal(calls[0][6].role, 'review');
 });
