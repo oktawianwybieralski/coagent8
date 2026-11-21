@@ -313,8 +313,7 @@ the call fails with `ROOT_LIMIT`. `parent_task` records which task a new one fol
 from. `session` with `action: root` shows the use and the tasks; a finished agent
 does not make the work accepted. A `scope` is an agreement that the server checks at
 the start and observes at the end, not a sandbox: an agent can still reach another
-agent's paths (only Claude Code's `Edit` and `Write` are held to the scope, unless a
-scope entry contains a pattern character such as `*` or `[`), a path
+agent's paths (from 0.8.0 no backend is held to the scope), a path
 another agent held is marked as possibly changed by either, and a check an agent runs
 sees the half-finished work of the others. Roots belong to a CoAgent8 data directory:
 a client with another one does not see them.
@@ -525,11 +524,9 @@ error.
   a headless agy client stopped calls after 180 seconds.
 - **Sessions on disk.** Every call keeps a session record, even with archives
   turned off, and the session handle arrives with the result.
-- **Codex sandbox on Windows.** CoAgent8 runs Codex in its unelevated
-  Windows sandbox, which reads what your account can read and blocks writes.
-  A PowerShell installed from the Microsoft Store cannot start inside it, so
-  Codex falls back to Windows PowerShell 5.1; install PowerShell 7 another way
-  (for example `scoop install pwsh` or the MSI) to give Codex version 7.
+- **Codex PowerShell on Windows.** CoAgent8 leaves the Microsoft Store's
+  PowerShell alias off Codex's `PATH`, so Codex uses Windows PowerShell 5.1 unless
+  PowerShell 7 is installed another way (for example `scoop install pwsh` or the MSI).
 - **Reviews of another tree.** A staged, commit or range review whose files do
   not match the current workspace is refused rather than reviewed.
 

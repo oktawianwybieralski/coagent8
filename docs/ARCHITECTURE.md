@@ -375,8 +375,7 @@ Review collects bounded Git input and supplies a snapshot identifier incorporati
 SHA-256 of diff/workspace input/omissions. The requested envelope ends with `CHECKS`;
 the server owns the terminator (owner decision 2026-10-18, `ENVELOPE-001`).
 
-**Large changes (`REVIEW-002`, 2026-11-03).** The diff stays in the prompt, because a Claude
-reviewer has no shell to read it and an agy sandbox can refuse a file read. A diff above
+**Large changes (`REVIEW-002`, 2026-11-03).** The diff stays in the prompt; reading it by reference is planned (#214). A diff above
 `REVIEW_PART_CHARS` (200,000 characters) is split into parts at file, hunk and line boundaries,
 each piece under its file header, every line in exactly one part. Each part is reviewed in a
 session of its own, bound to `<snapshot>/part-<n>-of-<total>`; then one synthesis turn, which
@@ -386,8 +385,8 @@ the server knows each part was delivered, not that it was read. Above `MAX_REVIE
 the review is refused before any turn. This was chosen over letting the reviewer fetch the diff
 itself after consulting Codex and agy and comparing published review tools.
 
-**Checks in review (`REVIEW-003`, owner decision 2026-11-03).** The reviewer stays read-only, so
-its own CHECKS line could only report NOT_RUN. `review` takes `checks`, approved like those of the
+**Checks in review (`REVIEW-003`, owner decision 2026-11-03).** A reviewer's own CHECKS line is not
+evidence (since #211 it may run commands, but the server does not observe them). `review` takes `checks`, approved like those of the
 `delegate` loop (an exact entry of `allowedChecks` or the user's form). The server runs them in
 the work tree, which `assertReviewWorkspace` has made the reviewed state, before the turn; a check
 that changes the collected input is refused before any turn. Their results go into the prompt,
@@ -423,8 +422,7 @@ A reported length stop (Claude Code `stop_reason: max_tokens`) blocks with eithe
 leaves the review unjudged, so it can be retried. Codex and agy report no stop reason; for
 them `CHECKS` last and the terminal event are the evidence, and a model that writes
 `CHECKS` before its findings and then stops cannot be detected. Any FAIL blocks. Runtime
-scopes require both checks; a read-only reviewer cannot run them, so its honest
-NOT_RUN does not block and the server verdict names the checks it did not run:
+scopes require both checks; a reviewer's NOT_RUN does not block and the server verdict names the checks it did not run:
 `Verdict: READY (typecheck and tests not run)`. A reported PASS is not evidence
 either; the author runs the checks locally and CI on the pull request (owner
 decision 2026-10-11, replacing the AX-007a BLOCKED verdict).
@@ -1213,7 +1211,7 @@ interrupted. Results carry actual backend/model/profile, task/root/parent identi
 workspace/candidate identity, changes/artifact references, checks, usage availability
 and next actions. Worker completion does not establish root acceptance.
 
-Read-only, workspace-write and bounded command profiles are distinct from role.
+Execution is the same for every role (#211); a role decides prompts, answer contract and session group.
 One writer per canonical workspace is default; authorized disjoint/separate
 workspaces permit parallel work. Preserve dirty baselines/partial work, reject
 escaping writes and detect integration conflicts. Skills cannot authorize tools.
@@ -1247,7 +1245,7 @@ backend, which changes files in the workspace, and gets the observed changes
 back. This is the synchronous first step of [DELEGATE-001](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up);
 asynchronous start, `wait` and caller wake-up (`001c-e`) keep this contract and
 add an immediate handle ([asynchronous delegation](#asynchronous-delegation-and-caller-wake-up-delegate-001c)).
-`consult` and `review` stay read-only, so a reviewer never edits what it judges.
+`consult` and `review` are told to leave the workspace as they found it, and a review's snapshot is checked again after its turn.
 
 **Tool `delegate`.** `task` (required): objective and acceptance criteria,
 naming files instead of pasting them. `scope` (optional): workspace-relative
@@ -1283,14 +1281,14 @@ a changed branch. The worker is told not to commit, push, reset, stash or
 switch branches; the server never does any of them and never cleans up.
 
 **Checks.** The worker runs `checks` where it can and reports each as PASS, FAIL
-or NOT_RUN; a denied command is reported, not worked around. agy runs no command.
+or NOT_RUN; a denied command is reported, not worked around.
 Without `loop`, the calling agent runs the checks itself before accepting the
 change (owner decision 2026-10-21); with `loop: true` the server runs them and
 their results decide ([server-owned loop](#asynchronous-delegation-and-caller-wake-up-delegate-001c)).
 
 **agy denials (#92).** Headless agy ends its turn without an answer at the first
 denied action. That can be a command, or a file tool that headless mode does not
-approve. A `read_file` in another checkout outside the workspace was denied,
+approve (before #211; turns now skip permission prompts). A `read_file` in another checkout outside the workspace was denied,
 while agy's own data directory stayed readable. Which other paths agy denies
 is not established. In a Git worktree or a clone, agy can follow the Git
 metadata to the main checkout and read there (reproduced natively on
@@ -1303,14 +1301,9 @@ denied actions. They name only identifiers from agy's report or its stderr
 line, at most five, and never paths, arguments or command text. Observed
 changes cover both turns.
 
-Codex 0.162 on Windows cannot start a process from Node
-inside its sandbox (`spawn EPERM`, verified natively 2026-10-21), so test runners
-that spawn processes fail there.
-
-**Codex on Windows.** The unelevated sandbox runs PowerShell in ConstrainedLanguage mode, so
-.NET calls fail while cmdlets work (codex-cli 0.164, 2026-11-01). A worker told only to report
-denials took that error for one and stopped without changing anything, so a Windows writer now
-gets a note about it.
+Before #211 Codex on Windows ran in its unelevated sandbox, which could not start a process from
+Node (`spawn EPERM`, 2026-10-21) and ran PowerShell in ConstrainedLanguage mode (2026-11-01).
+Without a sandbox neither applies.
 
 **Known limitations.** Claude's `Bash` and agy write wherever the user's account
 can. On Windows, `delegate` requires the job helper, so a cancelled or timed-out
@@ -1407,8 +1400,8 @@ consultation (`syn_sess_a1837063adffe783111be042`, 2026-11-06) preferred it over
 relax the verified profiles of [rule 11](../.agents/rules/11-security-and-sandboxes.md), needs a local
 transport with a token, and has unverified behavior on Codex and agy without approvals.
 
-**The gateway is the end of a read-only turn.** `delegate` with `coordinate: true` runs the objective as a task in the
-read-only profile, under a root like any other. A coordinator has no CoAgent8 tool, and the nested-turn refusal stays
+**The gateway is the end of a turn.** `delegate` with `coordinate: true` runs the objective as a task on the host
+(#211), under a root like any other. A coordinator has no CoAgent8 tool, and the nested-turn refusal stays
 set in its environment. Each answer ends with one JSON object, in a closing `json` fence or as the whole answer, and
 nothing after it: `{"action":"finish","report":...}` or `{"action":"start","children":[...]}`. Prose is never read as a
 request. A native schema flag is not used, so this form is the same on every backend. One refused answer gets one
@@ -1445,7 +1438,7 @@ cannot stop one worker of a running round: it is not running then, which is why 
 which ended, which were interrupted and which never started, in its root, under the same parent. A worker
 that may outlive its server on POSIX keeps its writer record (#186), so a duplicate writer is refused. A second coordinator of a session gets `SESSION_BUSY` from its reservation on, while the first is still reading its workers, and so does any other turn in that session, or closing it, while one runs. Its session counts as used while it waits, so it does not expire. These refusals look at the root record without a lock shared with the session, so a call racing a coordinator's start can still get in; the coordinator's next turn then fails closed, with its workers' results kept. A continuation can narrow the scope of the first start but not widen it, and naming none keeps it.
 
-**Native subagents.** Claude's read-only tool list has no agent tool and Codex's subagents stay off, as the profiles verify. agy's read-only turn reports
+**Native subagents.** Claude's tool list has no agent tool and Codex's subagents stay off, as each turn verifies. agy's turn reported
 `invoke_subagent` and `schedule` among its tools (its own answer, agy 1.5.1, 2026-11-06, not an observed use), and no setting that turns them off is established. So neither a coordinator nor its workers run on agy, whether named or chosen by `auto`: a coordinator fails
 `POLICY_DENIED` before the turn, and a worker is reported as not started. A worker a caller starts on agy with `root_handle`, and a review a loop worker gets on agy, keep this limit (#200): `maxCalls` counts backend turns and claims no cost cap. Consult calls of the outer agent are not charged.
 
@@ -1658,7 +1651,7 @@ moves from the caller into CoAgent8's application layer, because it needs no
 model: after the worker's turn the server runs `checks` in the candidate under a
 command policy (working directory, deadline, output bound, recorded exits),
 returns failures to the same worker session for a bounded number of rounds,
-then requests an independent read-only review in a separate session (another
+then requests an independent review in a separate session (another
 backend preferred; another backend alone is not independence), and wakes the
 caller once with the final result. Every round is budgeted and approved before
 acceptance, or the task pauses for input. The writer is held across rounds; a
@@ -1675,7 +1668,7 @@ configuration, or the user approves it on a form before the task starts; a calli
 one. Only an accepted form, checked or left unchecked, is reported as the user's answer. A declined or
 cancelled form is reported as the client's answer with `allowedChecks` as the remedy, because Claude
 Code 2.1.317 in VS Code declines and Codex 0.164.0-alpha.11.1 cancels without showing the form
-(measured 2026-11-03, #135). Each round runs the checks in order up to the first failure, then, only if they pass, a read-only
+(measured 2026-11-03, #135). Each round runs the checks in order up to the first failure, then, only if they pass, a
 review on another backend in one review session, moving on from a backend out of quota. Failures and P1 or P2 findings return to the worker's
 session for at most `LOOP_FIX_ROUNDS` turns, and each round repeats the checks and the review. Later
 turns get no form, since the call that could ask has ended: a model that needs approval ends the loop

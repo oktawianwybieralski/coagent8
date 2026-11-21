@@ -50,7 +50,7 @@ export const LEGACY_ALIASES: Readonly<Record<LegacyAliasName, LegacyAlias>> = {
     taskType: 'debug',
     contextAsQuestions: true,
     description:
-      '[Deprecated: Use consult with task_type="debug" instead] Diagnose an error or stack trace using local CLI reasoning agents Returns root cause analysis and a step-by-step fix recommendation.',
+      '[Deprecated: Use consult with task_type="debug" instead] Diagnose an error or stack trace using local CLI reasoning agents. Returns root cause analysis and a step-by-step fix recommendation.',
     properties: {
       error_message: { type: 'string', description: 'The complete error message or stack trace to diagnose.' },
       context: { type: 'string', description: 'What you were doing when the error occurred, relevant inputs, or recent changes.' },
