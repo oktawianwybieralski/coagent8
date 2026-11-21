@@ -57,7 +57,8 @@ import {
   resolveWriteClaim,
   type WorkspaceSnapshot,
 } from '../workspace/changes.js';
-import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
+import type { ExecutionRequest, TaskOptions } from './controller.js';
+import { runTask } from './task.js';
 
 /**
  * Runs one delegated write turn.
@@ -134,12 +135,19 @@ export async function executeDelegation(
     }
     const before: WorkspaceSnapshot = await captureWorkspace(cwd, repo, options.context);
     const turn = (text: string, turnArgs: ExecutionRequest, turnOptions: typeof taskOptions) =>
-      executeTask(text, publicInput, turnArgs, cwd, abortSignal, onProgress, {
-        ...turnOptions,
-        // An adapter's own recovery turn is a backend turn too, in the first turn as in a later one.
-        ...(beforeRound ? { beforeExtraTurn: beforeRound } : {}),
-        profile: 'workspace-write',
-        writeScope: scope,
+      runTask('delegate', {
+        prompt: text,
+        publicInput,
+        args: turnArgs,
+        cwd,
+        abortSignal,
+        onProgress,
+        options: {
+          ...turnOptions,
+          // An adapter's own recovery turn is a backend turn too, in the first turn as in a later one.
+          ...(beforeRound ? { beforeExtraTurn: beforeRound } : {}),
+          writeScope: scope,
+        },
       });
     const runSupervised = async () => {
       const first = await turn(prompt, args, taskOptions);
@@ -176,13 +184,13 @@ export async function executeDelegation(
           ),
       });
     };
-    const runTask = () => withWorkerGroups(runSupervised, lease);
+    const runGrouped = () => withWorkerGroups(runSupervised, lease);
     outcome = await (process.platform === 'win32'
-      ? withRequiredJobHelper(runTask, () => {
+      ? withRequiredJobHelper(runGrouped, () => {
           treeUnconfirmed = true;
           onTreeUnconfirmed?.();
         })
-      : runTask());
+      : runGrouped());
     let changes: WorkspaceChanges;
     try {
       changes = await compareWorkspace(cwd, repo, before, await captureWorkspace(cwd, repo), scope, undefined, lease.peerClaims());
