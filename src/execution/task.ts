@@ -23,7 +23,7 @@ import type {
 import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
 import { ensureHostConsent, type HostConsentPrompt } from './host-consent.js';
 import { jobHelperPath } from './job-helper.js';
-import { withRequiredJobHelper } from './process.js';
+import { insideRequiredJobHelper, withRequiredJobHelper } from './process.js';
 import { createExecutionBudget } from './runtime/budget.js';
 import { createPhaseTracker, type PhaseTracker } from './runtime/timing.js';
 
@@ -89,9 +89,10 @@ export async function runTask(
       ...ROLE_POLICIES[role],
       role,
     });
-  // On Windows every process of the turn starts inside the helper's job. A delegate turn already
-  // runs inside its writer's, whose observer must keep hearing about a tree it could not confirm.
-  return process.platform === 'win32' && role !== 'delegate' ? withRequiredJobHelper(turn) : turn();
+  // On Windows every process of the turn starts inside the helper's job. A turn inside a writer's
+  // (its own turns, a loop's review) keeps the writer's, whose observer must keep hearing about a
+  // tree it could not confirm, so the writer is not released while a descendant may still run.
+  return process.platform === 'win32' && !insideRequiredJobHelper() ? withRequiredJobHelper(turn) : turn();
 }
 
 /** What a tool call shares with the caller: its budget, trace and observer. */

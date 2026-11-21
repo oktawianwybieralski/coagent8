@@ -97,6 +97,11 @@ export function withRequiredJobHelper<T>(
   return requiredJobHelper.run({ locate, onTreeUnconfirmed }, run);
 }
 
+/** Whether the caller already runs inside a required job helper, whose observer must stay in place. */
+export function insideRequiredJobHelper(): boolean {
+  return requiredJobHelper.getStore() !== undefined;
+}
+
 /** Told synchronously around the start of each process. */
 export interface WorkerStartObserver {
   workerStarting(): void;

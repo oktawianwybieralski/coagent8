@@ -221,20 +221,20 @@ test('Issue #20: handleConsult includes read-only file tool guidance when task_t
   assert.equal(
     receivedPrompts[0],
     withAnswerLanguage(
-      'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nIf something you need is out of reach, say so: the server sets what this turn can reach.\nPlain question',
+      'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nIf something you need is out of reach, say so: the server sets what this turn can reach.\nLeave the workspace as you found it: do not edit, stage, commit, stash, reset or delete anything in it.\nPlain question',
     ),
-    'plain consult without task_type or context_files stays byte-for-byte neutral, apart from the answer language',
+    'plain consult without task_type or context_files stays neutral, apart from the answer language and the workspace rule (#211)',
   );
   assert.ok(!receivedPrompts[0].includes(HOST_TOOL_GUIDANCE));
 
   await handleConsult('consult', { proposal: 'Architecture check', task_type: 'architecture' }, tempDir);
   assert.ok(receivedPrompts[1].includes('[TASK: ARCHITECTURAL & CODE ANALYSIS]'));
-  assert.ok(receivedPrompts[1].includes(HOST_TOOL_GUIDANCE), 'task_type consult includes read-only file tool guidance');
+  assert.ok(receivedPrompts[1].includes(HOST_TOOL_GUIDANCE), 'task_type consult includes the host tool guidance');
 
   const sampleFile = path.join(tempDir, 'sample.ts');
   fs.writeFileSync(sampleFile, 'export const sample = 1;\n');
   await handleConsult('consult', { proposal: 'File check', context_files: ['sample.ts'] }, tempDir);
-  assert.ok(receivedPrompts[2].includes(HOST_TOOL_GUIDANCE), 'context_files consult includes read-only file tool guidance');
+  assert.ok(receivedPrompts[2].includes(HOST_TOOL_GUIDANCE), 'context_files consult includes the host tool guidance');
 });
 
 test('AX-001g: the footer shows the turn usage with the list price of the exact-matched model, and no price for another model', async () => {

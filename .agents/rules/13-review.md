@@ -22,7 +22,8 @@ documentation to check includes ROADMAP, README, skills and TSDoc.
 
 ## State envelope
 
-Independent review runs the CoAgent8 `review` tool in its read-only profile. A
+Independent review runs the CoAgent8 `review` tool in a separate session that runs on the
+host and leaves the workspace as it found it (owner decision 2026-11-21, #211). A
 plain `consult` is advisory: it requests no envelope and never substitutes for
 review or for bound release approval. The reviewer answers with:
 

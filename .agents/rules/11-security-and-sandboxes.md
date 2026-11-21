@@ -143,10 +143,9 @@ This rule is implemented in `REDACTION-002` (AUD-P0-2, AUD-P2-13).
 
 **Current enforcement limits:** Claude disables hooks and inherited MCP servers;
 Codex disables and verifies them per thread. agy cannot isolate inherited
-external MCP tools or plugins (`CUR-002`); its shell sandbox flag alone does not
-establish the read-only capability boundary. Owner decision (2026-10-08): this
-is a documented limitation of a third-party CLI. CoAgent8 runs agy only with
-`--sandbox`, refuses turns from a CoAgent8 started inside a turn
+external MCP tools or plugins (`CUR-002`). Owner decision (2026-10-08): this
+is a documented limitation of a third-party CLI. Since #211 agy turns run on the
+host with `--dangerously-skip-permissions`; CoAgent8 refuses turns from a CoAgent8 started inside a turn
 (`COAGENT8_NESTED_TURN`), names agy's inherited servers and plugins in doctor,
 and must not describe agy turns as isolated from them.
 

@@ -160,3 +160,17 @@ test('a forged role does not reach the controller', async () => {
   await runTask('review', { prompt: 'p', publicInput: 'p', args: {}, cwd: '/work', options: { role: 'delegate' } }, execute);
   assert.equal(calls[0][6].role, 'review');
 });
+
+test('a turn inside a writer keeps the writer job context (#211 review)', async () => {
+  const { insideRequiredJobHelper, withRequiredJobHelper } = require('../../src/execution/process.ts');
+  assert.equal(insideRequiredJobHelper(), false);
+  let inside;
+  await withRequiredJobHelper(
+    async () => {
+      inside = insideRequiredJobHelper();
+    },
+    () => {},
+    () => 'helper.exe',
+  );
+  assert.equal(inside, true);
+});

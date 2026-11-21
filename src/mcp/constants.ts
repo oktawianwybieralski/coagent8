@@ -53,3 +53,7 @@ export const SERVER_INSTRUCTIONS =
  */
 export const HOST_TOOL_GUIDANCE =
   'You can read files, run commands (git, tests, builds) and use the network to check what you need. Leave the workspace as you found it: do not edit, stage, commit, stash, reset or delete anything in it.';
+
+/** Every consult prompt carries this; a plain question gets nothing more (CONTEXT-001). */
+export const LEAVE_WORKSPACE_GUIDANCE =
+  'Leave the workspace as you found it: do not edit, stage, commit, stash, reset or delete anything in it.';
