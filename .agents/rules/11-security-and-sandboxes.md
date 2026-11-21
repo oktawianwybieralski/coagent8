@@ -23,8 +23,11 @@ and workspace-write profiles of earlier versions (owner decision 2026-11-21).
 * **Consent.** No model turn starts until the user accepted host execution:
   `"hostExecution": "accepted"` in the configuration, or a one-time MCP form that
   records it. A client that cannot show the form gets a refusal that says how to
-  give it. A calling agent, skill or worker cannot give it. The test suite sets
-  `COAGENT8_HOST_EXECUTION=accepted` in its hermetic environment.
+  give it. A calling agent, skill or worker cannot give it. The environment of
+  the server process may give it too (`COAGENT8_HOST_EXECUTION=accepted`): whoever
+  starts the server is the user or acts for them, as for a headless setup, and the
+  test suite sets it in its hermetic environment. A turn's own environment cannot
+  reach the server that started it.
 * **Codex** runs `app-server -c sandbox_mode="danger-full-access" -c
   approval_policy="never"`; each thread start or resume must report
   `dangerFullAccess` and `never`. Its tool features (connectors, plugins, browser

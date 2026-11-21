@@ -102,6 +102,11 @@ export function insideRequiredJobHelper(): boolean {
   return requiredJobHelper.getStore() !== undefined;
 }
 
+/** The observer that hears about a process tree the helper could not confirm ended, if any. */
+export function requiredJobHelperObserver(): (() => void) | undefined {
+  return requiredJobHelper.getStore()?.onTreeUnconfirmed;
+}
+
 /** Told synchronously around the start of each process. */
 export interface WorkerStartObserver {
   workerStarting(): void;

@@ -161,16 +161,19 @@ test('a forged role does not reach the controller', async () => {
   assert.equal(calls[0][6].role, 'review');
 });
 
-test('a turn inside a writer keeps the writer job context (#211 review)', async () => {
-  const { insideRequiredJobHelper, withRequiredJobHelper } = require('../../src/execution/process.ts');
+test('a turn inside a writer keeps the writer job context and its observer (#211 review)', async () => {
+  const { insideRequiredJobHelper, requiredJobHelperObserver, withRequiredJobHelper } = require('../../src/execution/process.ts');
   assert.equal(insideRequiredJobHelper(), false);
-  let inside;
-  await withRequiredJobHelper(
-    async () => {
-      inside = insideRequiredJobHelper();
-    },
-    () => {},
-    () => 'helper.exe',
-  );
-  assert.equal(inside, true);
+  const writerObserver = () => {};
+  const seen = [];
+  const execute = async () => (seen.push(requiredJobHelperObserver()), { isError: false });
+  for (const role of ['review', 'consult', 'delegate']) {
+    await withRequiredJobHelper(
+      () => runTask(role, { prompt: 'p', publicInput: 'p', args: {}, cwd: '/work' }, execute),
+      writerObserver,
+      () => 'helper.exe',
+    );
+  }
+  // A loop's review inside the writer reports an unconfirmed tree to the writer, which then keeps its lease.
+  assert.deepEqual(seen, [writerObserver, writerObserver, writerObserver]);
 });
