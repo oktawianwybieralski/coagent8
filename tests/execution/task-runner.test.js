@@ -30,7 +30,7 @@ test('each role sets the options its path set before the runner', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(ROLE_POLICIES)), {
     consult: { requireEnvelope: false },
     review: { requireEnvelope: true },
-    delegate: { requireEnvelope: false, profile: 'workspace-write' },
+    delegate: { profile: 'workspace-write' },
     coordinate: { requireEnvelope: false, coordinatorTurn: true },
   });
   assert.ok(Object.isFrozen(ROLE_POLICIES));
@@ -41,6 +41,37 @@ test('the runner passes the request unchanged and lets the role win', async () =
   const signal = new AbortController().signal;
   const onProgress = () => {};
   const args = { proposal: 'q', backend: 'codex' };
+  // Each value the opposite of some role's: a role that fixes an option replaces it, the others keep it.
+  const forged = [
+    { requireEnvelope: true, profile: 'read-only', coordinatorTurn: false },
+    { requireEnvelope: false, profile: undefined, coordinatorTurn: true },
+  ];
+  for (const [role, policy] of Object.entries(ROLE_POLICIES))
+    for (const fixed of forged) {
+      const { calls, execute } = recorder();
+      await runTask(
+        role,
+        {
+          prompt: 'prompt',
+          publicInput: 'public',
+          args,
+          cwd: '/work',
+          abortSignal: signal,
+          onProgress,
+          options: { warnings: ['w'], writeScope: ['src'], ...fixed },
+        },
+        execute,
+      );
+      assert.equal(calls.length, 1);
+      const options = calls[0][6];
+      for (const key of Object.keys(fixed)) assert.equal(options[key], key in policy ? policy[key] : fixed[key], `${role} ${key}`);
+    }
+  // A delegate caller's requireEnvelope reaches the controller, as before the runner (#209 review).
+  for (const requireEnvelope of [true, false]) {
+    const { calls, execute } = recorder();
+    await runTask('delegate', { prompt: 'p', publicInput: 'p', args, cwd: '/work', options: { requireEnvelope } }, execute);
+    assert.equal(calls[0][6].requireEnvelope, requireEnvelope);
+  }
   for (const role of Object.keys(ROLE_POLICIES)) {
     const { calls, execute } = recorder();
     await runTask(
@@ -52,14 +83,7 @@ test('the runner passes the request unchanged and lets the role win', async () =
         cwd: '/work',
         abortSignal: signal,
         onProgress,
-        // Forged role options: the role's own values replace them.
-        options: {
-          warnings: ['w'],
-          writeScope: ['src'],
-          requireEnvelope: role !== 'review',
-          profile: 'read-only',
-          coordinatorTurn: role !== 'coordinate',
-        },
+        options: { warnings: ['w'], writeScope: ['src'] },
       },
       execute,
     );
@@ -73,9 +97,7 @@ test('the runner passes the request unchanged and lets the role win', async () =
     assert.equal(passedProgress, onProgress);
     assert.deepEqual(options.warnings, ['w']);
     assert.deepEqual(options.writeScope, ['src']);
-    assert.equal(options.requireEnvelope, role === 'review');
-    assert.equal(options.profile, role === 'delegate' ? 'workspace-write' : 'read-only');
-    assert.equal(options.coordinatorTurn, role === 'coordinate' ? true : role !== 'coordinate');
+    for (const [key, value] of Object.entries(ROLE_POLICIES[role])) assert.equal(options[key], value);
   }
 });
 

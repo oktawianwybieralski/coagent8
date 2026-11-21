@@ -27,7 +27,7 @@ type RolePolicy = Readonly<Pick<TaskOptions, 'requireEnvelope' | 'profile' | 'co
 export const ROLE_POLICIES: Readonly<Record<TaskRole, RolePolicy>> = Object.freeze({
   consult: Object.freeze({ requireEnvelope: false }),
   review: Object.freeze({ requireEnvelope: true }),
-  delegate: Object.freeze({ requireEnvelope: false, profile: 'workspace-write' }),
+  delegate: Object.freeze({ profile: 'workspace-write' }),
   coordinate: Object.freeze({ requireEnvelope: false, coordinatorTurn: true }),
 });
 
