@@ -1,6 +1,6 @@
 ---
 name: coagent8-delegate
-description: Hand a well-defined code change to another local coding agent (Codex, Claude Code or Antigravity) through the CoAgent8 delegate tool, then check what it changed. Use when the user asks to delegate, hand off or parallelize coding work, or names CoAgent8 delegate. Not for questions or reviews, which consult and review answer read-only.
+description: Hand a well-defined code change to another local coding agent (Codex, Claude Code or Antigravity) through the CoAgent8 delegate tool, then check what it changed. Use when the user asks to delegate, hand off or parallelize coding work, or names CoAgent8 delegate. Not for questions or reviews, which consult and review answer without changing files.
 ---
 
 # CoAgent8 delegate
@@ -49,7 +49,7 @@ the user's authority; the delegated agent never does.
    backend, with the acceptance criteria and your check results in
    `instructions`. The author of a change never approves it.
 
-**Server loop.** With `loop: true` the server itself runs `checks`, then a read-only
+**Server loop.** With `loop: true` the server itself runs `checks`, then an independent
 review on another backend, returns failures to the agent for up to two fix rounds,
 and reports all of it once, in the block "Loop by CoAgent8". Use it when you would
 otherwise supervise those rounds. Each check is one command with arguments, without

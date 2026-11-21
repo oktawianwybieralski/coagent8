@@ -12,6 +12,7 @@ import type { ElicitResult, Tool, Resource, ResourceTemplate } from '@modelconte
 import { createProgressReporter } from './progress.js';
 import { chooseWorkspace, deletedSessionWorkspace, type ResolvedWorkspace } from '../workspace/workspace.js';
 import { redactDiagnostic } from '../security/redaction.js';
+import { ensureHostConsent, HOST_EXECUTION_NOTICE, type HostConsentPrompt } from '../execution/host-consent.js';
 import { BRAND } from '../brand.js';
 import { CANONICAL_TOOL_NAMES, SERVER_INSTRUCTIONS } from './constants.js';
 import { SERVER_ICONS } from '../generated/server-icon.js';
@@ -294,6 +295,41 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
     };
   }
 
+  /** The one-time form for running agents on the host without a sandbox (#211). */
+  function hostConsentPrompt(budget?: ExecutionBudget): HostConsentPrompt | undefined {
+    if (!server.getClientCapabilities()?.elicitation?.form) return undefined;
+    return async signal => {
+      const effectiveSignal = combineSignals(signal, budget?.executionSignal);
+      const remaining = budget?.remainingExecutionMs();
+      if (effectiveSignal?.aborted || (remaining !== undefined && remaining <= 0)) {
+        throw new ToolError('ABORTED', 'Request cancelled before asking for consent.');
+      }
+      let answer: ElicitResult;
+      try {
+        answer = await server.elicitInput(
+          {
+            message: `${BRAND.NAME}: ${HOST_EXECUTION_NOTICE} Allow this from now on?`,
+            requestedSchema: {
+              type: 'object',
+              required: ['approve'],
+              properties: { approve: { type: 'boolean', title: 'Run agents on this computer', default: false } },
+            },
+          },
+          { signal: effectiveSignal ?? undefined, timeout: remaining ?? CONSENT_TIMEOUT_MS },
+        );
+      } catch (cause) {
+        if (effectiveSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.', { cause });
+        throw new ToolError('POLICY_DENIED', `The consent request failed: ${(cause as Error).message}`, { cause });
+      }
+      // Only an accepted form with the box checked is consent, as for models (CUR-003).
+      return {
+        approved: answer.action === 'accept' && answer.content?.approve === true,
+        declined: answer.action === 'decline',
+        unanswered: answer.action === 'cancel',
+      };
+    };
+  }
+
   /** The form for checks the server would run (`DELEGATE-001f2`); only a checked box approves. */
   function checkApprovalPrompt(budget?: ExecutionBudget, purpose: 'delegate' | 'review' = 'delegate'): CheckApprovalPrompt | undefined {
     if (!server.getClientCapabilities()?.elicitation?.form) return undefined;
@@ -436,6 +472,20 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
       }
       const consent = { askConsent: consentPrompt(extra.signal, budget) };
       const execOptions = { ...consent, budget, context: readContext, ...(serverClock ? { clock: serverClock } : {}) };
+      // Every call that can start a model turn needs the user's consent to run agents on the host (#211).
+      const startsTurns =
+        (
+          [
+            CANONICAL_TOOL_NAMES.REVIEW,
+            CANONICAL_TOOL_NAMES.CONSULT,
+            CANONICAL_TOOL_NAMES.DELEGATE,
+            CANONICAL_TOOL_NAMES.ANALYZE,
+            CANONICAL_TOOL_NAMES.DEBUG,
+            CANONICAL_TOOL_NAMES.IMPLEMENT,
+          ] as string[]
+        ).includes(name) ||
+        (name === CANONICAL_TOOL_NAMES.RUN && args.action !== 'issue');
+      if (startsTurns) await ensureHostConsent(hostConsentPrompt(budget), extra.signal);
       switch (name) {
         case CANONICAL_TOOL_NAMES.SESSION:
           return await handleSession(args, cwd);

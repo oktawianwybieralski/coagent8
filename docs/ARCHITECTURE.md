@@ -18,12 +18,13 @@ model and reasoning effort are independent choices. Skills teach workflows;
 the server enforces capabilities, limits and task state.
 
 Today the server is a stdio MCP bridge to Codex, Claude Code and Antigravity
-(`agy`). Consultation and review run read-only with the profiles below; `delegate`
-runs workspace-write workers in the background under one root budget, in disjoint scopes of a work
+(`agy`). Every role runs through one runner (`src/execution/task.ts`, #209) on the host,
+without a sandbox, after the user's consent (#211, owner decision 2026-11-21); `delegate`
+runs workers in the background under one root budget, in disjoint scopes of a work
 tree or in separate linked worktrees, and with
 `loop: true` the server runs the approved checks and an independent review and
-returns failures to the worker. With `coordinate: true` a read-only agent asks the server for such
-workers. Task-scoped command profiles are planned (0.8.0).
+returns failures to the worker. With `coordinate: true` an agent asks the server for such
+workers. Isolation by containers or microVMs is planned (#215).
 
 ## Request path and ownership
 
@@ -499,11 +500,15 @@ Process input is bounded to 4 MiB, diagnostics to 512 KiB. Codex collector:
 message bound. UTF-8 decoders preserve split characters. Codex final text replaces
 commentary without carrying discarded commentary truncation into the final result.
 
-| Backend | Current enforced profile |
+| Backend | Turn execution (#211) |
 | --- | --- |
-| Codex | app-server read-only/never; disable tool features, read effective config, disable each inherited MCP server per thread, verify readOnly/never, features off and every MCP server disabled before turn/start. Empty MCP tables alone do not isolate merged config. On Windows, app-server launch passes `windows.sandbox="unelevated"` (a restricted token of the user's own account, which reads what the user can read and cannot write) and `allow_login_shell=false` (PowerShell with `-NoProfile`), and removes `%LOCALAPPDATA%\Microsoft\WindowsApps` from the server's `PATH`, because a Microsoft Store PowerShell alias there cannot start under the restricted token. |
-| Claude | restricted Read/Glob/Grep, dontAsk, no permission prompts, hooks disabled and strict empty MCP config; verify startup tools/no MCP/permission mode; stream-json, native resume and interrupt. Verified local /usage path requires 2.1.289+. |
-| agy | Native --sandbox, explicit model, stream-json/stdin and conversation resume. Unknown events warn; malformed known events fail. Every launch disables its auto-updater to prevent focus-stealing windows. Inherited MCP/plugins remain accessible. |
+| Codex | app-server danger-full-access/never; disable tool features, read effective config, disable each inherited MCP server per thread, verify dangerFullAccess/never, features off and every MCP server disabled before turn/start. Empty MCP tables alone do not isolate. |
+| Claude | restricted Read/Glob/Grep/Edit/Write/Bash/WebFetch/WebSearch with an allow rule each, dontAsk, no permission prompts, hooks disabled and strict empty MCP config; verify startup tools/no MCP/permission mode; stream-json, native resume and interrupt. Verified local /usage path requires 2.1.289+. |
+| agy | --dangerously-skip-permissions, explicit model, stream-json/stdin and conversation resume. Unknown events warn; malformed known events fail. Every launch disables its auto-updater to prevent focus-stealing windows. Inherited MCP/plugins remain accessible. |
+
+No turn starts before the user accepted host execution (`hostExecution: "accepted"`, or the
+one-time form, `src/execution/host-consent.ts`); the earlier read-only and workspace-write
+profiles are gone, and a session's role decides who may continue it (#210).
 
 Every turn sets COAGENT8_NESTED_TURN; nested CoAgent8 refuses execution before
 probes. Codex verifies isolation; agy's inherited-tool limitation was accepted by
@@ -1513,8 +1518,8 @@ first choice). Files extracted by npm or VS Code normally carry no Mark-of-the-W
 the helper disappears after the call started, because every launch inside a writer repeats the
 check (`withRequiredJobHelper`), and
 `doctor` reports it (`windowsJobHelper`) with the way out.
-Read-only runs keep the direct spawn with the documented limitation, because they do not
-write.
+Since #211 every role runs without a sandbox, so every turn requires the helper and starts its
+processes inside its job, as a writer's always did.
 
 **Known limit.** A job does not contain work a descendant hands to a process outside it,
 such as a running service or an existing browser instance. A program that needs to leave
@@ -1736,6 +1741,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-11-03 | A diff above 200,000 characters is reviewed in parts, each in its own session, then in one synthesis turn over their findings; more than 15 parts refuse the review (REVIEW-002). |
 | 2026-11-05 | Proposed by the agent, for the owner to change: root limit defaults of 32 calls, 4 concurrent tasks, depth 3 and 240 minutes; `loop: true` holds the whole work tree; every asynchronous delegation has a root, so a single worker needs no new argument. |
 | 2026-11-03 | The reviewer stays read-only; `review.checks` are run by the server before the turn under the same approval as the loop's checks, a check that does not pass blocks, and a check that changed the reviewed state refuses the review (REVIEW-003). |
+| 2026-11-21 | Owner decision (#208, #211): one runner for every role, and every turn runs on the host without a sandbox after a one-time user consent (`hostExecution`). Codex runs danger-full-access, Claude Code gets Bash, edits and web tools, agy skips permission prompts; tool features and inherited MCP servers stay off where the backend allows. On Windows every role needs the job helper. Containers or microVMs come later (#215). |
 
 ## Known limitations
 

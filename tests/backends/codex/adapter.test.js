@@ -50,7 +50,7 @@ test('production Codex adapter passes the shared pipeline, preserves Markdown an
   assert.equal(second.isError, false);
   assert.equal(readResult(second).turn, 2);
   const capture = JSON.parse(fs.readFileSync(process.env.CODEX_FIXTURE_CAPTURE, 'utf8'));
-  assert.deepEqual(capture.args.slice(0, 5), ['app-server', '-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="never"']);
+  assert.deepEqual(capture.args.slice(0, 5), ['app-server', '-c', 'sandbox_mode="danger-full-access"', '-c', 'approval_policy="never"']);
   assert.deepEqual(
     capture.records.map(r => r.method),
     [
@@ -71,7 +71,7 @@ test('production Codex adapter passes the shared pipeline, preserves Markdown an
   const resume = capture.records[3].params;
   assert.equal(resume.threadId, thread);
   assert.equal(resume.excludeTurns, true);
-  assert.equal(resume.sandbox, 'read-only');
+  assert.equal(resume.sandbox, 'danger-full-access');
   assert.equal(resume.approvalPolicy, 'never');
   assert.equal(resume.model, options.model);
   assert.deepEqual(
@@ -111,7 +111,7 @@ test('Codex failures are typed and authoritative even at exit zero; malformed or
     ['malformed', 'PROTOCOL_ERROR'],
     ['duplicate-terminal', 'PROTOCOL_ERROR'],
     ['exit-failed', 'PROCESS_ERROR'],
-    ['sandbox-writable', 'SANDBOX_UNAVAILABLE'],
+    ['sandbox-readonly', 'SANDBOX_UNAVAILABLE'],
     ['approvals-on', 'SANDBOX_UNAVAILABLE'],
     ['mcp-not-disabled', 'SANDBOX_UNAVAILABLE'],
     ['feature-enabled', 'SANDBOX_UNAVAILABLE'],
@@ -570,7 +570,7 @@ test('EXEC-001-T08c: probe, listModels, and inspectQuota abort deterministically
   }
 });
 
-test('a Codex review turn may read repository files with read-only shell commands, inside the verified read-only profile', async () => {
+test('a Codex review turn runs with full access and the host tool guidance (#211)', async () => {
   const { execFileSync } = require('node:child_process');
   const { handleReview } = require('../../../src/mcp/tools/review.tool.ts');
   const repo = path.join(directory, 'review-repo');
@@ -586,12 +586,13 @@ test('a Codex review turn may read repository files with read-only shell command
   await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
   await handleReview('review', { backend: 'codex', model: options.model }, repo);
   const capture = JSON.parse(fs.readFileSync(process.env.CODEX_FIXTURE_CAPTURE, 'utf8'));
-  // Codex has no file tool: its read-only shell (`exec_command`, feature `shell_tool`) is how it reads files.
-  assert.ok(!capture.args.includes('features.shell_tool=false'), 'the read-only shell stays on');
+  // Codex has no file tool: its shell (`exec_command`, feature `shell_tool`) is how it reads files.
+  assert.ok(!capture.args.includes('features.shell_tool=false'), 'the shell stays on');
   assert.doesNotMatch(capture.prompt, /do not run shell commands/i, 'the prompt does not forbid the only way Codex reads files');
-  assert.match(capture.prompt, /if you have none, read them with read-only shell commands/);
+  assert.match(capture.prompt, /You can read files, run commands/);
+  assert.match(capture.prompt, /Leave the workspace as you found it/);
   const start = capture.records.find(r => r.method === 'thread/start').params;
-  assert.equal(start.sandbox, 'read-only');
+  assert.equal(start.sandbox, 'danger-full-access');
   assert.equal(start.approvalPolicy, 'never');
   assert.deepEqual(start.config, { mcp_servers: { coagent8: { enabled: false }, 'fixture-http': { enabled: false } } });
   assert.deepEqual(
@@ -599,19 +600,4 @@ test('a Codex review turn may read repository files with read-only shell command
     ['experimentalFeature/list', 'mcpServerStatus/list', 'mcpServerStatus/list', 'turn/start'],
     'the turn starts only after the isolation checks',
   );
-});
-
-test('a Windows writer learns that its PowerShell runs in ConstrainedLanguage mode', () => {
-  const { codexTurnPrompt, CODEX_WINDOWS_WRITE_NOTE } = require('../../../src/backends/codex/adapter.ts');
-  assert.equal(codexTurnPrompt('task', 'workspace-write', 'win32'), `task\n\n${CODEX_WINDOWS_WRITE_NOTE}`);
-  assert.equal(codexTurnPrompt('task', 'read-only', 'win32'), 'task', 'a reader writes nothing');
-  assert.equal(codexTurnPrompt('task', 'workspace-write', 'linux'), 'task', 'other systems have no such mode');
-  assert.match(CODEX_WINDOWS_WRITE_NOTE, /Set-Content/);
-});
-
-test('the size limit covers the Windows writer note', { skip: process.platform === 'win32' ? false : 'Windows writers only' }, async () => {
-  const atLimit = 'a'.repeat(CODEX_MAX_INPUT_CHARS);
-  const result = await execute(atLimit, { model: 'gpt-6.1-sol', profile: 'workspace-write' });
-  assert.equal(result.error.code, 'INPUT_LIMIT');
-  assert.match(result.error.message, /too large for Codex/);
 });

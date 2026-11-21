@@ -2,7 +2,7 @@ import type { ToolArguments, ToolProgress } from '../arguments.js';
 import { EXECUTION_PARAMETERS } from '../schema.js';
 import type { TaskOptions } from '../../execution/controller.js';
 import { openCallScope, runTask, type CallScopeOptions } from '../../execution/task.js';
-import { CANONICAL_TOOL_NAMES, READ_ONLY_FILE_TOOL_GUIDANCE } from '../constants.js';
+import { CANONICAL_TOOL_NAMES, HOST_TOOL_GUIDANCE } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
 
 export function getCanonicalConsultToolDefinition() {
@@ -79,9 +79,9 @@ export async function handleConsult(
     focus?.header,
     // The answer is read in the caller's context and saved to a file by agy above about 4 KB.
     'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.',
-    // A sandbox's limit otherwise reads as the caller's wish (#130).
+    // A limit of the turn otherwise reads as the caller's wish (#130).
     'If something you need is out of reach, say so: the server sets what this turn can reach.',
-    focus || files.length > 0 ? READ_ONLY_FILE_TOOL_GUIDANCE : '',
+    focus || files.length > 0 ? HOST_TOOL_GUIDANCE : '',
     focus ? 'PROPOSAL / SPECIFICATION:' : '',
     args.proposal,
     questions ? 'QUESTIONS / FOCUS:' : '',

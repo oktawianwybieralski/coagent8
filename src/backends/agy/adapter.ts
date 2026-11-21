@@ -29,26 +29,15 @@ export const id = 'agy';
 export const name = 'Google Gemini (Antigravity agy)';
 /** POSIX time agy gets between `SIGTERM` and `SIGKILL` to shut down its session and commands. */
 const AGY_SIGNAL_GRACE_MS = 2000;
-/**
- * Added to a workspace-write prompt: agy approves only file edits there, and a single denied
- * command ends its headless turn without an answer (verified natively 2026-10-21). A file tool
- * on a path outside the workspace, such as the main checkout of a Git worktree, is denied the
- * same way (agy 1.4.12, 2026-10-31, #92).
- */
-export const AGY_WRITE_NOTE =
-  'In this run you cannot execute any command: a command attempt ends your turn without an answer. ' +
-  'Read, create and edit files only with your file tools and only inside the workspace directory: ' +
-  'a file outside it, including another checkout of this repository, is denied and also ends your turn. ' +
-  'Report every check as NOT_RUN.';
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const GEMINI_CONFIG_DIR = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 /**
- * Sent once on `--conversation <id>` when an `agy --sandbox` turn ends without an answer
- * because headless mode auto-denied a shell command (#20).
+ * Sent once on `--conversation <id>` when a turn ends without an answer because headless
+ * mode denied an action (#20); turns skip permission prompts (#211), so this is rare.
  */
 export const SANDBOX_DENIAL_RECOVERY_PROMPT =
-  'Your sandbox denied a shell command and your previous turn ended without an answer. Answer the previous request now, in the format it asks for. Run no shell command: read files only with your file tools, or answer from what you already know and say what you could not check.';
+  'An action was denied and your previous turn ended without an answer. Answer the previous request now, in the format it asks for, without that action, and say what you could not check.';
 
 /**
  * Sent once on `--conversation <id>` when a workspace-write turn ends without an answer after
@@ -59,8 +48,8 @@ export const SANDBOX_DENIAL_RECOVERY_PROMPT =
 export function writeDenialRecoveryPrompt(workspace: string, deniedActions: readonly string[]): string {
   return (
     `Headless mode ${deniedSummary(deniedActions)} and your previous turn ended without an answer. Continue the previous task now. ` +
-    `Read and edit only files inside ${workspace}, never another checkout of this repository, run no command, ` +
-    'and answer in the format the task asks for, reporting every check as NOT_RUN.'
+    `Read and edit only files inside ${workspace}, never another checkout of this repository, do not retry the denied action, ` +
+    'and answer in the format the task asks for.'
   );
 }
 
@@ -367,13 +356,12 @@ export async function execute(
 
   const { model: targetModel, effort: targetEffort } = resolveModelAndEffort(model, options.reasoningEffort);
 
-  // A workspace-write turn runs without the sandbox and without any enforced path limit, in
-  // `accept-edits` mode: headless agy approves file edits and denies every command, which the
-  // caller runs instead (owner decisions 2026-10-21, DELEGATE-001w); the prompt names the scope.
-  const writes = options.profile === 'workspace-write';
-  const baseArgs = [...resolved.argsPrefix, ...(writes ? ['--mode', 'accept-edits'] : ['--sandbox']), '--output-format', 'stream-json'];
-  // Headless agy ends its turn at the first denied command, so the writer is told to try none.
-  const turnPrompt = writes ? `${prompt}\n\n${AGY_WRITE_NOTE}` : prompt;
+  // Every turn runs on the host without permission prompts (#211, owner decision 2026-11-21):
+  // commands, edits and network reach what the user's account reaches. A delegate turn, the one
+  // with a write scope, keeps its own recovery text and its stricter end-of-turn rules.
+  const writes = options.writeScope !== undefined;
+  const baseArgs = [...resolved.argsPrefix, '--dangerously-skip-permissions', '--output-format', 'stream-json'];
+  const turnPrompt = prompt;
   if (options.cwd) {
     baseArgs.push('--add-dir', path.resolve(options.cwd));
   }
@@ -498,8 +486,8 @@ export async function execute(
     options.onEvent?.({
       type: 'warning',
       message: writes
-        ? `agy headless mode ${deniedSummary(s.deniedActions)} (a workspace-write turn runs no commands and uses files inside the workspace only); the answer may be incomplete.`
-        : `The agy sandbox ${deniedSummary(s.deniedActions)} outside the read-only profile; the answer may be incomplete.`,
+        ? `agy headless mode ${deniedSummary(s.deniedActions)} during the change; the answer may be incomplete.`
+        : `agy headless mode ${deniedSummary(s.deniedActions)}; the answer may be incomplete.`,
     });
   const expectedSessionId = retriedAfterDenial ? first.snapshot.nativeSessionId : native;
   const sessionMismatch = Boolean(expectedSessionId && s.nativeSessionId && s.nativeSessionId !== expectedSessionId);
@@ -562,11 +550,10 @@ export async function execute(
     error = {
       code: 'POLICY_DENIED',
       message: writes
-        ? `agy ended the turn without an answer after headless mode ${deniedSummary(s.deniedActions)}${retriedAfterDenial ? ', including on automatic retry inside the workspace' : ''}: ` +
-          'a workspace-write turn runs no command and uses files inside the workspace only, and headless agy ends its turn on a denial.'
+        ? `agy ended the turn without an answer after headless mode ${deniedSummary(s.deniedActions)}${retriedAfterDenial ? ', including on automatic retry inside the workspace' : ''}; headless agy ends its turn on a denial.`
         : retriedAfterDenial
-          ? `agy ended the turn without an answer after its sandbox ${deniedSummary(s.deniedActions)}, including on automatic retry without shell commands (headless mode cannot ask for permission).`
-          : `agy ended the turn without an answer after its sandbox ${deniedSummary(s.deniedActions)} (headless mode cannot ask for permission). Ask again for an answer that reads files inside the workspace without running commands.`,
+          ? `agy ended the turn without an answer after headless mode ${deniedSummary(s.deniedActions)}, including on automatic retry (headless mode cannot ask for permission).`
+          : `agy ended the turn without an answer after headless mode ${deniedSummary(s.deniedActions)} (headless mode cannot ask for permission).`,
       retryable: false,
     };
   }

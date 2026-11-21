@@ -148,7 +148,9 @@ function runTurn() {
     aggregatedOutput: 'PRIVATE_TOOL_OUTPUT',
     exitCode: 0,
   });
-  // CODEX_FIXTURE_WRITES: on a workspace-write thread, files to write (relative path to text) or delete (null).
+  // A delegate turn is the one whose prompt names what it may change.
+  threadWrites = String(userPrompt).includes('Change only:');
+  // CODEX_FIXTURE_WRITES: on a delegate turn, files to write (relative path to text) or delete (null).
   if (threadWrites && process.env.CODEX_FIXTURE_WRITES) {
     for (const [file, text] of Object.entries(JSON.parse(process.env.CODEX_FIXTURE_WRITES))) {
       const target = path.resolve(threadCwd, file);
@@ -313,22 +315,12 @@ function handle(message) {
         : acceptance
           ? randomUUID()
           : THREAD;
-    // A workspace-write thread reports the overrides it received (`write-network` and
-    // `write-outside-root` report a policy the client must refuse).
+    // Every thread runs with full access (#211); `sandbox-readonly` reports a policy the client must refuse.
     threadCwd = params.cwd;
-    threadWrites = params.sandbox === 'workspace-write';
     const sandbox =
-      mode === 'sandbox-writable'
-        ? { type: 'workspaceWrite', writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
-        : threadWrites
-          ? {
-              type: 'workspaceWrite',
-              writableRoots: mode === 'write-outside-root' ? [path.resolve(params.cwd, '..', 'elsewhere')] : [],
-              networkAccess: mode === 'write-network' || !args.includes('sandbox_workspace_write.network_access=false'),
-              excludeTmpdirEnvVar: args.includes('sandbox_workspace_write.exclude_tmpdir_env_var=true'),
-              excludeSlashTmp: args.includes('sandbox_workspace_write.exclude_slash_tmp=true'),
-            }
-          : { type: 'readOnly', networkAccess: false };
+      mode === 'sandbox-readonly' || params.sandbox !== 'danger-full-access'
+        ? { type: 'readOnly', networkAccess: false }
+        : { type: 'dangerFullAccess' };
     // `resolved-model`: the thread reports a concrete model other than the requested one.
     send({
       id,

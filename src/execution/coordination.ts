@@ -1,5 +1,5 @@
 /**
- * Delegated coordination (#164): an agent plans in read-only turns and the server runs its workers.
+ * Delegated coordination (#164): an agent plans in its turns and the server runs its workers.
  *
  * @remarks
  * The gateway is the end of a coordinator's turn, not a tool inside it. A coordinator has no MCP

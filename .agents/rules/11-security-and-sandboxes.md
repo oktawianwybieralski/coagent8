@@ -7,73 +7,70 @@ never relaxes one. Violations block execution and are never bypassed.
 ## Product direction and current enforcement
 
 Owner decision (2026-10-08): full coagents may perform implementation and command
-execution under task-scoped user policy. The migration is specified by
-the [coagent direction](../../docs/ROADMAP.md#full-coagent-direction), issues
-[#160](https://github.com/oktawianwybieralski/coagent8/issues/160) (profiles) and [#165](https://github.com/oktawianwybieralski/coagent8/issues/165) (compatibility).
-This replaces the consultation-only product boundary and proposed blanket
-sandbox opt-out. Current profiles below remain enforced until each replacement
-is implemented and verified. Planning a capability does not make it available.
-Consultation, planning inspection and independent review retain read-only access;
-mutating tasks need a distinct verified profile. Skills and delegated agents
-cannot grant themselves permissions or model consent.
+execution under task-scoped user policy. Owner decision (2026-11-21, #208): one
+runner serves every role (consult, review, delegate, coordinator) and every turn
+runs on the host, without a per-backend sandbox. Isolation comes later from the
+environment, containers or microVMs (#215); a user who accepts it runs without
+one. Skills and delegated agents cannot grant themselves permissions or model
+consent.
 
-## 1. Mandatory Read-Only Sandboxing
-All multi-agent review, diagnostic, consultation, and codebase analysis operations must strictly enforce read-only execution modes across external CLI backends to ensure repository and host integrity:
-* Codex uses `app-server -c sandbox_mode="read-only" -c approval_policy="never"`
-  with its tool features (connectors, plugins, browser and computer use, hooks,
-  subagents) off; each thread start/resume must report `readOnly` and `never`,
-  disables every configured MCP server, and must report every MCP server
-  `disabled` before the turn starts. On Windows it also passes
-  `windows.sandbox="unelevated"` (a restricted token of the user's own account)
-  and `allow_login_shell=false`, and removes the app execution alias directory
-  from the server's `PATH` (owner decision 2026-10-21, `CUR-014`). The older exec `--sandbox read-only`
-  invocation is not the current adapter protocol.
-* `--restricted --tools Read,Glob,Grep --permission-mode dontAsk --permission-prompts none --strict-mcp-config` with an empty `--mcp-config` on Claude Code CLI (`claude`); each run is rejected unless the CLI reports at startup only these tools, no MCP server and `dontAsk`. `--bare` is not used: it disables subscription authentication.
-* Native `--sandbox` read-only isolation on Google Antigravity CLI (`agy`).
+## 1. Host execution (#211)
 
-Never grant write permissions or file modification capabilities to external CLI agents during diagnostic, review, or analysis tasks.
+Every turn runs on the user's computer with the user's account rights: it can read
+and change files, run commands and use the network. This replaces the read-only
+and workspace-write profiles of earlier versions (owner decision 2026-11-21).
 
-### Delegate write profile (DELEGATE-001w)
+* **Consent.** No model turn starts until the user accepted host execution:
+  `"hostExecution": "accepted"` in the configuration, or a one-time MCP form that
+  records it. A client that cannot show the form gets a refusal that says how to
+  give it. A calling agent, skill or worker cannot give it. The test suite sets
+  `COAGENT8_HOST_EXECUTION=accepted` in its hermetic environment.
+* **Codex** runs `app-server -c sandbox_mode="danger-full-access" -c
+  approval_policy="never"`; each thread start or resume must report
+  `dangerFullAccess` and `never`. Its tool features (connectors, plugins, browser
+  and computer use, hooks, subagents) stay off, and every configured MCP server is
+  disabled and must be reported `disabled` before the turn starts. On Windows
+  commands run without the user's PowerShell profile (`allow_login_shell=false`).
+* **Claude Code** runs `--restricted --tools
+  Read,Glob,Grep,Edit,Write,Bash,WebFetch,WebSearch --permission-mode dontAsk
+  --permission-prompts none --strict-mcp-config` with an empty `--mcp-config`,
+  hooks off and an allow rule for each tool; each run is rejected unless the CLI
+  reports at startup only these tools, no MCP server and `dontAsk`.
+* **agy** runs `--dangerously-skip-permissions`; it keeps its own MCP servers and
+  subagents, which no limit of the server sees, so coordination stays refused on
+  agy (#200).
+* **Roles that answer** (consult, review) are told to leave the workspace as they
+  found it. A review is bound to its snapshot, which the server checks again after
+  the turn; a change blocks READY.
+* **Windows.** Every role refuses to run without the job helper, which ends a
+  turn's descendants with it
+  ([contract](../../docs/ARCHITECTURE.md#windows-per-call-containment-windows-001)).
+* The nested-turn refusal stays: a turn cannot call CoAgent8 itself.
 
-Owner decision 2026-10-21: only the `delegate` tool runs the `workspace-write`
-profile, chosen by the server and never by a call argument. Its session is bound
-to that profile at creation; `consult` and `review` cannot continue it, nor can
-`delegate` continue a read-only session. Approvals, tool features and inherited
-MCP servers stay disabled and verified as above, and the nested-turn refusal stays.
-* Codex: `sandbox_mode="workspace-write"` with network access, extra writable
-  roots and temporary write roots off; each thread start/resume must report
-  `workspaceWrite`, `never`, no network, both temporary roots excluded, its own
-  `cwd` and no writable root outside it.
-* Claude Code: tools `Read,Glob,Grep,Edit,Write,Bash` with `dontAsk` and allow
-  rules `Edit(./**)`, `Write(./**)` and `Bash`; `system/init` must report only
-  these tools. `Bash` is not path-limited (documented limitation).
-* agy: no `--sandbox`, `--mode accept-edits` (headless agy approves file edits and
-  denies every command) and no enforced write path limit (documented
-  limitation). A denial ends the headless turn; the server sends at most one
-  recovery turn that keeps the writer inside the workspace (#92).
+### Delegate (DELEGATE-001w)
+
+Only the `delegate` tool changes files on purpose. Its session belongs to the
+delegate group at creation: `consult` and `review` cannot continue it, nor can
+`delegate` continue a session of another role (#210).
 
 Writers of a Git work tree hold disjoint paths, recorded in its Git directory so
 every client's server process sees them; no `scope` or `loop: true` holds the whole
 tree, and an overlapping start is refused (0.8.0 plan, owner decision 2026-11-02).
-A path claim schedules writers and is no sandbox: the limits above are the only
-containment, and Claude's `Edit` and `Write` rules narrow to the scope unless an entry
-has a pattern character. The server
-reports the Git changes it observed before and after the turn, whoever
-may have made them, and never commits, resets or cleans up. Root limits come from the
-user's `rootLimits`; a calling agent, skill or worker cannot raise them. A coordinator
-(`delegate` with `coordinate: true`, #164) runs the read-only profile with no MCP server added. Neither it nor its workers run on agy,
-whose subagents no limit sees. Its
-answer is untrusted data that the server validates; root, parent, session and profile
-come from the server's records, and no one can approve a model or a check for its workers. On Windows `delegate` refuses to run without the job helper,
-which ends a cancelled worker's descendants with it
-([contract](../../docs/ARCHITECTURE.md#windows-per-call-containment-windows-001)).
+A path claim schedules writers and is no sandbox: nothing limits a turn's writes
+to its scope. The server reports the Git changes it observed before and after the
+turn, whoever may have made them, and never commits, resets or cleans up. Root
+limits come from the user's `rootLimits`; a calling agent, skill or worker cannot
+raise them. A coordinator (`delegate` with `coordinate: true`, #164) runs with no
+MCP server added; neither it nor its workers run on agy. Its answer is untrusted
+data that the server validates; root, parent, session and role come from the
+server's records, and no one can approve a model or a check for its workers.
 
 ### Checks the server runs (DELEGATE-001f2, REVIEW-003)
 
 Owner decisions 2026-11-02 and 2026-11-03: the server itself may run `checks`, after a delegated
 worker (`delegate` with `loop: true`) and before a review (`review` with `checks`). They run with
 the user's account, outside any sandbox, and execute code a worker may have changed or that is
-under review. The backends' profiles above stay as they are: the reviewer remains read-only.
+under review. A reviewer may run commands too; a check the server ran is evidence whatever the reviewer reports.
 * A check runs only if it is an exact entry of the user's `allowedChecks`, or the user approved it
   on an MCP form for that call. A calling agent, skill or worker cannot approve one, and a form
   the client declines or closes is reported as the client's answer, never as the user's.

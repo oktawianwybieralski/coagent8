@@ -16,7 +16,7 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D%2024-5FA04E)](package.json)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](.github/workflows/ci.yml)
 [![MCP](https://img.shields.io/badge/MCP-stdio-black)](https://modelcontextprotocol.io)
-[![Backends](https://img.shields.io/badge/backends-Codex%20%7C%20Claude%20Code%20%7C%20Antigravity-6f42c1)](#backends-and-read-only-profiles)
+[![Backends](https://img.shields.io/badge/backends-Codex%20%7C%20Claude%20Code%20%7C%20Antigravity-6f42c1)](#backends-and-execution)
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6)](tsconfig.json)
 [![Coverage gate](https://img.shields.io/badge/coverage%20gate-%E2%89%A570%25-brightgreen)](package.json)
@@ -28,9 +28,10 @@ CoAgent8 lets the coding agent you work with ask another one. It is an MCP
 server that puts Codex, Claude Code and Antigravity (`agy`, which runs Gemini and
 other models) behind the same seven tools: your agent requests a second opinion or
 an independent review of your Git changes, or delegates a code change, and gets
-the other agent's answer back in the chat. Consultations and reviews run in a
-read-only profile; a delegated change edits the workspace. Every agent runs on
-your own installed and signed-in CLI.
+the other agent's answer back in the chat. From 0.8.0 every agent runs on your
+computer with your account's rights, without a sandbox, once you agree; a
+consultation or review leaves the workspace as it found it, and a delegated change
+edits it. Every agent runs on your own installed and signed-in CLI.
 
 **Contents:**
 [Status](#status) |
@@ -148,8 +149,10 @@ supports stdio MCP in Agent mode through the same definition, following
 
 - **One MCP server, three coding CLIs.** Codex, Claude Code and Antigravity
   behind the same seven tools, for any stdio MCP host.
-- **Read-only profiles.** Every backend runs in a read-only profile; for Codex
-  and Claude Code CoAgent8 verifies it and refuses a turn it cannot confirm.
+- **Your consent, your computer.** From 0.8.0 agents run on the host with
+  commands, file edits and the network, only after you agree once; containers
+  or microVMs are planned (#215). CoAgent8 still verifies each CLI's tools and
+  refuses a turn it cannot confirm.
 - **Second opinion and independent review.** `consult` answers a question;
   `review` checks Git changes and derives a `READY` or `BLOCKED` verdict itself
   instead of trusting the model's word.
@@ -165,13 +168,16 @@ supports stdio MCP in Agent mode through the same definition, following
 - **Skills and editor integration.** One skill per function for each CLI's
   chat; the VS Code extension manages CLIs, skills and model approvals.
 
-### Backends and read-only profiles
+### Backends and execution
 
-| Backend | Execution profile |
+From 0.8.0 every turn runs on your computer without a sandbox, after your one-time
+consent (`"hostExecution": "accepted"` in the configuration, or the form).
+
+| Backend | Execution |
 | --- | --- |
-| **Codex** | `app-server` with `sandbox_mode="read-only"` and `approval_policy="never"`; the thread's read-only state is verified, every inherited MCP server is disabled and verified per thread, server approval requests are rejected, interrupt via `turn/interrupt` |
-| **Claude Code** (2.1.289+) | `-p --restricted --tools Read,Glob,Grep --permission-mode dontAsk`, hooks disabled, strict empty MCP configuration; startup tools, MCP and permission mode verified before any content; native session resume and control interrupt |
-| **Antigravity** (`agy`) | Headless `--sandbox --output-format stream-json`, prompt on stdin, explicit model, native `--conversation` resume; inherits your agy MCP servers and plugins (see [known limitations](#known-limitations)), recursion into CoAgent8 refused |
+| **Codex** | `app-server` with `sandbox_mode="danger-full-access"` and `approval_policy="never"`; the thread's access is verified, every inherited MCP server is disabled and verified per thread, server approval requests are rejected, interrupt via `turn/interrupt` |
+| **Claude Code** (2.1.289+) | `-p --restricted --tools Read,Glob,Grep,Edit,Write,Bash,WebFetch,WebSearch --permission-mode dontAsk`, hooks disabled, strict empty MCP configuration; startup tools, MCP and permission mode verified before any content; native session resume and control interrupt |
+| **Antigravity** (`agy`) | Headless `--dangerously-skip-permissions --output-format stream-json`, prompt on stdin, explicit model, native `--conversation` resume; inherits your agy MCP servers and plugins (see [known limitations](#known-limitations)), recursion into CoAgent8 refused |
 
 ### Routing
 
@@ -211,8 +217,7 @@ supports stdio MCP in Agent mode through the same definition, following
   review is refused and you narrow the scope.
 - From 0.8.0, `checks`, such as `npm test`, are run by CoAgent8 on the reviewed change
   before the turn, and a check that does not pass blocks the verdict. The
-  reviewing agent itself stays read-only, but the checks run with your account,
-  outside any sandbox, and execute the code under review. A check runs only with
+  checks run with your account and execute the code under review. A check runs only with
   your approval: list it in `allowedChecks` of the configuration, or approve it on the form.
 - The reviewing agent answers in a fixed format: snapshot, coverage, verdict,
   findings as `[P1|P2|P3] file:line`, and the checks it ran.
@@ -319,7 +324,7 @@ a client with another one does not see them.
 
 Codex or Claude Code can also coordinate workers on Codex or Claude Code (agy takes no part:
 it can start subagents that no limit sees). `delegate` with `coordinate: true` gives the agent
-an objective; it reads the workspace in read-only turns and ends each turn by asking
+an objective; it reads the workspace in its turns and ends each turn by asking
 for workers or by finishing. CoAgent8 checks each request, runs the workers under the
 coordinator's root, with scopes inside its `scope` (an agreement, as above, not a sandbox),
 waits for all of them and resumes it with their reports. It has no CoAgent8 tools and cannot name a root, a parent or a session.

@@ -45,6 +45,7 @@ import {
   findCompletedReview,
   getSession,
   isRecordedProcessAlive,
+  roleProfile,
   MAX_REVIEW_REASON_CHARS,
   type CancelOutcome,
 } from '../sessions/session.js';
@@ -55,7 +56,7 @@ import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
 import { combineSignals } from '../storage/lock.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
 import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult } from '../backends/types.js';
-import { ToolError, errorCodeOf, type AdapterEvent, type ExecutionProfile, type ProviderId, type TaskRole } from '../contracts/index.js';
+import { ToolError, errorCodeOf, type AdapterEvent, type ProviderId, type TaskRole } from '../contracts/index.js';
 import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
 import { recordTurnSuccess } from '../backends/probe-cache.js';
 import { createExecutionBudget } from './runtime/budget.js';
@@ -144,16 +145,11 @@ export interface TaskOptions {
   updateSession?: typeof updateSession;
   /** Optional hook to simulate lease release failure during finalization. */
   releaseSessionTurn?: typeof releaseSessionTurn;
-  /**
-   * Execution profile chosen by the calling tool, never by a call argument; read-only when
-   * absent. It binds the session at creation and reaches the adapter (`DELEGATE-001w`).
-   */
-  profile?: ExecutionProfile;
-  /** Paths a `workspace-write` turn may change, for a check before the turn. */
+  /** Paths a delegate turn may change, which its prompt and recovery name. */
   writeScope?: readonly string[];
   /**
    * The role of the turn, set by the runner. A new session records it, and a session continues
-   * only in a role that runs the same profile (#210).
+   * only in a role of the same access group (#210, #211); without a role the turn counts as a consult.
    */
   role?: TaskRole;
   /**
@@ -332,7 +328,7 @@ async function executeTaskInternal(
       context: executionContext,
       // A review prompt is self-contained: a failed review with no native thread is retried in its session.
       allowFreshNativeThread: Boolean(options.reviewIdentity),
-      profile: options.profile,
+      profile: roleProfile(options.role ?? 'consult'),
     });
     prepHandle.end();
 
@@ -429,7 +425,14 @@ async function executeTaskInternal(
       await pruneExpiredSessions();
       assertSessionContextNotExpired('before');
 
-      acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd, sessionContext, options.profile, options.role);
+      acquired = await acquireAndResolveSession(
+        args.session_handle,
+        backend.id,
+        cwd,
+        sessionContext,
+        roleProfile(options.role ?? 'consult'),
+        options.role,
+      );
       if (!acquired.session) throw new ToolError('SESSION_BUSY', acquired.error ?? 'Session is busy executing another turn.');
     } catch (err) {
       acqHandle.end();
@@ -587,7 +590,6 @@ async function executeTaskInternal(
           timeoutMs: remainingExecutionMs,
           abortSignal: cancelController.signal,
           onEvent: receive,
-          profile: options.profile ?? 'read-only',
           ...(options.writeScope ? { writeScope: options.writeScope } : {}),
           ...(options.beforeExtraTurn ? { beforeExtraTurn: options.beforeExtraTurn } : {}),
           ...(options.requireEnvelope ? { requireCompleteTurn: true } : {}),
@@ -680,7 +682,7 @@ async function executeTaskInternal(
               model: raw.model || model,
               reasoningEffort,
               cliVersion: backend.probe.version,
-              safetyProfile: backend.id === 'agy' ? `agy-${backend.probe.version}-${options.profile ?? 'read-only'}` : undefined,
+              safetyProfile: backend.id === 'agy' ? `agy-${backend.probe.version}-host` : undefined,
             },
             token,
           );

@@ -28,7 +28,7 @@ const {
   compareWorkspace,
 } = require('../../../src/workspace/changes.ts');
 const { codexAppServerArgs, codexSandboxMismatch } = require('../../../src/backends/codex/app-server.ts');
-const { claudeTurnSettings, CLAUDE_WRITE_TOOLS } = require('../../../src/backends/claude/adapter.ts');
+const { claudeTurnSettings, CLAUDE_TOOLS } = require('../../../src/backends/claude/adapter.ts');
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 const approve = { askConsent: async () => ({ approved: true, remember: false }) };
@@ -59,7 +59,7 @@ test.beforeEach(async () => {
   delete process.env.CODEX_FIXTURE_WRITES;
 });
 
-test('delegate runs a verified workspace-write Codex turn and reports the observed changes apart from the answer', async () => {
+test('delegate runs a verified full-access Codex turn and reports the observed changes apart from the answer', async () => {
   const { repo } = fixtureRepo();
   // The user's uncommitted work before the turn.
   fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 2;\n');
@@ -86,18 +86,10 @@ test('delegate runs a verified workspace-write Codex turn and reports the observ
   assert.match(out, /changed outside scope: a\.ts, gone\.txt, src-old\/x\.ts/, 'scope matches whole path segments');
   assert.match(out, /already had uncommitted changes before the turn: a\.ts/);
   const { args, records, prompt } = capture();
-  for (const setting of [
-    'sandbox_mode="workspace-write"',
-    'sandbox_workspace_write.network_access=false',
-    'sandbox_workspace_write.writable_roots=[]',
-    'sandbox_workspace_write.exclude_tmpdir_env_var=true',
-    'sandbox_workspace_write.exclude_slash_tmp=true',
-    'approval_policy="never"',
-  ]) {
-    assert.ok(args.includes(setting), setting);
-  }
+  for (const setting of ['sandbox_mode="danger-full-access"', 'approval_policy="never"']) assert.ok(args.includes(setting), setting);
+  assert.ok(!args.some(arg => arg.startsWith('sandbox_workspace_write')), 'no workspace-write overrides (#211)');
   const start = records.find(r => r.method === 'thread/start').params;
-  assert.equal(start.sandbox, 'workspace-write');
+  assert.equal(start.sandbox, 'danger-full-access');
   assert.equal(start.approvalPolicy, 'never');
   assert.ok(records.some(r => r.method === 'turn/start'));
   assert.match(prompt, /Change only: src\./);
@@ -106,34 +98,24 @@ test('delegate runs a verified workspace-write Codex turn and reports the observ
   assert.equal(fs.existsSync(path.join(repo, '.git', WRITER_RECORD_FILE)), false, 'the writer slot is released');
 });
 
-test('a workspace-write thread that reports network access or a root outside the workspace starts no turn', async () => {
-  for (const mode of ['write-network', 'write-outside-root']) {
-    const { repo } = fixtureRepo();
-    process.env.CODEX_FIXTURE_MODE = mode;
-    const result = await handleDelegate({ task: 'Change it', backend: 'codex', model: MODEL }, repo, null, null, approve);
-    assert.equal(result.isError, true, mode);
-    assert.match(text(result), /SANDBOX_UNAVAILABLE/, mode);
-    assert.ok(!capture().records.some(r => r.method === 'turn/start'), `${mode}: no turn starts`);
-    assert.match(text(result), /No file changed\./, `${mode}: the observed block still follows a failed turn`);
-  }
+test('a thread that does not report full access starts no turn (#211)', async () => {
+  const { repo } = fixtureRepo();
+  process.env.CODEX_FIXTURE_MODE = 'sandbox-readonly';
+  const result = await handleDelegate({ task: 'Change it', backend: 'codex', model: MODEL }, repo, null, null, approve);
+  assert.equal(result.isError, true);
+  assert.match(text(result), /SANDBOX_UNAVAILABLE/);
+  assert.ok(!capture().records.some(r => r.method === 'turn/start'), 'no turn starts');
+  assert.match(text(result), /No file changed./, 'the observed block still follows a failed turn');
 });
 
-test('codexSandboxMismatch requires the exact workspace-write policy, and read-only stays the default launch', () => {
-  const cwd = tempDir;
-  const ok = { type: 'workspaceWrite', writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true };
-  const check = (sandbox, extra = {}) => codexSandboxMismatch({ sandbox, approvalPolicy: 'never', cwd, ...extra }, 'workspace-write', cwd);
-  assert.equal(check(ok), null);
-  assert.equal(check({ ...ok, writableRoots: [path.join(cwd, 'sub')] }), null, 'a root inside the workspace is allowed');
-  assert.match(check({ ...ok, writableRoots: [os.homedir()] }), /outside the workspace/);
-  assert.match(check({ ...ok, excludeSlashTmp: false }), /temporary write roots/);
-  assert.match(check({ ...ok, networkAccess: true }), /network/);
-  assert.match(check(ok, { cwd: os.homedir() }), /another working directory/);
-  assert.match(check(ok, { approvalPolicy: 'on-request' }), /approvals/);
-  assert.match(codexSandboxMismatch({ sandbox: ok, approvalPolicy: 'never' }, 'read-only', cwd), /read-only sandbox/);
-  assert.ok(codexAppServerArgs().includes('sandbox_mode="read-only"'));
-  assert.ok(!codexAppServerArgs().some(arg => arg.startsWith('sandbox_workspace_write')));
+test('codexSandboxMismatch requires full access without approvals, and every launch asks for it', () => {
+  assert.equal(codexSandboxMismatch({ sandbox: { type: 'dangerFullAccess' }, approvalPolicy: 'never' }), null);
+  assert.match(codexSandboxMismatch({ sandbox: { type: 'readOnly' }, approvalPolicy: 'never' }), /danger-full-access/);
+  assert.match(codexSandboxMismatch({ sandbox: { type: 'workspaceWrite' }, approvalPolicy: 'never' }), /danger-full-access/);
+  assert.match(codexSandboxMismatch({ sandbox: { type: 'dangerFullAccess' }, approvalPolicy: 'on-request' }), /approvals/);
+  assert.ok(codexAppServerArgs().includes('sandbox_mode="danger-full-access"'));
+  assert.ok(!codexAppServerArgs().some(arg => arg.startsWith('sandbox_workspace_write') || arg.startsWith('windows.sandbox')));
 });
-
 test('one writer per work tree: a second delegate is refused at once, a dead owner is taken over', async () => {
   const { repo } = fixtureRepo();
   const gitDir = path.join(repo, '.git');
@@ -258,40 +240,33 @@ test('compareWorkspace sees staged-only changes and committed files, and scope e
   assert.equal(inScope('src/x.ts', ['src']), true);
 });
 
-test('Claude and agy write profiles: Claude gets the write tools with workspace allow rules, agy runs without --sandbox', async () => {
-  assert.deepEqual([...CLAUDE_WRITE_TOOLS], ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash']);
-  assert.deepEqual(JSON.parse(claudeTurnSettings('workspace-write')), {
-    disableAllHooks: true,
-    permissions: { allow: ['Edit(./**)', 'Write(./**)', 'Bash'] },
-  });
-  assert.deepEqual(JSON.parse(claudeTurnSettings('read-only')), { disableAllHooks: true });
+test('every Claude and agy turn gets the host tools (#211)', async () => {
+  assert.deepEqual([...CLAUDE_TOOLS], ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'WebFetch', 'WebSearch']);
+  assert.deepEqual(JSON.parse(claudeTurnSettings()), { disableAllHooks: true, permissions: { allow: [...CLAUDE_TOOLS] } });
   const { executeClaude } = require('../../../src/backends/claude/adapter.ts');
   const claudeCapture = path.join(tempDir, 'claude-capture.json');
   Object.assign(process.env, {
     CLAUDE_PATH: path.resolve(__dirname, '../../fixtures/claude-cli/claude.cjs'),
     CLAUDE_FIXTURE_CAPTURE: claudeCapture,
   });
-  const claude = await executeClaude('Change it', { cwd: tempDir, model: 'claude-sonnet-4-5', profile: 'workspace-write' });
+  const claude = await executeClaude('Change it', { cwd: tempDir, model: 'claude-sonnet-4-5', writeScope: ['src'] });
   assert.equal(claude.isError, false, JSON.stringify(claude.error));
   const argv = JSON.parse(fs.readFileSync(claudeCapture, 'utf8')).argv;
-  assert.equal(argv[argv.indexOf('--tools') + 1], 'Read,Glob,Grep,Edit,Write,Bash');
+  assert.equal(argv[argv.indexOf('--tools') + 1], CLAUDE_TOOLS.join(','));
   assert.equal(argv[argv.indexOf('--permission-mode') + 1], 'dontAsk');
   assert.ok(argv.includes('--strict-mcp-config'));
   const { execute: executeAgy } = require('../../../src/backends/agy/adapter.ts');
   const agyCapture = path.join(tempDir, 'agy-capture.json');
   Object.assign(process.env, { AGY_PATH: path.resolve(__dirname, '../../fixtures/agy-cli/agy.cjs'), coagent8_FIXTURE_CAPTURE: agyCapture });
-  await executeAgy('Change it', { cwd: tempDir, model: 'gemini-3-flash', profile: 'workspace-write' });
-  const agyArgs = JSON.parse(fs.readFileSync(agyCapture, 'utf8')).args;
-  assert.ok(!agyArgs.includes('--sandbox'), 'agy writers run without the sandbox');
-  assert.equal(agyArgs[agyArgs.indexOf('--mode') + 1], 'accept-edits', 'headless agy approves edits and denies commands');
-  assert.match(
-    JSON.parse(fs.readFileSync(agyCapture, 'utf8')).prompt,
-    /you cannot execute any command/,
-    'the agy writer is told to try no command',
-  );
-  assert.equal(agyArgs[agyArgs.indexOf('--add-dir') + 1], tempDir);
-  await executeAgy('Read it', { cwd: tempDir, model: 'gemini-3-flash' });
-  assert.ok(JSON.parse(fs.readFileSync(agyCapture, 'utf8')).args.includes('--sandbox'), 'read-only agy keeps the sandbox');
+  for (const options of [{ writeScope: ['src'] }, {}]) {
+    await executeAgy('Do it', { cwd: tempDir, model: 'gemini-3-flash', ...options });
+    const captured = JSON.parse(fs.readFileSync(agyCapture, 'utf8'));
+    assert.ok(!captured.args.includes('--sandbox'), 'no agy turn runs in its sandbox');
+    assert.ok(captured.args.includes('--dangerously-skip-permissions'), 'headless agy asks for nothing');
+    assert.ok(!captured.args.includes('--mode'));
+    assert.equal(captured.args[captured.args.indexOf('--add-dir') + 1], tempDir);
+    assert.equal(captured.prompt, 'Do it', 'the prompt carries no command ban');
+  }
 });
 
 test('delegatePrompt without checks asks for the project checks and without scope for the whole workspace', () => {

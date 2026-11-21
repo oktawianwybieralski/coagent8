@@ -43,6 +43,11 @@ version and date of the run that observed it.
   parallel, on every reviewed head.
 - P2 deferral: allowed with the owner's dated decision.
 
+Owner decision 2026-11-21 (#208, #211): reviewers run on the host without a
+read-only sandbox, like every other role; this replaces the read-only mode of core
+rule 03 for this project. A review stays a separate session that leaves the
+workspace as it found it, and the server checks its snapshot again after the turn.
+
 Models and efforts are not named here (core rule 03); they come from the review
 tool's configuration, for CoAgent8 `~/.coagent8/config.json`.
 

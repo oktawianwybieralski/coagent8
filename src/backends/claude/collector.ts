@@ -37,10 +37,10 @@ function count(value: unknown): number {
 
 /**
  * Collects public answers, tool activity, session identity and the terminal result from Claude Code.
- * @param options - Expected session, read-only tool profile, callback and public-output budgets.
+ * @param options - Expected session, turn tools, callback and public-output budgets.
  * @returns A line collector whose snapshot is used directly by the production adapter.
  * @throws `SANDBOX_UNAVAILABLE` when `system/init` reports a tool, MCP server or
- * permission mode outside the read-only profile; `PROTOCOL_ERROR` on malformed
+ * permission mode other than requested; `PROTOCOL_ERROR` on malformed
  * known events, a mismatched session ID or a second terminal result.
  * @remarks
  * Thinking blocks, tool inputs and tool results are discarded. Unknown event
@@ -76,7 +76,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   };
 
   function ensureInitialized() {
-    if (sessionId === null) fail('SANDBOX_UNAVAILABLE', 'Claude Code emitted events before read-only initialization.');
+    if (sessionId === null) fail('SANDBOX_UNAVAILABLE', 'Claude Code emitted events before its initialization.');
   }
 
   function acceptInit(event: Record<string, unknown>) {
@@ -175,7 +175,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     terminal = true;
     const isError = event.is_error === true || (typeof event.subtype === 'string' && event.subtype !== 'success');
     if (!isError && sessionId === null) {
-      fail('SANDBOX_UNAVAILABLE', 'Claude Code completed successfully without read-only initialization.');
+      fail('SANDBOX_UNAVAILABLE', 'Claude Code completed successfully without its initialization.');
     }
     resultFields = {
       isError,

@@ -471,17 +471,17 @@ test('a second coordinator in a running session is refused', async () => {
   }
 });
 
-test('a coordinator turn runs read-only, while its worker runs the write profile', async () => {
+test('a coordinator turn and its worker both run with full access (#211)', async () => {
   const repo = fixtureRepo();
   process.env.CODEX_FIXTURE_CAPTURE = CAPTURE;
   try {
     script(start({ id: 'one', task: 'WRITE a/new.txt', scope: ['a'] }), finish());
     await ended((await coordinate(repo)).taskHandle);
-    // The fixture writes only on a workspace-write thread, and captures the last process: the coordinator's resume.
+    // The fixture writes only on a delegate turn, and captures the last process: the coordinator's resume.
     assert.equal(fs.existsSync(path.join(repo, 'a', 'new.txt')), true);
     const { records, nested } = JSON.parse(fs.readFileSync(CAPTURE, 'utf8'));
     const thread = records.find(record => record.method === 'thread/resume');
-    assert.equal(thread.params.sandbox, 'read-only');
+    assert.equal(thread.params.sandbox, 'danger-full-access');
     assert.equal(nested, '1', 'the nested-turn refusal stays set in its environment');
   } finally {
     delete process.env.CODEX_FIXTURE_CAPTURE;

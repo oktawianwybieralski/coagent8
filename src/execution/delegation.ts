@@ -75,7 +75,7 @@ export async function executeDelegation(
   scope: readonly string[],
   abortSignal?: AbortSignal | null,
   onProgress?: ((info: { message?: string }) => void) | null,
-  options: Omit<TaskOptions, 'profile'> & {
+  options: TaskOptions & {
     beforeRelease?: (outcome: TaskExecutionResult) => Promise<void>;
     supervise?: Supervise;
     /** Longest turn of a later round; replaceable by tests. */

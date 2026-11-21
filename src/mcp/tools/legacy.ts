@@ -39,7 +39,7 @@ export const LEGACY_ALIASES: Readonly<Record<LegacyAliasName, LegacyAlias>> = {
     taskType: 'architecture',
     contextAsQuestions: false,
     description:
-      '[Deprecated: Use consult with task_type="architecture" instead] Perform deep architectural, dependency, and structural code analysis in read-only mode using local CLI reasoning agents.',
+      '[Deprecated: Use consult with task_type="architecture" instead] Perform deep architectural, dependency, and structural code analysis using local CLI reasoning agents.',
     properties: {
       task: { type: 'string', description: 'The specific question, architectural aspect, or focus area to analyze.' },
       file_paths: { ...FILE_LIST, description: 'Optional list of files or directories to inspect.' },
@@ -50,7 +50,7 @@ export const LEGACY_ALIASES: Readonly<Record<LegacyAliasName, LegacyAlias>> = {
     taskType: 'debug',
     contextAsQuestions: true,
     description:
-      '[Deprecated: Use consult with task_type="debug" instead] Diagnose an error or stack trace using local CLI reasoning agents in read-only sandbox mode. Returns root cause analysis and a step-by-step fix recommendation.',
+      '[Deprecated: Use consult with task_type="debug" instead] Diagnose an error or stack trace using local CLI reasoning agents Returns root cause analysis and a step-by-step fix recommendation.',
     properties: {
       error_message: { type: 'string', description: 'The complete error message or stack trace to diagnose.' },
       context: { type: 'string', description: 'What you were doing when the error occurred, relevant inputs, or recent changes.' },
@@ -62,7 +62,7 @@ export const LEGACY_ALIASES: Readonly<Record<LegacyAliasName, LegacyAlias>> = {
     taskType: 'implementation',
     contextAsQuestions: true,
     description:
-      '[Deprecated: Use consult with task_type="implementation" instead] Implement a well-specified component, complex algorithm, or class in read-only sandbox mode without writing to disk.',
+      '[Deprecated: Use consult with task_type="implementation" instead] Implement a well-specified component, complex algorithm, or class without writing to disk.',
     properties: {
       specification: { type: 'string', description: 'Detailed description of what to implement, including interface requirements.' },
       context_files: { ...FILE_LIST, description: 'Optional list of files that provide relevant types, interfaces, or context.' },

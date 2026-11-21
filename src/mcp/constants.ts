@@ -40,16 +40,16 @@ export const CORE_CANONICAL_TOOL_NAMES = [
  */
 export const SERVER_INSTRUCTIONS =
   'Asks another local coding agent (Codex, Claude Code or Antigravity). ' +
-  'Read-only: consult for a second opinion on a question, design, bug or plan; review for an independent review of Git changes. ' +
+  'consult: a second opinion on a question, design, bug or plan; review: an independent review of Git changes. ' +
   'delegate: it makes a code change, then you review it. ' +
   'Not for what you can read or run yourself. ' +
   "Answers are another model's opinion: verify facts before acting on them. " +
   'Leave backend and model unset unless the user names one or a price limit; doctor lists the models, efforts and prices each backend accepts.';
 
 /**
- * Read-only tool guidance shared by `review` and structured `consult` prompts (`task_type` or `context_files`).
- * Claude and agy read with file tools, and agy ends its turn when its sandbox denies a command;
- * Codex has no file tool and reads only with commands in its read-only sandbox.
+ * Tool guidance shared by `review` and structured `consult` prompts (`task_type` or `context_files`).
+ * Every turn runs on the host with commands, file edits and the network (#211); these roles
+ * answer, so they leave the workspace as they found it.
  */
-export const READ_ONLY_FILE_TOOL_GUIDANCE =
-  'Read files with your file tools; if you have none, read them with read-only shell commands (such as rg, git show or Get-Content) and run nothing that writes, builds or uses the network. With file tools, run no shell command: a sandbox may deny it and end the turn.';
+export const HOST_TOOL_GUIDANCE =
+  'You can read files, run commands (git, tests, builds) and use the network to check what you need. Leave the workspace as you found it: do not edit, stage, commit, stash, reset or delete anything in it.';

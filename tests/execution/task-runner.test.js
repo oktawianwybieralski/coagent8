@@ -30,7 +30,7 @@ test('each role sets the options its path set before the runner', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(ROLE_POLICIES)), {
     consult: { requireEnvelope: false },
     review: { requireEnvelope: true },
-    delegate: { profile: 'workspace-write' },
+    delegate: {},
     coordinate: { requireEnvelope: false, coordinatorTurn: true },
   });
   assert.ok(Object.isFrozen(ROLE_POLICIES));
