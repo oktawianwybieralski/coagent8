@@ -99,11 +99,13 @@ test('the configuration and the process environment each count as consent', asyn
   }
 });
 
-test('an invalid hostExecution value is a configuration error and no consent', async () => {
+test('an invalid configuration is reported as such, not as missing consent', async () => {
   await reset();
   fs.mkdirSync(path.dirname(getConfigFile()), { recursive: true });
   fs.writeFileSync(getConfigFile(), JSON.stringify({ schemaVersion: 1, hostExecution: true }));
   assert.throws(() => loadConfig(), /Invalid hostExecution/);
-  assert.equal(hostExecutionAccepted(), false);
+  // The configuration error reaches the caller instead of a request for consent (#211 review).
+  assert.throws(() => hostExecutionAccepted(), /Invalid hostExecution/);
+  await assert.rejects(ensureHostConsent(), /Invalid hostExecution/);
   await reset();
 });

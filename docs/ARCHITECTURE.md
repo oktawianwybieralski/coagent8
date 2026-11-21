@@ -1267,14 +1267,12 @@ worktree has its own, which permits parallel writers in separate worktrees.
 `consult` and `review` are not blocked. The nested-turn refusal stays: a worker
 cannot call CoAgent8; a [coordinator](#delegated-coordination-164) asks the server at the end of its turn instead.
 
-**Write profiles.** Approvals stay off, tool features and inherited MCP servers
-stay disabled and verified as in the read-only profiles.
-
-| Backend | Profile | Path limit |
-| --- | --- | --- |
-| Codex | `sandbox_mode="workspace-write"` with network off; Windows `unelevated`; the thread must report `workspaceWrite`, `never` and no network | Enforced by the OS sandbox: writes outside the workspace are denied |
-| Claude Code | `--restricted --tools Read,Glob,Grep,Edit,Write,Bash`, `dontAsk`, allow rules `Edit(./**)`, `Write(./**)` and `Bash`, the workspace as working directory, hooks and MCP off | `Edit`/`Write` enforced by Claude Code (`--restricted` keeps file tools in the working directory; a write outside was denied natively); `Bash` is not contained |
-| agy | No `--sandbox`, `--mode accept-edits` (edits approved, every command denied), `--add-dir <workspace>` | Not enforced for writes; prompt only. A `read_file` of another checkout outside the workspace was auto-denied natively (agy 1.4.12, 2026-10-31), while agy's own data directory stayed readable |
+**Execution (#211).** A delegate turn runs like every other turn: on the host, without a sandbox
+or path limit, with the tools of the [turn execution table](#processes-and-backend-profiles).
+Approvals stay off, tool features and inherited MCP servers stay disabled and verified where the
+backend allows. The scope is an agreement the worker is told and the server checks afterwards.
+Before #211 Codex wrote inside an OS sandbox, Claude Code's `Edit` and `Write` had allow rules
+for the workspace and agy edited files without running commands.
 
 **Evidence.** Before the turn the server records HEAD and the `git status` of
 the tree, with a content hash of every dirty file. After it, the result lists
@@ -1346,9 +1344,8 @@ a process start need no lock; the whole tree keeps `coagent8-writer.json`. The l
 serializes every acquire and release. A dead server's writer stops blocking only when no
 recorded process group lives and it was not starting a worker, and then only for what overlaps.
 
-A claim schedules writers; it is not a sandbox. Codex and agy get it as an instruction, Claude's
-`Edit` and `Write` allow rules narrow to it (verified natively with Claude Code 2.1.318, 2026-11-05: a new file under a directory entry and an edit of a file entry succeeded, a new file and an edit outside were denied), and Claude's `Bash` reaches everything. A scope entry
-with a pattern character keeps Claude's rule at the workspace. A link replaced after the start is
+A claim schedules writers; it is not a sandbox. Every backend gets it as an instruction (#211;
+before, Claude's `Edit` and `Write` allow rules narrowed to it). A link replaced after the start is
 not seen, and neither is a hard link between two claims, which compare paths and not files.
 
 **Evidence.** The result still lists the paths the server saw change, up to 200 with a notice that

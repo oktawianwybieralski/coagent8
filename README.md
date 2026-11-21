@@ -291,18 +291,15 @@ rereads everything. `review` adds its verdict.
 The deprecated `analyze`, `debug` and `implement` aliases and the `run` gateway
 still work but are not listed. Every client receives the same seven tools.
 
-From 0.8.0, `delegate` needs a Git work tree and, on Windows, the job helper the package carries. Codex writes only inside the workspace
-(its sandbox, without network access); Claude Code's `Edit` and `Write` are
-limited to the workspace but its `Bash` is not; Antigravity runs without its
-sandbox and without a path limit, and only edits files (it runs no commands).
+From 0.8.0, `delegate` needs a Git work tree and, on Windows, the job helper the package carries. Every
+backend runs on your computer without a sandbox or path limit (#211): the scope is
+an agreement the worker is told and the server checks afterwards, not a restriction.
 Antigravity can end its turn when it reads a file in another checkout, such as
 the main checkout of a Git worktree (observed with agy 1.4.12). CoAgent8 then
 retries once inside the workspace, and if that also fails, names the denied
 action.
-The agent reports each check as PASS, FAIL or NOT_RUN. Codex on Windows cannot
-run test runners that start processes from Node, such as `node --test`, Jest or
-Vitest. With `loop: true` CoAgent8 runs the checks itself after the agent, with
-your account and outside any sandbox, then gets an independent review on a backend
+The agent reports each check as PASS, FAIL or NOT_RUN. With `loop: true` CoAgent8 runs the checks itself after the agent, with
+your account, then gets an independent review on a backend
 other than the agent's (and other than your client's CLI while one remains) and returns failures to the agent for up to two fix rounds; the checks
 need your approval as in reviews. Without the loop, run the checks yourself
 before accepting the change. On Windows a cancelled agent's child processes end

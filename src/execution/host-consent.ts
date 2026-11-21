@@ -14,14 +14,14 @@ export type HostConsentPrompt = (signal?: AbortSignal | null) => Promise<{ appro
 export const HOST_EXECUTION_NOTICE =
   "Agents run on this computer with your account's rights, without a sandbox: they can read and change files, run commands and use the network.";
 
-/** Whether the user accepted host execution, in the configuration or for this process. */
+/**
+ * Whether the user accepted host execution, in the configuration or for this process.
+ * @throws The configuration error when the configuration cannot be read.
+ */
 export function hostExecutionAccepted(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env.COAGENT8_HOST_EXECUTION === 'accepted') return true;
-  try {
-    return loadConfig().hostExecution === 'accepted';
-  } catch {
-    return false;
-  }
+  // A configuration that cannot be read throws its own error: it is no missing consent.
+  return loadConfig().hostExecution === 'accepted';
 }
 
 /**
