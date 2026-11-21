@@ -22,28 +22,14 @@ import { turnEnvironment } from '../../execution/nested-turn.js';
 import { configuredBackendCommand, probeCommand } from '../executable.js';
 export const id = 'claude',
   name = 'Claude Code CLI';
-/** Built-in tools of the read-only profile; `--restricted` removes every code-running tool not named here. */
-export const CLAUDE_READ_ONLY_TOOLS = Object.freeze(['Read', 'Glob', 'Grep']);
 /**
- * Built-in tools of the `workspace-write` profile (`DELEGATE-001w`). `Bash` runs checks and is
- * not limited to the workspace (owner decision 2026-10-21); `Edit` and `Write` are.
+ * Built-in tools of every turn (#211, owner decision 2026-11-21): files, commands and the web.
+ * `--restricted` removes every other built-in tool; none is limited to the workspace.
  */
-export const CLAUDE_WRITE_TOOLS = Object.freeze(['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash']);
-/**
- * Settings of a turn: hooks off, and for `workspace-write` allow rules for the write tools.
- * Under `dontAsk` a tool call no rule allows is denied; `./**` is relative to the turn's
- * directory, the workspace, so `Edit` and `Write` outside it are denied. A scope narrows the rules
- * to its paths, each as a file or a directory (#160). An entry with a pattern character cannot be
- * written as a rule without changing what it means, so such a scope falls back to the workspace.
- */
-export function claudeTurnSettings(profile: ExecutionProfile, writeScope: readonly string[] = []): string {
-  if (profile !== 'workspace-write') return JSON.stringify({ disableAllHooks: true });
-  const literal = writeScope.length > 0 && writeScope.every(entry => entry && !/[*?[\]{}()!\\]/.test(entry));
-  const paths = literal ? writeScope.flatMap(entry => [`./${entry}`, `./${entry}/**`]) : ['./**'];
-  return JSON.stringify({
-    disableAllHooks: true,
-    permissions: { allow: [...paths.map(p => `Edit(${p})`), ...paths.map(p => `Write(${p})`), 'Bash'] },
-  });
+export const CLAUDE_TOOLS = Object.freeze(['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'WebFetch', 'WebSearch']);
+/** Settings of a turn: hooks off, and an allow rule for each tool, so `dontAsk` denies nothing. */
+export function claudeTurnSettings(): string {
+  return JSON.stringify({ disableAllHooks: true, permissions: { allow: [...CLAUDE_TOOLS] } });
 }
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -63,7 +49,7 @@ function boundReadTimeout(context: BackendReadContext | undefined, defaultMs: nu
  * Reads installation, version and local login state without calling a model.
  * @remarks `claude auth status` reports the CLI's own login state (exit 0 when
  * logged in, 1 when not). Token validity is proven only by an execution.
- * Read-only enforcement is checked on every run against `system/init`.
+ * The tools of every run are checked against `system/init`.
  */
 export async function probe(context?: BackendReadContext): Promise<AdapterProbeResult> {
   const abortSignal = context?.abortSignal ?? context?.budget?.executionSignal;
@@ -441,7 +427,7 @@ export async function listModels(probe?: AdapterProbeResult, context?: BackendRe
  * Runs one Claude Code turn in restricted print mode with the profile's tools.
  * @remarks Subscription (OAuth) and API-key authentication both work. Each run
  * fails closed with `SANDBOX_UNAVAILABLE` unless `system/init` reports only
- * {@link CLAUDE_READ_ONLY_TOOLS}, or {@link CLAUDE_WRITE_TOOLS} for `workspace-write`,
+ * {@link CLAUDE_TOOLS},
  * no MCP server and `dontAsk`. A new turn
  * pins a fresh `--session-id`; a continuation passes `--resume`. The prompt is one
  * stream-json user message on stdin, which stays open so cancellation and deadlines
@@ -467,8 +453,7 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
   if (resumeId && !SESSION_ID_PATTERN.test(resumeId)) return rejected('SESSION_INVALID', 'Invalid native Claude session ID.', model);
   const sessionId = (resumeId || randomUUID()).toLowerCase();
   // --restricted keeps OAuth/subscription auth (unlike --bare) and ignores user/project/local settings.
-  const profile = options.profile ?? 'read-only';
-  const tools = profile === 'workspace-write' ? CLAUDE_WRITE_TOOLS : CLAUDE_READ_ONLY_TOOLS;
+  const tools = CLAUDE_TOOLS;
   const args = [
     '-p',
     '--restricted',
@@ -479,7 +464,7 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
     '--permission-prompts',
     'none',
     '--settings',
-    claudeTurnSettings(profile, options.writeScope),
+    claudeTurnSettings(),
     '--strict-mcp-config',
     '--mcp-config',
     '{"mcpServers":{}}',
@@ -544,7 +529,7 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
           };
   }
   if (!error && !snapshot.initialized) {
-    error = { code: 'SANDBOX_UNAVAILABLE', message: 'Claude Code completed without read-only initialization.', retryable: false };
+    error = { code: 'SANDBOX_UNAVAILABLE', message: 'Claude Code completed without its initialization.', retryable: false };
   }
   if (!error && result.status !== 'completed')
     error = {

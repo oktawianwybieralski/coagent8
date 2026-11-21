@@ -65,7 +65,7 @@ test('Gemini resolves relative primary and legacy data directories before enteri
   }
 });
 
-test('Gemini production adapter uses runner, isolated read-only sandbox, streaming NDJSON and exact UUID resume (fixture)', async () => {
+test('Gemini production adapter uses runner, host access without prompts, streaming NDJSON and exact UUID resume (fixture)', async () => {
   process.env.coagent8_FIXTURE_CAPTURE = path.join(tempDir, 'capture.json');
   const events = [];
   const first = await execute('zażółć 😀', { cwd: tempDir, model: 'gemini-explicit', onEvent: e => events.push(e) });
@@ -85,7 +85,8 @@ test('Gemini production adapter uses runner, isolated read-only sandbox, streami
   const capture = JSON.parse(fs.readFileSync(process.env.coagent8_FIXTURE_CAPTURE, 'utf8'));
   assert.ok(capture.args.includes('--conversation'));
   assert.ok(capture.args.includes(first.nativeSessionId));
-  assert.ok(capture.args.includes('--sandbox'));
+  assert.ok(!capture.args.includes('--sandbox'));
+  assert.ok(capture.args.includes('--dangerously-skip-permissions'));
   assert.ok(capture.args.includes('--output-format'));
   assert.ok(capture.args.includes('stream-json'));
   delete process.env.coagent8_FIXTURE_CAPTURE;
@@ -140,13 +141,13 @@ test('Gemini protocol errors are authoritative at exit zero and failures have ty
   assert.equal(deniedRes.status, 'completed', 'a denial shows the sandbox works; the answer stays');
   assert.equal(deniedRes.output, 'Answer from the files agy could read.');
   assert.equal(deniedRes.continuationAvailable, true);
-  assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1);
+  assert.equal(warnings.filter(w => /headless mode denied/.test(w)).length, 1);
 
   process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-empty';
   const empty = await execute('request', { model: MODEL, cwd: tempDir });
   assert.equal(empty.status, 'failed', 'a denial that ended the turn without an answer is not a completed answer');
   assert.equal(empty.error.code, 'POLICY_DENIED');
-  assert.match(empty.error.message, /without an answer after its sandbox denied action command/);
+  assert.match(empty.error.message, /without an answer after headless mode denied action command/);
   delete process.env.coagent8_FIXTURE_MODE;
 });
 
@@ -191,7 +192,7 @@ test('a recovery turn is announced first, and a refusal means it does not run', 
   }
 });
 
-test('#92: a workspace-write turn names the denied action and recovers once inside the workspace (fixture)', async () => {
+test('#92: a delegate turn names the denied action and recovers once inside the workspace (fixture)', async () => {
   const capture = path.join(tempDir, 'write-denial-capture.json');
   Object.assign(process.env, {
     coagent8_FIXTURE_MODE: 'sandbox-denied-recover',
@@ -203,7 +204,7 @@ test('#92: a workspace-write turn names the denied action and recovers once insi
     const recovered = await execute('Change it', {
       model: MODEL,
       cwd: tempDir,
-      profile: 'workspace-write',
+      writeScope: [],
       onEvent: e => {
         if (e.type === 'warning') warnings.push(e.message);
       },
@@ -217,21 +218,19 @@ test('#92: a workspace-write turn names the denied action and recovers once insi
     );
     assert.match(retry.prompt, /^Headless mode denied action read_file and your previous turn ended without an answer\./);
     assert.ok(retry.prompt.includes(`inside ${tempDir}, never another checkout`), 'the recovery prompt names the workspace');
-    assert.deepEqual(warnings, [
-      'agy headless mode denied action read_file (a workspace-write turn runs no commands and uses files inside the workspace only); the answer may be incomplete.',
-    ]);
+    assert.deepEqual(warnings, ['agy headless mode denied action read_file during the change; the answer may be incomplete.']);
 
     process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-empty';
-    const empty = await execute('Change it', { model: MODEL, cwd: tempDir, profile: 'workspace-write' });
+    const empty = await execute('Change it', { model: MODEL, cwd: tempDir, writeScope: [] });
     assert.equal(empty.status, 'failed');
     assert.equal(empty.error.code, 'POLICY_DENIED');
-    assert.match(empty.error.message, /after headless mode denied action read_file, including on automatic retry inside the workspace: /);
+    assert.match(empty.error.message, /after headless mode denied action read_file, including on automatic retry inside the workspace; /);
 
     Object.assign(process.env, {
       coagent8_FIXTURE_DENIED_ACTION: 'a1,a2,a3,a4,a5',
       coagent8_FIXTURE_RETRY_DENIED_ACTION: 'b1,b2,b3,b4,b5',
     });
-    const many = await execute('Change it', { model: MODEL, cwd: tempDir, profile: 'workspace-write' });
+    const many = await execute('Change it', { model: MODEL, cwd: tempDir, writeScope: [] });
     assert.match(many.error.message, /denied actions a1, a2, a3, a4, a5, including/, 'both turns together still name five actions at most');
   } finally {
     for (const key of [
@@ -457,7 +456,7 @@ test('Gemini production adapter reports a denial independently of terminal order
       });
       assert.equal(result.status, 'completed', mode);
       assert.equal(result.output, 'Answer from the files agy could read.', mode);
-      assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1, mode);
+      assert.equal(warnings.filter(w => /headless mode denied/.test(w)).length, 1, mode);
       assert.equal(result.continuationAvailable, true, mode);
       assert.equal(result.nativeSessionId, '11111111-aaaa-bbbb-cccc-123456789012');
     }
@@ -1086,7 +1085,7 @@ test('Issue #20: agy automatically resumes once when sandbox denies a command wi
     assert.equal(direct.continuationAvailable, true);
     assert.deepEqual(direct.usage, { source: 'provider', inputTokens: 25, outputTokens: 25, totalTokens: 50 });
     assert.equal(
-      warnings.filter(w => /sandbox denied/.test(w)).length,
+      warnings.filter(w => /headless mode denied/.test(w)).length,
       1,
       'sandbox warning emitted exactly once across initial and recovery turns',
     );
@@ -1126,8 +1125,12 @@ test('Issue #20: agy automatically resumes once when sandbox denies a command wi
     });
     assert.equal(stillEmpty.status, 'failed');
     assert.equal(stillEmpty.error.code, 'POLICY_DENIED');
-    assert.match(stillEmpty.error.message, /including on automatic retry without shell commands/);
-    assert.equal(emptyWarnings.filter(w => /sandbox denied/.test(w)).length, 1, 'sandbox warning emitted once even when retry also fails');
+    assert.match(stillEmpty.error.message, /including on automatic retry \(headless mode cannot ask for permission\)/);
+    assert.equal(
+      emptyWarnings.filter(w => /headless mode denied/.test(w)).length,
+      1,
+      'sandbox warning emitted once even when retry also fails',
+    );
 
     // Verify retry ID mapper preserves 256-byte UTF-8 bound and distinctness for multibyte and long ASCII IDs
     const { createRetryIdMapper } = require('../../../src/backends/agy/adapter.ts');

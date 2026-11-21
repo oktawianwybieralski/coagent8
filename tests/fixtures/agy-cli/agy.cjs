@@ -156,7 +156,7 @@ function run() {
 
   const isRecoveryTurn =
     args.includes('--conversation') &&
-    (prompt.includes('Your sandbox denied a shell command') ||
+    (prompt.includes('An action was denied and your previous turn ended without an answer') ||
       prompt.includes('your previous turn ended without an answer. Continue the previous task'));
   const omitConversationId = mode === 'resume-without-conversation-id';
   const sid =

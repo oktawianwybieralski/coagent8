@@ -262,22 +262,17 @@ test('claim paths: whole segments, any case, repository coordinates, nothing out
   }
 });
 
-test('a Claude worker gets allow rules for its scope only', () => {
-  assert.deepEqual(JSON.parse(claudeTurnSettings('workspace-write', ['src', 'a.ts'])).permissions.allow, [
-    'Edit(./src)',
-    'Edit(./src/**)',
-    'Edit(./a.ts)',
-    'Edit(./a.ts/**)',
-    'Write(./src)',
-    'Write(./src/**)',
-    'Write(./a.ts)',
-    'Write(./a.ts/**)',
+test('a Claude worker scope is a schedule, not an allow rule (#211)', () => {
+  // Every turn allows every tool; the scope reaches the worker through its prompt and the claims.
+  assert.deepEqual(JSON.parse(claudeTurnSettings()).permissions.allow, [
+    'Read',
+    'Glob',
+    'Grep',
+    'Edit',
+    'Write',
     'Bash',
-  ]);
-  assert.deepEqual(JSON.parse(claudeTurnSettings('workspace-write', ['src/[id]'])).permissions.allow, [
-    'Edit(./**)',
-    'Write(./**)',
-    'Bash',
+    'WebFetch',
+    'WebSearch',
   ]);
 });
 

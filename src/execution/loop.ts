@@ -27,7 +27,7 @@ export interface LoopSteps {
   remainingMs: () => number;
   /** One more turn in the worker's session. */
   fix: (prompt: string) => Promise<TaskExecutionResult>;
-  /** One read-only review of the current change in a session of its own. */
+  /** One review of the current change in a session of its own. */
   review: () => Promise<TaskExecutionResult>;
 }
 

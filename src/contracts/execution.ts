@@ -165,10 +165,18 @@ export interface LoopReport {
 }
 
 /**
- * The execution profile of a turn. `workspace-write` lets the backend change files in the
- * workspace (`DELEGATE-001w`); only the server chooses it, never a call argument.
+ * The access group of a session: `workspace-write` for delegate sessions, `read-only` for the
+ * other roles. It decides which roles may continue a session (#210); every turn runs on the host
+ * with the same tools (#211); earlier versions also ran the backend in this profile. Only the
+ * server chooses it, never a call argument.
  */
 export type ExecutionProfile = 'read-only' | 'workspace-write';
+
+/** The kinds of turn the server runs (#209). */
+export type TaskRole = 'consult' | 'review' | 'delegate' | 'coordinate';
+
+/** Every {@link TaskRole}. */
+export const TASK_ROLES: readonly TaskRole[] = Object.freeze(['consult', 'review', 'delegate', 'coordinate']);
 
 /** One changed path, relative to the workspace, as the server observed it. */
 export interface ObservedChange {
@@ -267,8 +275,6 @@ export interface ExecutionOptions {
   timeoutMs?: number;
   nativeSessionId?: string | null;
   onEvent?: (event: AdapterEvent) => void;
-  /** Execution profile of the turn; read-only when absent. */
-  profile?: ExecutionProfile;
   /** A result counts only from a turn that ended by itself, as a review needs. */
   requireCompleteTurn?: boolean;
   /** Paths a `workspace-write` turn may change, relative to the workspace; empty means all. */

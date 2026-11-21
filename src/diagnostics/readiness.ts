@@ -8,7 +8,7 @@
  * | --- | --- |
  * | `not_installed` | The CLI was not found. |
  * | `not_allowed` | Routing does not allow the backend. |
- * | `profile_unverified` | The CLI cannot execute, or its read-only profile is not verified. |
+ * | `profile_unverified` | The CLI cannot execute, or the tools of its turns are not verified. |
  * | `signed_out` | The CLI reports that it is not signed in. |
  * | `rate_limited` | A cooldown from a rate-limited turn is still running. |
  * | `quota_exhausted` | The measured quota window has no headroom left. |
@@ -16,7 +16,7 @@
  * | `sign_in_unverified` | Nothing contradicts readiness, but nothing proves sign-in either (agy before its first turn). |
  *
  * A completed turn is evidence for the model it ran and for this installation only; it does
- * not prove that every model, or the read-only profile of every later run, works.
+ * not prove that every model, or the tools of every later run, work.
  *
  * @packageDocumentation
  */
@@ -71,7 +71,7 @@ export function decideReadiness(facts: ReadinessFacts, now = Date.now()): Backen
   if (!facts.installed) return { state: 'not_installed', evidence: 'The CLI was not found.' };
   if (!facts.allowed) return result('not_allowed', 'Routing does not allow this backend.');
   if (!facts.executionSupported || !facts.readOnlyVerified)
-    return result('profile_unverified', 'The CLI cannot run turns, or its read-only profile is not verified.');
+    return result('profile_unverified', 'The CLI cannot run turns, or the tools of its turns are not verified.');
   if (facts.authStatus === 'unauthenticated') return result('signed_out', 'The CLI reports that it is not signed in.');
   const cooldown = facts.quota?.cooldownUntil ? Date.parse(facts.quota.cooldownUntil) : NaN;
   // A measured zero quota is also reported as rate limited, without a cooldown: only a
@@ -93,7 +93,7 @@ export function decideReadiness(facts: ReadinessFacts, now = Date.now()): Backen
 export const READINESS_LABEL: Record<ReadinessState, string> = {
   not_installed: 'not installed',
   not_allowed: 'not allowed',
-  profile_unverified: 'read-only profile not verified',
+  profile_unverified: 'turn tools not verified',
   signed_out: 'signed out',
   rate_limited: 'rate limited',
   quota_exhausted: 'quota exhausted',

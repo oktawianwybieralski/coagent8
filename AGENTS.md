@@ -32,10 +32,10 @@ a document that an issue or a PR can hold (owner decision 2026-11-05).
 
 The product is a client-independent system for delegating complete tasks to
 cooperating agents (owner decision, 2026-10-08). Roles and model/provider choices are independent;
-client skill installation is planned. The current runtime is a read-only
-MCP-to-CLI bridge except `delegate`, whose workspace-write profile follows
-[rule 11](./.agents/rules/11-security-and-sandboxes.md) (owner decision
-2026-10-21), until verified task execution profiles land. Follow the roadmap's
+client skill installation is planned. Every role runs through one runner on the
+host, without a per-backend sandbox, after the user's consent
+([rule 11](./.agents/rules/11-security-and-sandboxes.md), owner decision
+2026-11-21, #208); isolation by containers or microVMs is planned (#215). Follow the roadmap's
 full coagent direction while preserving audit gates and quiet desktop
 operation. Historical plans and RFCs do not override this direction.
 
@@ -44,7 +44,7 @@ operation. Historical plans and RFCs do not override this direction.
 | Rule | Level | Scope |
 | --- | --- | --- |
 | [10 Architecture and runtime](./.agents/rules/10-architecture-and-runtime.md) | P0 | Runtime reliability, schema validation, synchronized metadata, dependency and responsibility boundaries |
-| [11 Security and sandboxes](./.agents/rules/11-security-and-sandboxes.md) | P0 | Read-only profiles per backend, the `delegate` write profile, model cost governance and consent, secret redaction |
+| [11 Security and sandboxes](./.agents/rules/11-security-and-sandboxes.md) | P0 | Host execution and its consent, the `delegate` sessions and claims, model cost governance and consent, secret redaction |
 | [12 Release workflow](./.agents/rules/12-release-workflow.md) | P0 | `develop` and `X.Y.x` lines, commit and PR conventions, versioning, npm channels, the release process, changelog, issues, repository settings, history recovery |
 | [13 Review](./.agents/rules/13-review.md) | P1 | The CoAgent8 review envelope and release candidate binding |
 | [14 Quality gate](./.agents/rules/14-quality-gate.md) | P1 | Additional check scopes, the test runner, provenance of bundles and artifacts, the full release gate |

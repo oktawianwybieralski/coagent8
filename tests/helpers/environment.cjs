@@ -60,6 +60,8 @@ function createTestEnvironment(base = process.env) {
     CODEX_PATH: path.join(fixtures, 'codex-cli', 'codex.cjs'),
     AGY_PATH: path.join(fixtures, 'agy-cli', 'agy.cjs'),
     AGY_PATH: path.join(fixtures, 'agy-cli', 'agy.cjs'),
+    // Agents run on the host only with the user's consent (#211); the suite gives it, a consent test removes it.
+    COAGENT8_HOST_EXECUTION: 'accepted',
     // Model prices come from a recorded list, never from the network.
     coagent8_PRICES_URL: path.join(fixtures, 'prices', 'openrouter-models.json'),
   });

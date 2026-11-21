@@ -558,11 +558,11 @@ function formatCandidates(rows: ModelCandidate[], limit: number): string {
   return `  models, USD per million output tokens, date added to the price list: ${shown.join(', ')}${more}${shared ? `; reasoning_effort ${efforts}` : ''}`;
 }
 
-/** What a read-only turn can reach beyond the workspace, as the profiles of rule 11 set it (#130). */
+/** What a turn can reach beyond the workspace (#130); every turn runs on the host (#211). */
 const TURN_REACH: Record<ProviderId, string> = {
-  codex: 'no network, web or MCP servers in a turn',
-  claude: 'no network, web or MCP servers in a turn',
-  agy: 'its own web search and MCP servers in a turn',
+  codex: 'commands and network on the host, no MCP servers in a turn',
+  claude: 'commands, web and network on the host, no MCP servers in a turn',
+  agy: 'commands, network and its own MCP servers on the host in a turn',
 };
 
 function formatQuota(quota: DoctorQuota | undefined): string {
