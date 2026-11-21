@@ -28,7 +28,8 @@ import {
 import { beginCoordinatorTurn, endCoordinatorTurn, readRoot, rootHasFreeSlot } from '../sessions/roots.js';
 import { inScope, normalizeScopeEntry } from '../workspace/changes.js';
 import { keepSessionAlive } from '../sessions/session.js';
-import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
+import type { ExecutionRequest, TaskOptions } from './controller.js';
+import { runTask } from './task.js';
 import type { DelegationOperation, TaskCompletion } from './delegation.js';
 import { createExecutionBudget } from './runtime/budget.js';
 
@@ -315,16 +316,14 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
       try {
         const isFirst = first;
         first = false;
-        return await executeTask(
+        return await runTask('coordinate', {
           prompt,
-          input.publicInput,
-          { ...input.args, ...(sessionHandle ? { session_handle: sessionHandle } : {}) },
-          input.cwd,
-          signal,
-          null,
-          {
-            requireEnvelope: false,
-            coordinatorTurn: true,
+          publicInput: input.publicInput,
+          args: { ...input.args, ...(sessionHandle ? { session_handle: sessionHandle } : {}) },
+          cwd: input.cwd,
+          abortSignal: signal,
+          onProgress: null,
+          options: {
             warnings: input.warnings,
             clock: input.clock,
             // The call that could show a form has ended by the second turn.
@@ -353,7 +352,7 @@ export function coordinationOperation(input: CoordinationInput): DelegationOpera
               : beforeRound,
             beforeExtraTurn: beforeRound,
           },
-        );
+        });
       } finally {
         turnBudget.dispose();
         await givePlaceBack();

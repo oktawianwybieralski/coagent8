@@ -1,13 +1,9 @@
 import type { ToolArguments, ToolProgress } from '../arguments.js';
 import { EXECUTION_PARAMETERS } from '../schema.js';
-import { executeTask, type TaskOptions } from '../../execution/controller.js';
+import type { TaskOptions } from '../../execution/controller.js';
+import { openCallScope, runTask, type CallScopeOptions } from '../../execution/task.js';
 import { CANONICAL_TOOL_NAMES, READ_ONLY_FILE_TOOL_GUIDANCE } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
-import { createExecutionBudget } from '../../execution/runtime/budget.js';
-import { combineSignals } from '../../storage/lock.js';
-import { ToolError } from '../../contracts/error.js';
-import type { BackendReadContext, ExecutionBudget, MonotonicClock, TimingObserver } from '../../contracts/execution.js';
-import { createPhaseTracker, type PhaseTracker } from '../../execution/runtime/timing.js';
 
 export function getCanonicalConsultToolDefinition() {
   return {
@@ -50,58 +46,10 @@ export async function handleConsult(
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
   onProgress: ToolProgress = null,
-  options: Pick<TaskOptions, 'warnings' | 'askConsent'> & {
-    onTiming?: TimingObserver;
-    tracker?: PhaseTracker;
-    clock?: MonotonicClock;
-    budget?: ExecutionBudget;
-    context?: BackendReadContext;
-  } = {},
+  options: Pick<TaskOptions, 'warnings' | 'askConsent'> & CallScopeOptions = {},
 ) {
-  const isOwnedBudget = !options.budget && !options.context?.budget;
-  const budget =
-    options.budget ??
-    options.context?.budget ??
-    createExecutionBudget({
-      totalBudgetMs: typeof args.timeout_ms === 'number' && Number.isFinite(args.timeout_ms) ? args.timeout_ms : undefined,
-      parentSignal: abortSignal ?? undefined,
-      clock: options.clock,
-    });
-
-  const isOwnedTracker = !options.tracker;
-  const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
-
-  const consultReadContext: BackendReadContext = {
-    ...options.context,
-    abortSignal: combineSignals(options.context?.abortSignal, abortSignal, budget.executionSignal) ?? undefined,
-    budget,
-    timeoutMs: budget.remainingExecutionMs(),
-  };
-
-  const emitTimingOnEarlyExit = () => {
-    if (options.onTiming) {
-      try {
-        const trace = isOwnedTracker ? tracker.complete() : tracker.getTrace();
-        const ret: unknown = options.onTiming(trace);
-        if (ret && typeof (ret as Promise<unknown>).catch === 'function') {
-          (ret as Promise<unknown>).catch(() => {});
-        }
-      } catch {
-        // Isolate observer failure
-      }
-    }
-  };
-
-  if (budget.isTimedOut() || budget.isExecutionExpired() || budget.remainingExecutionMs() <= 0) {
-    if (isOwnedBudget) budget.dispose();
-    emitTimingOnEarlyExit();
-    throw new ToolError('TIMEOUT', `Execution deadline exceeded (${budget.totalBudgetMs} ms).`);
-  }
-  if (budget.isCallerAborted()) {
-    if (isOwnedBudget) budget.dispose();
-    emitTimingOnEarlyExit();
-    throw new ToolError('ABORTED', 'Request cancelled before consult execution.');
-  }
+  const call = openCallScope(args.timeout_ms, abortSignal, options);
+  call.assertLive('Request cancelled before consult execution.');
 
   const taskType = args.task_type;
   const rawFiles = Array.isArray(args.context_files) ? args.context_files : Array.isArray(args.file_paths) ? args.file_paths : [];
@@ -144,28 +92,25 @@ export async function handleConsult(
     .join('\n');
 
   try {
-    const outcome = await executeTask(
+    const outcome = await runTask('consult', {
       prompt,
-      args.proposal + (args.specific_questions ? '\n' + args.specific_questions : ''),
-      { ...args, backend: args.backend },
-      workspaceCwd,
+      publicInput: args.proposal + (args.specific_questions ? '\n' + args.specific_questions : ''),
+      args: { ...args, backend: args.backend },
+      cwd: workspaceCwd,
       abortSignal,
       onProgress,
-      {
-        requireEnvelope: false,
+      options: {
         warnings: options.warnings,
         askConsent: options.askConsent,
-        budget,
-        context: consultReadContext,
-        tracker,
+        budget: call.budget,
+        context: call.readContext,
+        tracker: call.tracker,
         clock: options.clock,
         onTiming: options.onTiming,
       },
-    );
+    });
     return formatExecutionResult(outcome);
   } finally {
-    if (isOwnedBudget) {
-      budget.dispose();
-    }
+    call.dispose();
   }
 }
