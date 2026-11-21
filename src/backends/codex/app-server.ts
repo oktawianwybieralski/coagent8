@@ -4,7 +4,7 @@
  * @remarks
  * Messages are newline-delimited JSON-RPC 2.0 without the `jsonrpc` field. The session
  * performs the `initialize`/`initialized` handshake, starts or resumes the thread, fails
- * closed unless the server reports the sandbox of {@link CODEX_SANDBOX} with `approvalPolicy: "never"`,
+ * closed unless the server reports full access ({@link CODEX_SANDBOX}) with `approvalPolicy: "never"`,
  * starts one turn and closes stdin when the turn completes, which ends the server. An
  * interrupt sends `turn/interrupt`; the server then completes the turn with
  * `status: "interrupted"`. Server-initiated requests (approvals, user input, tool calls)
@@ -22,8 +22,7 @@
  */
 import path from 'node:path';
 import { BRAND } from '../../brand.js';
-import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError, type ExecutionProfile } from '../../contracts/index.js';
-import { canonicalPath } from '../../workspace/identity.js';
+import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../contracts/index.js';
 import type { StdinChannel, StdinSession } from '../../execution/process.js';
 import { classifyCodexTurnError } from './errors.js';
 import type { createCodexStreamCollector } from './collector.js';
@@ -50,43 +49,28 @@ export const CODEX_DISABLED_FEATURES = [
   'multi_agent_v2',
 ] as const;
 
-/** The sandbox of a Codex turn per execution profile: the requested mode and the type the server must report. */
-export const CODEX_SANDBOX = {
-  'read-only': { mode: 'read-only', type: 'readOnly' },
-  'workspace-write': { mode: 'workspace-write', type: 'workspaceWrite' },
-} as const;
+/**
+ * The access of every Codex turn (#211, owner decision 2026-11-21): no sandbox, so commands,
+ * writes and network reach what the user's account reaches. `mode` is requested, `type` is what
+ * the server must report.
+ */
+export const CODEX_SANDBOX = { mode: 'danger-full-access', type: 'dangerFullAccess' } as const;
 
 /**
- * Overrides for a `workspace-write` turn (`DELEGATE-001w`): writes only in the turn's
- * directory, without network access, extra writable roots or the temporary directories
- * Codex otherwise adds. A user's `config.toml` may enable any of them.
+ * Arguments of every `codex app-server` launch: full access ({@link CODEX_SANDBOX}), no approvals
+ * and the features in {@link CODEX_DISABLED_FEATURES} off. Windows commands run without the user's
+ * PowerShell profile (`allow_login_shell=false`, which Codex turns into `-NoProfile`): a profile
+ * adds output to every command, and under the default execution policy of Windows PowerShell it
+ * fails on every command.
  */
-const CODEX_WORKSPACE_WRITE_CONFIG = [
-  'sandbox_workspace_write.network_access=false',
-  'sandbox_workspace_write.writable_roots=[]',
-  'sandbox_workspace_write.exclude_tmpdir_env_var=true',
-  'sandbox_workspace_write.exclude_slash_tmp=true',
-] as const;
-
-/**
- * Arguments of every `codex app-server` launch: the sandbox of {@link CODEX_SANDBOX} for the
- * profile, no approvals and the features in {@link CODEX_DISABLED_FEATURES} off. On Windows the sandbox is
- * `windows.sandbox="unelevated"` (`CUR-014`, 2026-10-21): a restricted token of the user's own
- * account reads what the user can read, while the elevated backend's separate sandbox account
- * loses read access wherever ACL inheritance is cut, which left reviews PARTIAL. Windows
- * commands also run without the user's PowerShell profile (`allow_login_shell=false`, which
- * Codex turns into `-NoProfile`): a profile adds output to every command, and under the
- * default execution policy of Windows PowerShell it fails on every command.
- */
-export function codexAppServerArgs(profile: ExecutionProfile = 'read-only'): string[] {
+export function codexAppServerArgs(): string[] {
   return [
     'app-server',
     '-c',
-    `sandbox_mode="${CODEX_SANDBOX[profile].mode}"`,
-    ...(profile === 'workspace-write' ? CODEX_WORKSPACE_WRITE_CONFIG.flatMap(setting => ['-c', setting]) : []),
+    `sandbox_mode="${CODEX_SANDBOX.mode}"`,
     '-c',
     'approval_policy="never"',
-    ...(process.platform === 'win32' ? ['-c', 'windows.sandbox="unelevated"', '-c', 'allow_login_shell=false'] : []),
+    ...(process.platform === 'win32' ? ['-c', 'allow_login_shell=false'] : []),
     ...CODEX_DISABLED_FEATURES.flatMap(feature => ['-c', `features.${feature}=false`]),
   ];
 }
@@ -116,29 +100,12 @@ export function codexLaunchEnvironment(env: NodeJS.ProcessEnv, platform: NodeJS.
 const MAX_CHECK_PAGES = 20;
 
 /**
- * Checks the sandbox a `thread/start` or `thread/resume` result reports against the profile.
- * A `workspace-write` thread must report no network access, both temporary directories
- * excluded, its directory as `cwd` and no writable root outside it.
- * @returns A reason the sandbox does not match, or null when it does.
+ * Checks the access a `thread/start` or `thread/resume` result reports: full access and no approvals.
+ * @returns A reason the thread does not match, or null when it does.
  */
-export function codexSandboxMismatch(result: Record<string, unknown>, profile: ExecutionProfile, cwd: string): string | null {
-  const sandbox = record(result.sandbox);
-  const expected = CODEX_SANDBOX[profile];
-  if (sandbox?.type !== expected.type) return `Codex did not confirm the ${expected.mode} sandbox.`;
+export function codexSandboxMismatch(result: Record<string, unknown>): string | null {
+  if (record(result.sandbox)?.type !== CODEX_SANDBOX.type) return `Codex did not confirm the ${CODEX_SANDBOX.mode} access.`;
   if (result.approvalPolicy !== 'never') return 'Codex did not confirm that approvals are disabled.';
-  if (profile === 'read-only') return null;
-  if (sandbox.networkAccess !== false) return 'Codex did not confirm a workspace-write sandbox without network access.';
-  if (sandbox.excludeTmpdirEnvVar !== true || sandbox.excludeSlashTmp !== true)
-    return 'Codex did not confirm a workspace-write sandbox without temporary write roots.';
-  if (typeof result.cwd !== 'string' || canonicalPath(result.cwd) !== canonicalPath(cwd))
-    return 'Codex reported another working directory for the thread.';
-  const roots = sandbox.writableRoots;
-  if (!Array.isArray(roots)) return 'Codex did not report the writable roots of the sandbox.';
-  for (const root of roots) {
-    const relative = typeof root === 'string' && path.isAbsolute(root) ? path.relative(canonicalPath(cwd), canonicalPath(root)) : null;
-    if (relative === null || relative.startsWith('..') || path.isAbsolute(relative))
-      return 'Codex reported a writable root outside the workspace.';
-  }
   return null;
 }
 
@@ -150,8 +117,6 @@ export interface CodexAppSessionOptions {
   effort: string;
   cwd: string;
   onEvent?: (event: AdapterEvent) => void;
-  /** Execution profile of the turn; read-only when absent. */
-  profile?: ExecutionProfile;
 }
 
 const REQUEST = { initialize: 1, thread: 2, turn: 3, interrupt: 4, config: 5, features: 6, mcpStatus: 7 } as const;
@@ -229,7 +194,6 @@ export function checkCodexMcpStatusPage(result: unknown): string | null {
  */
 export function createCodexAppSession(options: CodexAppSessionOptions) {
   const { collector } = options;
-  const profile = options.profile ?? 'read-only';
   let channel: StdinChannel | undefined;
   let prompt = '';
   let interruptRequested = false,
@@ -271,7 +235,7 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
       model: options.model,
       cwd: options.cwd,
       approvalPolicy: 'never',
-      sandbox: CODEX_SANDBOX[profile].mode,
+      sandbox: CODEX_SANDBOX.mode,
     };
     if (servers.length) thread.config = { mcp_servers: Object.fromEntries(servers.map(name => [name, { enabled: false }])) };
     send(
@@ -289,7 +253,7 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
   }
   function onThread(result: Record<string, unknown>) {
     // Started and resumed threads are both checked: a resumed thread could keep another policy.
-    const mismatch = codexSandboxMismatch(result, profile, options.cwd);
+    const mismatch = codexSandboxMismatch(result);
     if (mismatch) fail(typed('SANDBOX_UNAVAILABLE', mismatch));
     const id = record(result.thread)?.id;
     if (typeof id !== 'string') fail(typed('PROTOCOL_ERROR', 'Codex returned a thread without an ID.'));

@@ -6,7 +6,7 @@ description: Carry out a non-trivial change in a loop led by you, with CoAgent8 
 # CoAgent8 loop
 
 You lead the loop and own every change: you make it yourself or delegate it.
-CoAgent8 consult and review agents run read-only; a delegate agent edits the
+CoAgent8 consult and review agents leave the workspace as they found it; a delegate agent edits the
 workspace for you, and you check what it changed. This skill grants no
 permission. Commit, push, merge, deploy and publish only with the user's
 authority.

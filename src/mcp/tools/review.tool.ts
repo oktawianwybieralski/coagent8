@@ -1,13 +1,12 @@
 import type { ToolArguments, ToolProgress } from '../arguments.js';
 import { EXECUTION_PARAMETERS } from '../schema.js';
-import { executeTask, type TaskOptions } from '../../execution/controller.js';
+import type { TaskOptions } from '../../execution/controller.js';
+import { openCallScope, runTask, type CallScopeOptions, type RoleTaskOptions } from '../../execution/task.js';
 import { collectReviewInput } from '../../review/index.js';
 import { assertReviewWorkspace } from '../../workspace/git.js';
-import { CANONICAL_TOOL_NAMES, READ_ONLY_FILE_TOOL_GUIDANCE } from '../constants.js';
+import { CANONICAL_TOOL_NAMES, HOST_TOOL_GUIDANCE } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
-import { createPhaseTracker, type PhaseTracker } from '../../execution/runtime/timing.js';
-import type { TimingObserver, MonotonicClock, BackendReadContext, ExecutionBudget } from '../../contracts/execution.js';
-import { createExecutionBudget } from '../../execution/runtime/budget.js';
+import type { BackendReadContext } from '../../contracts/execution.js';
 import { combineSignals } from '../../storage/lock.js';
 import { ToolError } from '../../contracts/error.js';
 import { approveChecks, parseCheckCommand, runCheck, type CheckApprovalPrompt } from '../../execution/checks.js';
@@ -22,7 +21,7 @@ export function getCanonicalReviewToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.REVIEW,
     description:
-      'Independent review of Git changes: findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)". Read-only reviewer; checks run on the server; an unchanged complete repeat cannot help.',
+      'Independent review of Git changes: findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)". Separate reviewer; checks run on the server; an unchanged complete repeat cannot help.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -60,15 +59,11 @@ export async function handleReview(
 }
 
 /** Per-call options of a review. */
-export type ReviewOptions = Pick<TaskOptions, 'askConsent' | 'onTurnStart' | 'beforeExtraTurn'> & {
-  /** Asks the user about checks outside `allowedChecks`; absent when the client has no form. */
-  askChecks?: CheckApprovalPrompt;
-  onTiming?: TimingObserver;
-  tracker?: PhaseTracker;
-  clock?: MonotonicClock;
-  budget?: ExecutionBudget;
-  context?: BackendReadContext;
-};
+export type ReviewOptions = Pick<TaskOptions, 'askConsent' | 'onTurnStart' | 'beforeExtraTurn'> &
+  CallScopeOptions & {
+    /** Asks the user about checks outside `allowedChecks`; absent when the client has no form. */
+    askChecks?: CheckApprovalPrompt;
+  };
 
 /** Runs a review, as {@link handleReview} describes, and returns its outcome unformatted. */
 export async function executeReview(
@@ -78,49 +73,9 @@ export async function executeReview(
   onProgress: ToolProgress = null,
   options: ReviewOptions = {},
 ) {
-  const isOwnedTracker = !options.tracker;
-  const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
-  const isOwnedBudget = !options.budget && !options.context?.budget;
-  const budget =
-    options.budget ??
-    options.context?.budget ??
-    createExecutionBudget({
-      totalBudgetMs: typeof args.timeout_ms === 'number' && Number.isFinite(args.timeout_ms) ? args.timeout_ms : undefined,
-      parentSignal: abortSignal ?? undefined,
-      clock: options.clock,
-    });
-
-  const reviewReadContext: BackendReadContext = {
-    ...options.context,
-    abortSignal: combineSignals(options.context?.abortSignal, abortSignal, budget.executionSignal) ?? undefined,
-    budget,
-    timeoutMs: budget.remainingExecutionMs(),
-  };
-
-  const emitTimingOnEarlyExit = () => {
-    if (options.onTiming) {
-      try {
-        const trace = isOwnedTracker ? tracker.complete() : tracker.getTrace();
-        const ret: unknown = options.onTiming(trace);
-        if (ret && typeof (ret as Promise<unknown>).catch === 'function') {
-          (ret as Promise<unknown>).catch(() => {});
-        }
-      } catch {
-        // Isolate observer failure
-      }
-    }
-  };
-
-  if (budget.isTimedOut() || budget.isExecutionExpired() || budget.remainingExecutionMs() <= 0) {
-    if (isOwnedBudget) budget.dispose();
-    emitTimingOnEarlyExit();
-    throw new ToolError('TIMEOUT', `Execution deadline exceeded (${budget.totalBudgetMs} ms).`);
-  }
-  if (budget.isCallerAborted()) {
-    if (isOwnedBudget) budget.dispose();
-    emitTimingOnEarlyExit();
-    throw new ToolError('ABORTED', 'Request cancelled before review Git work.');
-  }
+  const call = openCallScope(args.timeout_ms, abortSignal, options);
+  const { budget, tracker, readContext: reviewReadContext } = call;
+  call.assertLive('Request cancelled before review Git work.');
 
   const gitHandle = tracker.startPhase('git_collection');
   const effectiveScope = args.scope || args.target;
@@ -134,35 +89,13 @@ export async function executeReview(
     await assertReviewWorkspace(scopeInfo, workspaceCwd, abortSignal, reviewReadContext);
   } catch (err) {
     gitHandle.end();
-    if (isOwnedBudget) {
-      budget.dispose();
-    }
-    if (options.onTiming) {
-      try {
-        const trace = isOwnedTracker ? tracker.complete() : tracker.getTrace();
-        const ret: unknown = options.onTiming(trace);
-        if (ret && typeof (ret as Promise<unknown>).catch === 'function') {
-          (ret as Promise<unknown>).catch(() => {});
-        }
-      } catch {
-        // Isolate observer failure
-      }
-    }
+    call.close();
     throw err;
   } finally {
     gitHandle.end();
   }
 
-  if (budget.isTimedOut() || budget.isExecutionExpired() || budget.remainingExecutionMs() <= 0) {
-    if (isOwnedBudget) budget.dispose();
-    emitTimingOnEarlyExit();
-    throw new ToolError('TIMEOUT', `Execution deadline exceeded (${budget.totalBudgetMs} ms).`);
-  }
-  if (budget.isCallerAborted()) {
-    if (isOwnedBudget) budget.dispose();
-    emitTimingOnEarlyExit();
-    throw new ToolError('ABORTED', 'Request cancelled after review Git work.');
-  }
+  call.assertLive('Request cancelled after review Git work.');
   const instructions = args.instructions || 'Review correctness, security, edge cases and architecture.';
   // Checks the user allowed run on the reviewed state before the turn; their results decide (REVIEW-003).
   const checkCommands = (Array.isArray((args as { checks?: unknown }).checks) ? ((args as { checks?: unknown[] }).checks ?? []) : [])
@@ -202,8 +135,7 @@ export async function executeReview(
         if (stopped) break;
       }
     } catch (err) {
-      if (isOwnedBudget) budget.dispose();
-      emitTimingOnEarlyExit();
+      call.close();
       throw err;
     }
     context.serverChecks = serverChecks.map(({ command, status }) => ({ command, status }));
@@ -224,7 +156,7 @@ export async function executeReview(
       `Review this diff: ${scopeInfo.label}. Read other files only to check direct imports or call sites.`,
       ...scopeNote,
       ...checkLines,
-      `The diff is below. ${READ_ONLY_FILE_TOOL_GUIDANCE}`,
+      `The diff is below. ${HOST_TOOL_GUIDANCE}`,
       'Focus: ' + instructions,
       'P1: defect, security flaw, crash or breaking change. P2: logic bug, regression, missing error handling or edge case. Any P1 or P2 means VERDICT: BLOCKED, none means READY. P3: style or polish, one line without Evidence and Fix. Any other BLOCKED states its cause on the Blocked line.',
       // A round that reports a few findings and stops lets each fix batch reveal the next (#62).
@@ -264,8 +196,7 @@ export async function executeReview(
     ].join('\n');
   const parts = splitReviewDiff(scopeInfo.diff, scopeInfo.untracked);
   if (parts.length > MAX_REVIEW_PARTS) {
-    if (isOwnedBudget) budget.dispose();
-    emitTimingOnEarlyExit();
+    call.close();
     throw new ToolError(
       'INPUT_LIMIT',
       `This change is too large to review: ${scopeInfo.diff.length} diff characters would take ${parts.length} review parts, and at most ${MAX_REVIEW_PARTS} run. No model turn started. Review a narrower scope: a range of fewer commits, or the files of one area.`,
@@ -324,16 +255,15 @@ export async function executeReview(
         verifyReviewSnapshot,
       });
     }
-    const outcome = await executeTask(
+    const outcome = await runTask('review', {
       prompt,
-      'Review ' + scopeInfo.label + '\n' + instructions,
-      { ...args, backend: args.backend },
-      workspaceCwd,
+      publicInput: 'Review ' + scopeInfo.label + '\n' + instructions,
+      args: { ...args, backend: args.backend },
+      cwd: workspaceCwd,
       abortSignal,
       onProgress,
-      {
+      options: {
         tracker,
-        requireEnvelope: true,
         askConsent: options.askConsent,
         onTurnStart: options.onTurnStart,
         beforeExtraTurn: options.beforeExtraTurn,
@@ -346,12 +276,10 @@ export async function executeReview(
         context: reviewReadContext,
         verifyReviewSnapshot,
       },
-    );
+    });
     return outcome;
   } finally {
-    if (isOwnedBudget) {
-      budget.dispose();
-    }
+    call.dispose();
   }
 }
 
@@ -370,7 +298,7 @@ interface PartsReview {
   onProgress: ToolProgress;
   context: ReviewGateContext;
   turnOptions: Pick<
-    TaskOptions,
+    RoleTaskOptions,
     'onTurnStart' | 'beforeExtraTurn' | 'tracker' | 'askConsent' | 'onTiming' | 'clock' | 'budget' | 'context'
   >;
   verifyReviewSnapshot: () => Promise<string | undefined>;
@@ -435,19 +363,18 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
       partArgs.backend = followed.backend;
       if (!partArgs.model && followed.model) partArgs.model = followed.model;
     }
-    const outcome = await executeTask(
+    const outcome = await runTask('review', {
       prompt,
-      `Review ${review.label}, part ${index + 1} of ${parts.length}\n${review.instructions}`,
-      partArgs,
-      review.workspaceCwd,
-      review.abortSignal,
-      review.onProgress,
-      {
+      publicInput: `Review ${review.label}, part ${index + 1} of ${parts.length}\n${review.instructions}`,
+      args: partArgs,
+      cwd: review.workspaceCwd,
+      abortSignal: review.abortSignal,
+      onProgress: review.onProgress,
+      options: {
         ...review.turnOptions,
-        requireEnvelope: true,
         reviewContext: { ...review.context, expectedSnapshot: partSnapshot, requiredFiles: part.paths },
       },
-    );
+    });
     results.push({ index, outcome });
     // A cancelled or timed-out part ends the review: the rest could not run either.
     if (outcome.result.status === 'cancelled' || outcome.result.status === 'timed_out') return withParts(outcome, results, parts.length);
@@ -461,8 +388,8 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
       return [`Part ${index + 1} (${verdict}):`, findingLines(outcome.result.output ?? '') || 'No findings.'].join('\n');
     })
     .join('\n\n');
-  const synthesis = await executeTask(
-    [
+  const synthesis = await runTask('review', {
+    prompt: [
       `Review this diff: ${review.label}. It was too large for one turn and was reviewed in ${parts.length} parts by separate reviewers.`,
       'Your turn has no diff. Check the parts together: problems that cross part boundaries, findings that contradict each other, and findings that do not hold. Read the files you need with your file tools.',
       'Repeat every P1 and P2 finding that still holds, with its file and line, and add any cross-part finding. Any P1 or P2 means VERDICT: BLOCKED.',
@@ -486,19 +413,18 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
       'Blocked: <one sentence, only when VERDICT is BLOCKED without a P1 or P2 finding>',
       'CHECKS: typecheck=<PASS|FAIL|NOT_RUN>; tests=<PASS|FAIL|NOT_RUN>',
     ].join('\n'),
-    `Review ${review.label}, synthesis of ${parts.length} parts\n${review.instructions}`,
-    review.args,
-    review.workspaceCwd,
-    review.abortSignal,
-    review.onProgress,
-    {
+    publicInput: `Review ${review.label}, synthesis of ${parts.length} parts\n${review.instructions}`,
+    args: review.args,
+    cwd: review.workspaceCwd,
+    abortSignal: review.abortSignal,
+    onProgress: review.onProgress,
+    options: {
       ...review.turnOptions,
-      requireEnvelope: true,
       reviewContext: review.context,
       // No reviewIdentity: an unchanged repeat must not reuse a synthesis verdict that the parts overrule.
       verifyReviewSnapshot: review.verifyReviewSnapshot,
     },
-  );
+  });
   return withParts(synthesis, results, parts.length);
 }
 

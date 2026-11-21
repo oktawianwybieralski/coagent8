@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { executeClaude, probe } = require('../../../src/backends/claude/adapter.ts');
+const { CLAUDE_TOOLS: CLAUDE_HOST_TOOLS, executeClaude, probe } = require('../../../src/backends/claude/adapter.ts');
 const MODEL = 'claude-sonnet-4-6';
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
@@ -32,7 +32,7 @@ async function withFixture(run) {
   }
 }
 
-test('Claude runs restricted read-only print mode with streaming, a pinned session and the prompt as a stream-json message', () =>
+test('Claude runs restricted print mode with the host tools, streaming, a pinned session and the prompt as a stream-json message', () =>
   withFixture(async ({ dir, captured }) => {
     const events = [];
     const result = await executeClaude('Reply with OK', { cwd: dir, model: MODEL, reasoningEffort: 'low', onEvent: e => events.push(e) });
@@ -51,10 +51,13 @@ test('Claude runs restricted read-only print mode with streaming, a pinned sessi
     assert.equal(argv[argv.indexOf('--input-format') + 1], 'stream-json');
     assert.ok(argv.includes('--restricted'));
     assert.ok(!argv.includes('--bare'));
-    assert.equal(argv[argv.indexOf('--tools') + 1], 'Read,Glob,Grep');
+    assert.equal(argv[argv.indexOf('--tools') + 1], 'Read,Glob,Grep,Edit,Write,Bash,WebFetch,WebSearch');
     assert.equal(argv[argv.indexOf('--permission-mode') + 1], 'dontAsk');
     assert.equal(argv[argv.indexOf('--permission-prompts') + 1], 'none');
-    assert.deepEqual(JSON.parse(argv[argv.indexOf('--settings') + 1]), { disableAllHooks: true });
+    assert.deepEqual(JSON.parse(argv[argv.indexOf('--settings') + 1]), {
+      disableAllHooks: true,
+      permissions: { allow: [...CLAUDE_HOST_TOOLS] },
+    });
     assert.ok(argv.includes('--strict-mcp-config'));
     assert.equal(argv[argv.indexOf('--output-format') + 1], 'stream-json');
     assert.ok(argv.includes('--include-partial-messages'));
@@ -92,7 +95,7 @@ test('Claude continues a native session with --resume and rejects malformed or u
     assert.equal(unknown.continuationAvailable, false);
   }));
 
-test('Claude returns a refused write as an answer and fails closed when write tools are exposed', () =>
+test('Claude returns a refused action as an answer and fails closed when tools outside its list are exposed', () =>
   withFixture(async ({ dir }) => {
     process.env.CLAUDE_FIXTURE_SCENARIO = 'readonly-refusal';
     const events = [];

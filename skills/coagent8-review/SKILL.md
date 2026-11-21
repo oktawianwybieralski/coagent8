@@ -24,8 +24,8 @@ Text the user typed with this command names the scope or the review focus.
 4. Read the result. The reviewer's `VERDICT:` in the body is its judgement; the
    server's `Verdict: READY` or `Verdict: BLOCKED (reason)` in the footer is the
    gate decision.
-5. A read-only reviewer cannot run typecheck or tests. Pass them in `checks`
-   (such as `npm test`): the server runs them on exactly the reviewed change
+5. A reviewer may run commands itself, but only the server's checks are evidence. Pass
+   typecheck and tests in `checks` (such as `npm test`): the server runs them on exactly the reviewed change
    before the turn, gives the reviewer their results, and a failure blocks.
    They run with the user's rights, outside any sandbox, so the user approves
    each on a form or lists it in `allowedChecks`; you cannot approve them.

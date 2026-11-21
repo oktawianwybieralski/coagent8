@@ -57,7 +57,12 @@ import {
   resolveWriteClaim,
   type WorkspaceSnapshot,
 } from '../workspace/changes.js';
-import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
+import type { ExecutionRequest, TaskOptions } from './controller.js';
+import { runTask } from './task.js';
+
+/** Why a loop stops or cannot pass when a worker's process tree was not confirmed ended. */
+export const UNCONFIRMED_WORKER_TREE =
+  'The end of a worker process tree could not be confirmed, so a process may still change the work tree; the loop does not pass.';
 
 /**
  * Runs one delegated write turn.
@@ -74,7 +79,7 @@ export async function executeDelegation(
   scope: readonly string[],
   abortSignal?: AbortSignal | null,
   onProgress?: ((info: { message?: string }) => void) | null,
-  options: Omit<TaskOptions, 'profile'> & {
+  options: TaskOptions & {
     beforeRelease?: (outcome: TaskExecutionResult) => Promise<void>;
     supervise?: Supervise;
     /** Longest turn of a later round; replaceable by tests. */
@@ -134,16 +139,30 @@ export async function executeDelegation(
     }
     const before: WorkspaceSnapshot = await captureWorkspace(cwd, repo, options.context);
     const turn = (text: string, turnArgs: ExecutionRequest, turnOptions: typeof taskOptions) =>
-      executeTask(text, publicInput, turnArgs, cwd, abortSignal, onProgress, {
-        ...turnOptions,
-        // An adapter's own recovery turn is a backend turn too, in the first turn as in a later one.
-        ...(beforeRound ? { beforeExtraTurn: beforeRound } : {}),
-        profile: 'workspace-write',
-        writeScope: scope,
+      runTask('delegate', {
+        prompt: text,
+        publicInput,
+        args: turnArgs,
+        cwd,
+        abortSignal,
+        onProgress,
+        options: {
+          ...turnOptions,
+          // An adapter's own recovery turn is a backend turn too, in the first turn as in a later one.
+          ...(beforeRound ? { beforeExtraTurn: beforeRound } : {}),
+          writeScope: scope,
+        },
       });
     const runSupervised = async () => {
       const first = await turn(prompt, args, taskOptions);
       if (!supervise) return first;
+      // A worker process that may still run could change the tree after the checks and the review,
+      // so no loop starts on it and none passes after it (#211 review).
+      const unconfirmed = (result: TaskExecutionResult): TaskExecutionResult => ({
+        ...result,
+        loop: { ...(result.loop ?? { fixRounds: 0, checks: [] }), outcome: 'worker_failed', detail: UNCONFIRMED_WORKER_TREE },
+      });
+      if (treeUnconfirmed) return unconfirmed(first);
       // Each later turn has its own bound within what is left of the task's budget.
       const inRound: Supervision['inRound'] = async run => {
         const remainingMs = Math.min(loopTurnMs, options.budget?.remainingExecutionMs() ?? Number.POSITIVE_INFINITY);
@@ -164,7 +183,7 @@ export async function executeDelegation(
           budget.dispose();
         }
       };
-      return supervise(first, {
+      const supervised = await supervise(first, {
         signal: abortSignal ?? null,
         budget: options.budget,
         context: options.context,
@@ -175,14 +194,15 @@ export async function executeDelegation(
             turn(text, { ...args, session_handle: first.sessionHandle ?? undefined }, { ...taskOptions, ...round, askConsent: undefined }),
           ),
       });
+      return treeUnconfirmed && supervised.loop?.outcome === 'passed' ? unconfirmed(supervised) : supervised;
     };
-    const runTask = () => withWorkerGroups(runSupervised, lease);
+    const runGrouped = () => withWorkerGroups(runSupervised, lease);
     outcome = await (process.platform === 'win32'
-      ? withRequiredJobHelper(runTask, () => {
+      ? withRequiredJobHelper(runGrouped, () => {
           treeUnconfirmed = true;
           onTreeUnconfirmed?.();
         })
-      : runTask());
+      : runGrouped());
     let changes: WorkspaceChanges;
     try {
       changes = await compareWorkspace(cwd, repo, before, await captureWorkspace(cwd, repo), scope, undefined, lease.peerClaims());
@@ -204,10 +224,7 @@ export async function executeDelegation(
         : 'The worker was denied access and changed no file.';
       outcome = {
         ...outcome,
-        warnings: [
-          ...(outcome.warnings ?? []),
-          `${seen} On Windows, a folder that does not inherit the permissions of the workspace stays closed to a Codex worker: check the denied path.`,
-        ],
+        warnings: [...(outcome.warnings ?? []), seen],
       };
     }
     if (treeUnconfirmed) {
