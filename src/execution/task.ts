@@ -21,7 +21,7 @@ import { createPhaseTracker, type PhaseTracker } from './runtime/timing.js';
 export type TaskRole = 'consult' | 'review' | 'delegate' | 'coordinate';
 
 /** The options a role fixes for every turn; a caller cannot set them. */
-type RolePolicy = Readonly<Pick<TaskOptions, 'requireEnvelope' | 'profile' | 'coordinatorTurn'>>;
+export type RolePolicy = Readonly<Pick<TaskOptions, 'requireEnvelope' | 'profile' | 'coordinatorTurn'>>;
 
 /** What each role sets on its turns. */
 export const ROLE_POLICIES: Readonly<Record<TaskRole, RolePolicy>> = Object.freeze({
