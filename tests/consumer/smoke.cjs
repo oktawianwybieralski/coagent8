@@ -221,6 +221,8 @@ function npmRun(args, cwd = root) {
           ...process.env,
           NODE_PATH: '',
           coagent8_DIR: path.join(dir, 'data'),
+          // The consumer stands for a user who accepted host execution (#211).
+          COAGENT8_HOST_EXECUTION: 'accepted',
           GEMINI_CLI_HOME: path.join(dir, 'original-home'),
           AGY_PATH: path.join(root, 'tests', 'fixtures', 'agy-cli', 'agy.cjs'),
           CODEX_PATH: path.join(root, 'tests', 'fixtures', 'codex-cli', 'codex.cjs'),
