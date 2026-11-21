@@ -177,3 +177,15 @@ test('a turn inside a writer keeps the writer job context and its observer (#211
   // A loop's review inside the writer reports an unconfirmed tree to the writer, which then keeps its lease.
   assert.deepEqual(seen, [writerObserver, writerObserver, writerObserver]);
 });
+
+test('a turn whose process tree was not confirmed ended warns, and a review cannot stay READY (#211 review)', () => {
+  const { withUnconfirmedTree, UNCONFIRMED_TREE_WARNING } = require('../../src/execution/task.ts');
+  const ready = withUnconfirmedTree({ isError: false, warnings: ['w'], review: { verdict: 'READY' } });
+  assert.deepEqual(ready.warnings, ['w', UNCONFIRMED_TREE_WARNING]);
+  assert.deepEqual(ready.review, { verdict: 'BLOCKED', reason: 'process tree not confirmed ended' });
+  const blocked = withUnconfirmedTree({ isError: false, warnings: [], review: { verdict: 'BLOCKED', reason: 'P1' } });
+  assert.deepEqual(blocked.review, { verdict: 'BLOCKED', reason: 'P1' }, 'an earlier reason stays');
+  const consult = withUnconfirmedTree({ isError: false, warnings: [] });
+  assert.equal(consult.review, undefined);
+  assert.deepEqual(consult.warnings, [UNCONFIRMED_TREE_WARNING]);
+});

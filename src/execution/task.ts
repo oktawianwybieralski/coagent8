@@ -92,7 +92,30 @@ export async function runTask(
   // On Windows every process of the turn starts inside the helper's job. A turn inside a writer's
   // (its own turns, a loop's review) keeps the writer's, whose observer must keep hearing about a
   // tree it could not confirm, so the writer is not released while a descendant may still run.
-  return process.platform === 'win32' && !insideRequiredJobHelper() ? withRequiredJobHelper(turn) : turn();
+  if (process.platform !== 'win32' || insideRequiredJobHelper()) return turn();
+  let treeUnconfirmed = false;
+  const result = await withRequiredJobHelper(turn, () => {
+    treeUnconfirmed = true;
+  });
+  return treeUnconfirmed ? withUnconfirmedTree(result) : result;
+}
+
+/** What the result says when the helper did not confirm that the turn's process tree ended. */
+export const UNCONFIRMED_TREE_WARNING =
+  'The Windows job helper did not confirm that every process of this turn ended; one may still be running and change the workspace.';
+
+/**
+ * Marks a turn whose process tree may have outlived it: a warning, and a review cannot stay READY,
+ * since a surviving process could change what it judged after the snapshot check (#211 review).
+ */
+export function withUnconfirmedTree(result: TaskExecutionResult): TaskExecutionResult {
+  return {
+    ...result,
+    warnings: [...(result.warnings ?? []), UNCONFIRMED_TREE_WARNING],
+    ...(result.review?.verdict === 'READY'
+      ? { review: { ...result.review, verdict: 'BLOCKED', reason: 'process tree not confirmed ended' } }
+      : {}),
+  };
 }
 
 /** What a tool call shares with the caller: its budget, trace and observer. */
