@@ -1,3 +1,5 @@
+import type { TaskRole } from '../contracts/execution.js';
+
 /**
  * Represents a persistent multi-turn agent conversation session.
  */
@@ -20,6 +22,11 @@ export interface SessionRecord {
    * absent means read-only. A call with the other profile cannot continue the session.
    */
   profile?: 'workspace-write';
+  /**
+   * The role of the call that created the session (#210); absent in records written before it.
+   * It agrees with `profile`: only `delegate` writes.
+   */
+  role?: TaskRole;
   lastErrorCode?: string;
   /** Public session handle identifier. */
   sessionHandle: string;

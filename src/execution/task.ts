@@ -12,16 +12,25 @@
 
 import { combineSignals } from '../storage/lock.js';
 import { ToolError } from '../contracts/error.js';
-import type { BackendReadContext, ExecutionBudget, MonotonicClock, TaskExecutionResult, TimingObserver } from '../contracts/execution.js';
+import type {
+  BackendReadContext,
+  ExecutionBudget,
+  MonotonicClock,
+  TaskExecutionResult,
+  TaskRole,
+  TimingObserver,
+} from '../contracts/execution.js';
 import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
 import { createExecutionBudget } from './runtime/budget.js';
 import { createPhaseTracker, type PhaseTracker } from './runtime/timing.js';
 
-/** The kinds of turn the server runs. */
-export type TaskRole = 'consult' | 'review' | 'delegate' | 'coordinate';
+export type { TaskRole };
 
 /** The options a role fixes for every turn; a caller cannot set them. */
 export type RolePolicy = Readonly<Pick<TaskOptions, 'requireEnvelope' | 'profile' | 'coordinatorTurn'>>;
+
+/** Options the runner sets on every turn: the role's policy and the role itself. */
+export type RunnerOptions = keyof RolePolicy | 'role';
 
 /** What each role sets on its turns. */
 export const ROLE_POLICIES: Readonly<Record<TaskRole, RolePolicy>> = Object.freeze({
@@ -32,7 +41,7 @@ export const ROLE_POLICIES: Readonly<Record<TaskRole, RolePolicy>> = Object.free
 });
 
 /** Options a caller passes to a turn of a role, without those the role fixes. */
-export type RoleTaskOptions = Omit<TaskOptions, keyof RolePolicy>;
+export type RoleTaskOptions = Omit<TaskOptions, RunnerOptions>;
 
 /** One backend turn of a role. */
 export interface TaskRequest {
@@ -59,6 +68,7 @@ export function runTask(role: TaskRole, request: TaskRequest, execute: typeof ex
   return execute(request.prompt, request.publicInput, request.args, request.cwd, request.abortSignal, request.onProgress, {
     ...request.options,
     ...ROLE_POLICIES[role],
+    role,
   });
 }
 

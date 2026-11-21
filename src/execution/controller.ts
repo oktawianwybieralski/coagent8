@@ -55,7 +55,7 @@ import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
 import { combineSignals } from '../storage/lock.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
 import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult } from '../backends/types.js';
-import { ToolError, errorCodeOf, type AdapterEvent, type ExecutionProfile, type ProviderId } from '../contracts/index.js';
+import { ToolError, errorCodeOf, type AdapterEvent, type ExecutionProfile, type ProviderId, type TaskRole } from '../contracts/index.js';
 import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
 import { recordTurnSuccess } from '../backends/probe-cache.js';
 import { createExecutionBudget } from './runtime/budget.js';
@@ -151,6 +151,16 @@ export interface TaskOptions {
   profile?: ExecutionProfile;
   /** Paths a `workspace-write` turn may change, for a check before the turn. */
   writeScope?: readonly string[];
+  /**
+   * The role of the turn, set by the runner. A new session records it, and a session continues
+   * only in a role that runs the same profile (#210).
+   */
+  role?: TaskRole;
+  /**
+   * Directory the backend runs in when it is not the workspace, such as a snapshot of it. The
+   * workspace still owns the session, its history and its locks (#210).
+   */
+  executionCwd?: string;
 }
 
 const activeExecutionTasks = new Set<Promise<unknown>>();
@@ -419,7 +429,7 @@ async function executeTaskInternal(
       await pruneExpiredSessions();
       assertSessionContextNotExpired('before');
 
-      acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd, sessionContext, options.profile);
+      acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd, sessionContext, options.profile, options.role);
       if (!acquired.session) throw new ToolError('SESSION_BUSY', acquired.error ?? 'Session is busy executing another turn.');
     } catch (err) {
       acqHandle.end();
@@ -569,7 +579,7 @@ async function executeTaskInternal(
         }
 
         const executionOptions: ExecutionOptions = {
-          cwd,
+          cwd: options.executionCwd ?? cwd,
           model,
           reasoningEffort,
           nativeSessionId: session.threadId,

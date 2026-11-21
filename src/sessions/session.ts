@@ -12,7 +12,15 @@ import {
 } from './types.js';
 import { getDataDir } from '../paths.js';
 import { atomicWrite, withFileLock, combineSignals, type FileLockOptions } from '../storage/lock.js';
-import { PROVIDERS, ToolError, type BackendReadContext, type ExecutionBudget, type ExecutionProfile } from '../contracts/index.js';
+import {
+  PROVIDERS,
+  ToolError,
+  type BackendReadContext,
+  type ExecutionBudget,
+  type ExecutionProfile,
+  type TaskRole,
+} from '../contracts/index.js';
+import { TASK_ROLES } from '../contracts/execution.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { pruneHistoryDirectory, invalidateHistoryCache } from './history/index.js';
 import { canonicalPath } from '../workspace/identity.js';
@@ -82,6 +90,7 @@ function parseSession(raw: unknown, handle: string): SessionRecord | null {
   for (const value of [s.model, s.reasoningEffort, s.cliVersion, s.safetyProfile, s.lastErrorCode, s.callerSession])
     if (value != null && (typeof value !== 'string' || value.length > 256)) return null;
   if (s.profile != null && s.profile !== 'workspace-write') return null;
+  if (s.role != null && (!TASK_ROLES.includes(s.role) || (s.role === 'delegate') !== (s.profile === 'workspace-write'))) return null;
   const { lastReview: rawReview, ...rest } = s;
   const lastReview = parseCompletedReview(rawReview);
   return {
@@ -224,7 +233,13 @@ async function withSessionLock<T>(
 }
 /** The execution profile a session was created with; records without one are read-only. */
 export function sessionProfile(s: SessionRecord): ExecutionProfile {
+  if (s.role) return roleProfile(s.role);
   return s.profile === 'workspace-write' ? 'workspace-write' : 'read-only';
+}
+
+/** The profile a role runs: only `delegate` writes. */
+export function roleProfile(role: TaskRole): ExecutionProfile {
+  return role === 'delegate' ? 'workspace-write' : 'read-only';
 }
 
 export function createSession(
@@ -232,8 +247,10 @@ export function createSession(
   workspace = process.cwd(),
   threadId: string | null = null,
   profile: ExecutionProfile = 'read-only',
+  role?: TaskRole,
 ): SessionRecord {
   if (!PROVIDERS.includes(backend as (typeof PROVIDERS)[number])) throw new Error('Invalid session provider.');
+  if (role && roleProfile(role) !== profile) throw new Error(`A ${role} session cannot run ${profile}.`);
   const handle = `syn_sess_${crypto.randomBytes(12).toString('hex')}`,
     now = new Date().toISOString();
   // The profile is written with the record, before any turn starts, and never updated.
@@ -251,6 +268,7 @@ export function createSession(
     createdAt: now,
     lastUsedAt: now,
     ...(profile === 'workspace-write' ? { profile } : {}),
+    ...(role ? { role } : {}),
     ...(process.env.CLAUDE_CODE_SESSION_ID ? { callerSession: process.env.CLAUDE_CODE_SESSION_ID } : {}),
   };
   saveSessionFile(getSessionFilePath(handle)!, s);
@@ -426,12 +444,13 @@ export async function acquireAndResolveSession(
   workspace = process.cwd(),
   options?: number | AbortSignal | FileLockOptions | BackendReadContext,
   profile: ExecutionProfile = 'read-only',
+  role?: TaskRole,
 ): Promise<AcquireSessionResult> {
   const { effectiveSignal, budget } = parseSessionOptions(options);
   assertSessionNotExpired(effectiveSignal, budget, 'Session acquisition');
 
   const isNewSession = !handle;
-  const s = handle ? getSession(handle, { backend, workspace }) : createSession(backend, workspace, null, profile);
+  const s = handle ? getSession(handle, { backend, workspace }) : createSession(backend, workspace, null, profile, role);
   if (!s) return { error: 'Invalid or expired session handle (workspace/provider mismatch or invalidation).' };
   if (sessionProfile(s) !== profile) return { error: `The session was started ${sessionProfile(s)} and cannot run a ${profile} turn.` };
 
