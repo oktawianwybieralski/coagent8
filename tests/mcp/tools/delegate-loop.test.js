@@ -510,3 +510,25 @@ test('a task budget spent before a fix turn ends the task as timed out', async (
 test('the tool definition offers the loop', () => {
   assert.equal(getCanonicalDelegateToolDefinition().inputSchema.properties.loop.type, 'boolean');
 });
+
+test(
+  'a loop does not pass when a worker process tree was not confirmed ended (#211 review)',
+  { skip: process.platform === 'win32' ? false : 'the job helper runs on Windows only' },
+  async () => {
+    const { requiredJobHelperObserver } = require('../../../src/execution/process.ts');
+    const { UNCONFIRMED_WORKER_TREE } = require('../../../src/execution/delegation.ts');
+    const repo = fixtureRepo();
+    const result = await executeDelegation('Change it', 'Change it', { backend: 'codex', model: MODEL }, repo, [], null, null, {
+      ...approve,
+      requireEnvelope: false,
+      supervise: async first => {
+        // What the helper reports when a worker's tree outlived its turn.
+        requiredJobHelperObserver()?.();
+        return { ...first, loop: { outcome: 'passed', fixRounds: 0, checks: [] } };
+      },
+    });
+    assert.equal(result.loop.outcome, 'worker_failed');
+    assert.equal(result.loop.detail, UNCONFIRMED_WORKER_TREE);
+    assert.ok(fs.existsSync(path.join(repo, '.git', 'coagent8-writer.json')), 'the work tree stays reserved');
+  },
+);
