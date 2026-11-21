@@ -23,7 +23,7 @@ import type {
 import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
 import { ensureHostConsent, type HostConsentPrompt } from './host-consent.js';
 import { jobHelperPath } from './job-helper.js';
-import { insideRequiredJobHelper, withRequiredJobHelper } from './process.js';
+import { requiredJobHelperObserver, withRequiredJobHelper } from './process.js';
 import { createExecutionBudget } from './runtime/budget.js';
 import { createPhaseTracker, type PhaseTracker } from './runtime/timing.js';
 
@@ -33,7 +33,7 @@ export type { TaskRole };
 export type RolePolicy = Readonly<Pick<TaskOptions, 'requireEnvelope' | 'coordinatorTurn'>>;
 
 /** Options the runner sets on every turn: the role's policy and the role itself. */
-export type RunnerOptions = keyof RolePolicy | 'role';
+export type RunnerOptions = keyof RolePolicy | 'role' | 'treeUnconfirmed';
 
 /** What each role sets on its turns. */
 export const ROLE_POLICIES: Readonly<Record<TaskRole, RolePolicy>> = Object.freeze({
@@ -83,39 +83,38 @@ export async function runTask(
     );
   }
   await ensureHostConsent(request.askHostConsent, request.abortSignal);
+  // On Windows every process of the turn starts inside the helper's job. A tree the helper could
+  // not confirm ended is told to this turn, which then cannot judge READY or be remembered, and to
+  // the writer around it, if any, which then keeps its lease (#211 review).
+  let treeUnconfirmed = false;
+  const outer = requiredJobHelperObserver();
   const turn = () =>
     execute(request.prompt, request.publicInput, request.args, request.cwd, request.abortSignal, request.onProgress, {
       ...request.options,
       ...ROLE_POLICIES[role],
       role,
+      treeUnconfirmed: () => treeUnconfirmed,
     });
-  // On Windows every process of the turn starts inside the helper's job. A turn inside a writer's
-  // (its own turns, a loop's review) keeps the writer's, whose observer must keep hearing about a
-  // tree it could not confirm, so the writer is not released while a descendant may still run.
-  if (process.platform !== 'win32' || insideRequiredJobHelper()) return turn();
-  let treeUnconfirmed = false;
-  const result = await withRequiredJobHelper(turn, () => {
-    treeUnconfirmed = true;
+  const run = () =>
+    process.platform !== 'win32'
+      ? turn()
+      : withRequiredJobHelper(turn, () => {
+          treeUnconfirmed = true;
+          outer?.();
+        });
+  return run().catch((err: unknown) => {
+    throw withBudget(err, request.options?.budget?.totalBudgetMs ?? request.args.timeout_ms);
   });
-  return treeUnconfirmed ? withUnconfirmedTree(result) : result;
 }
 
-/** What the result says when the helper did not confirm that the turn's process tree ended. */
-export const UNCONFIRMED_TREE_WARNING =
-  'The Windows job helper did not confirm that every process of this turn ended; one may still be running and change the workspace.';
-
 /**
- * Marks a turn whose process tree may have outlived it: a warning, and a review cannot stay READY,
- * since a surviving process could change what it judged after the snapshot check (#211 review).
+ * A timeout names the call's budget, wherever it struck: a probe or a lock wait reports its own
+ * phase without it, and the caller needs the number to choose a longer one.
  */
-export function withUnconfirmedTree(result: TaskExecutionResult): TaskExecutionResult {
-  return {
-    ...result,
-    warnings: [...(result.warnings ?? []), UNCONFIRMED_TREE_WARNING],
-    ...(result.review?.verdict === 'READY'
-      ? { review: { ...result.review, verdict: 'BLOCKED', reason: 'process tree not confirmed ended' } }
-      : {}),
-  };
+export function withBudget(err: unknown, budgetMs: unknown): unknown {
+  if (!(err instanceof ToolError) || err.code !== 'TIMEOUT' || typeof budgetMs !== 'number' || !Number.isFinite(budgetMs)) return err;
+  if (err.message.includes(`${Math.floor(budgetMs)} ms`)) return err;
+  return new ToolError('TIMEOUT', `${err.message} The call's budget was ${Math.floor(budgetMs)} ms.`, { cause: err });
 }
 
 /** What a tool call shares with the caller: its budget, trace and observer. */

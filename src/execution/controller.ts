@@ -157,10 +157,18 @@ export interface TaskOptions {
    * workspace still owns the session, its history and its locks (#210).
    */
   executionCwd?: string;
+  /**
+   * Set by the runner: whether the job helper could not confirm that the turn's process tree ended.
+   * Such a turn warns, cannot judge a review READY and is not remembered as a completed review (#211).
+   */
+  treeUnconfirmed?: () => boolean;
 }
 
 const activeExecutionTasks = new Set<Promise<unknown>>();
 const activeSessionAborts = new Map<string, { abort: () => void; wait: () => Promise<boolean> }>();
+/** What a result says when the job helper did not confirm that the turn's process tree ended (#211). */
+export const UNCONFIRMED_TREE_WARNING =
+  'The Windows job helper did not confirm that every process of this turn ended; one may still be running and change the workspace.';
 /** Distinct adapter warnings carried into one result, such as sandbox denials. */
 const MAX_ADAPTER_WARNINGS = 5;
 
@@ -771,6 +779,10 @@ async function executeTaskInternal(
         } catch (error) {
           snapshotError = `Cannot verify review snapshot: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 256)}`;
         }
+      }
+      if (options.treeUnconfirmed?.()) {
+        warnings.push(UNCONFIRMED_TREE_WARNING);
+        if (options.requireEnvelope && !snapshotError) snapshotError = 'Process tree of the turn not confirmed ended';
       }
 
       let reviewContext = options.reviewContext;

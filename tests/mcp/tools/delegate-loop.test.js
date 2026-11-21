@@ -458,7 +458,8 @@ test('a later turn has its own time limit, also without a limit on the task', as
     await executeDelegation('Change it', 'Change it', { backend: 'codex', model: MODEL }, repo, [], null, null, {
       ...approve,
       requireEnvelope: false,
-      loopTurnMs: 1500,
+      // Room for the work before a turn (consent, job helper, model selection) under load (#199).
+      loopTurnMs: 4000,
       supervise: async (first, turn) => {
         process.env.CODEX_FIXTURE_MODE = 'interruptible';
         stopped = await turn.fix('Now hang');
