@@ -854,7 +854,7 @@ test('AX-005b: a completed agy turn turns an unverified sign-in into ready, with
     const summary = formatDoctorSummary(after);
     assert.match(
       summary,
-      /^agy: ready - agy-ready-fixture .* - last turn \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC on gemini-3\.8-flash - its own web search and MCP servers in a turn$/m,
+      /^agy: ready - agy-ready-fixture .* - last turn \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC on gemini-3\.8-flash - commands, network and its own MCP servers on the host in a turn$/m,
     );
     // An invalid model name is not recorded as evidence.
     await recordTurnSuccess('agy', '');

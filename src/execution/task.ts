@@ -21,22 +21,25 @@ import type {
   TimingObserver,
 } from '../contracts/execution.js';
 import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
+import { ensureHostConsent, type HostConsentPrompt } from './host-consent.js';
+import { jobHelperPath } from './job-helper.js';
+import { requiredJobHelperObserver, withRequiredJobHelper } from './process.js';
 import { createExecutionBudget } from './runtime/budget.js';
 import { createPhaseTracker, type PhaseTracker } from './runtime/timing.js';
 
 export type { TaskRole };
 
 /** The options a role fixes for every turn; a caller cannot set them. */
-export type RolePolicy = Readonly<Pick<TaskOptions, 'requireEnvelope' | 'profile' | 'coordinatorTurn'>>;
+export type RolePolicy = Readonly<Pick<TaskOptions, 'requireEnvelope' | 'coordinatorTurn'>>;
 
 /** Options the runner sets on every turn: the role's policy and the role itself. */
-export type RunnerOptions = keyof RolePolicy | 'role';
+export type RunnerOptions = keyof RolePolicy | 'role' | 'treeUnconfirmed';
 
 /** What each role sets on its turns. */
 export const ROLE_POLICIES: Readonly<Record<TaskRole, RolePolicy>> = Object.freeze({
   consult: Object.freeze({ requireEnvelope: false }),
   review: Object.freeze({ requireEnvelope: true }),
-  delegate: Object.freeze({ profile: 'workspace-write' }),
+  delegate: Object.freeze({}),
   coordinate: Object.freeze({ requireEnvelope: false, coordinatorTurn: true }),
 });
 
@@ -55,6 +58,8 @@ export interface TaskRequest {
   abortSignal?: AbortSignal | null;
   onProgress?: ((info: { message?: string }) => void) | null;
   options?: RoleTaskOptions;
+  /** Asks for host execution when the user has not accepted it yet (#211). */
+  askHostConsent?: HostConsentPrompt;
 }
 
 /**
@@ -63,13 +68,53 @@ export interface TaskRequest {
  * @param request - The turn.
  * @param execute - The controller; replaceable by tests.
  * @returns The turn's result.
+ * @throws `POLICY_DENIED` without the user's consent to host execution; no turn starts.
  */
-export function runTask(role: TaskRole, request: TaskRequest, execute: typeof executeTask = executeTask): Promise<TaskExecutionResult> {
-  return execute(request.prompt, request.publicInput, request.args, request.cwd, request.abortSignal, request.onProgress, {
-    ...request.options,
-    ...ROLE_POLICIES[role],
-    role,
+export async function runTask(
+  role: TaskRole,
+  request: TaskRequest,
+  execute: typeof executeTask = executeTask,
+): Promise<TaskExecutionResult> {
+  // A turn's descendants must end with it: without a sandbox they could otherwise keep running.
+  if (process.platform === 'win32' && !jobHelperPath()) {
+    throw new ToolError(
+      'SANDBOX_UNAVAILABLE',
+      `${role} needs the Windows job helper, which is missing or failed its digest check. Reinstall CoAgent8; in a source checkout run cargo build --release in native/coagent8-job.`,
+    );
+  }
+  await ensureHostConsent(request.askHostConsent, request.abortSignal);
+  // On Windows every process of the turn starts inside the helper's job. A tree the helper could
+  // not confirm ended is told to this turn, which then cannot judge READY or be remembered, and to
+  // the writer around it, if any, which then keeps its lease (#211 review).
+  let treeUnconfirmed = false;
+  const outer = requiredJobHelperObserver();
+  const turn = () =>
+    execute(request.prompt, request.publicInput, request.args, request.cwd, request.abortSignal, request.onProgress, {
+      ...request.options,
+      ...ROLE_POLICIES[role],
+      role,
+      treeUnconfirmed: () => treeUnconfirmed,
+    });
+  const run = () =>
+    process.platform !== 'win32'
+      ? turn()
+      : withRequiredJobHelper(turn, () => {
+          treeUnconfirmed = true;
+          outer?.();
+        });
+  return run().catch((err: unknown) => {
+    throw withBudget(err, request.options?.budget?.totalBudgetMs ?? request.args.timeout_ms);
   });
+}
+
+/**
+ * A timeout names the call's budget, wherever it struck: a probe or a lock wait reports its own
+ * phase without it, and the caller needs the number to choose a longer one.
+ */
+export function withBudget(err: unknown, budgetMs: unknown): unknown {
+  if (!(err instanceof ToolError) || err.code !== 'TIMEOUT' || typeof budgetMs !== 'number' || !Number.isFinite(budgetMs)) return err;
+  if (err.message.includes(`${Math.floor(budgetMs)} ms`)) return err;
+  return new ToolError('TIMEOUT', `${err.message} The call's budget was ${Math.floor(budgetMs)} ms.`, { cause: err });
 }
 
 /** What a tool call shares with the caller: its budget, trace and observer. */

@@ -4,7 +4,7 @@ import type { TaskOptions } from '../../execution/controller.js';
 import { openCallScope, runTask, type CallScopeOptions, type RoleTaskOptions } from '../../execution/task.js';
 import { collectReviewInput } from '../../review/index.js';
 import { assertReviewWorkspace } from '../../workspace/git.js';
-import { CANONICAL_TOOL_NAMES, READ_ONLY_FILE_TOOL_GUIDANCE } from '../constants.js';
+import { CANONICAL_TOOL_NAMES, HOST_TOOL_GUIDANCE } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
 import type { BackendReadContext } from '../../contracts/execution.js';
 import { combineSignals } from '../../storage/lock.js';
@@ -21,7 +21,7 @@ export function getCanonicalReviewToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.REVIEW,
     description:
-      'Independent review of Git changes: findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)". Read-only reviewer; checks run on the server; an unchanged complete repeat cannot help.',
+      'Independent review of Git changes: findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)". Separate reviewer; checks run on the server; an unchanged complete repeat cannot help.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -156,7 +156,7 @@ export async function executeReview(
       `Review this diff: ${scopeInfo.label}. Read other files only to check direct imports or call sites.`,
       ...scopeNote,
       ...checkLines,
-      `The diff is below. ${READ_ONLY_FILE_TOOL_GUIDANCE}`,
+      `The diff is below. ${HOST_TOOL_GUIDANCE}`,
       'Focus: ' + instructions,
       'P1: defect, security flaw, crash or breaking change. P2: logic bug, regression, missing error handling or edge case. Any P1 or P2 means VERDICT: BLOCKED, none means READY. P3: style or polish, one line without Evidence and Fix. Any other BLOCKED states its cause on the Blocked line.',
       // A round that reports a few findings and stops lets each fix batch reveal the next (#62).

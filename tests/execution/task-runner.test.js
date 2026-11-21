@@ -30,7 +30,7 @@ test('each role sets the options its path set before the runner', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(ROLE_POLICIES)), {
     consult: { requireEnvelope: false },
     review: { requireEnvelope: true },
-    delegate: { profile: 'workspace-write' },
+    delegate: {},
     coordinate: { requireEnvelope: false, coordinatorTurn: true },
   });
   assert.ok(Object.isFrozen(ROLE_POLICIES));
@@ -159,4 +159,106 @@ test('a forged role does not reach the controller', async () => {
   const { calls, execute } = recorder();
   await runTask('review', { prompt: 'p', publicInput: 'p', args: {}, cwd: '/work', options: { role: 'delegate' } }, execute);
   assert.equal(calls[0][6].role, 'review');
+});
+
+test('an unconfirmed process tree reaches both the turn and the writer around it (#211 review)', async () => {
+  const { requiredJobHelperObserver, withRequiredJobHelper } = require('../../src/execution/process.ts');
+  let writerHeard = 0;
+  const seen = [];
+  // The fake controller reports what the helper would: a tree it could not confirm ended.
+  const execute = async (...callArgs) => {
+    const options = callArgs[6];
+    seen.push(options.treeUnconfirmed());
+    requiredJobHelperObserver()?.();
+    seen.push(options.treeUnconfirmed());
+    return { isError: false };
+  };
+  for (const role of ['review', 'consult', 'delegate']) {
+    await withRequiredJobHelper(
+      () => runTask(role, { prompt: 'p', publicInput: 'p', args: {}, cwd: '/work' }, execute),
+      () => writerHeard++,
+      () => 'helper.exe',
+    );
+  }
+  assert.equal(writerHeard, 3, 'the writer keeps hearing about every unconfirmed tree');
+  // Off Windows the runner adds no job of its own, so the turn learns of it only on Windows.
+  assert.deepEqual(
+    seen,
+    process.platform === 'win32' ? [false, true, false, true, false, true] : [false, false, false, false, false, false],
+  );
+});
+
+test('a review whose process tree was not confirmed ended is not READY and not remembered (#211 review)', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+  const { executeTask, UNCONFIRMED_TREE_WARNING } = require('../../src/execution/controller.ts');
+  const { saveConfig } = require('../../src/config.ts');
+  const { getSession } = require('../../src/sessions/session.ts');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-unconfirmed-tree-'));
+  const previousDir = process.env.coagent8_DIR;
+  process.env.coagent8_DIR = path.join(dir, 'data');
+  const original = adapterRegistry.agy;
+  const envelope = [
+    'REVIEW: 1',
+    'SNAPSHOT: s',
+    'COVERAGE: COMPLETE',
+    'VERDICT: READY',
+    'Reviewed: a.ts',
+    'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+  ].join('\n');
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
+    execute: async (_prompt, options) => {
+      options.onEvent({ type: 'assistant_message', messageId: 'm', text: envelope });
+      return {
+        status: 'completed',
+        isError: false,
+        output: envelope,
+        nativeSessionId: '11111111-2222-3333-4444-555555555555',
+        model: 'fixture-model',
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
+  try {
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    const outcome = await executeTask('p', 'p', { backend: 'agy' }, dir, null, null, {
+      requireEnvelope: true,
+      reviewContext: { expectedSnapshot: 's', inputComplete: true, requiredChecks: [] },
+      reviewIdentity: { snapshot: 's', scope: 'uncommitted' },
+      treeUnconfirmed: () => true,
+    });
+    assert.equal(outcome.review.verdict, 'BLOCKED');
+    assert.ok(outcome.warnings.includes(UNCONFIRMED_TREE_WARNING));
+    assert.equal(getSession(outcome.sessionHandle, { workspace: dir }).lastReview, undefined, 'no verdict to reuse');
+  } finally {
+    adapterRegistry.agy = original;
+    process.env.coagent8_DIR = previousDir;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a timeout from any phase names the call budget (ACCEPT-001a2 N2)', async () => {
+  const { withBudget } = require('../../src/execution/task.ts');
+  const probe = new ToolError('TIMEOUT', 'Execution budget expired before probing Codex.');
+  const named = withBudget(probe, 1000);
+  assert.equal(named.code, 'TIMEOUT');
+  assert.equal(named.message, "Execution budget expired before probing Codex. The call's budget was 1000 ms.");
+  const already = new ToolError('TIMEOUT', 'Execution deadline exceeded (1000 ms).');
+  assert.equal(withBudget(already, 1000), already);
+  const other = new ToolError('ABORTED', 'x');
+  assert.equal(withBudget(other, 1000), other);
+  assert.equal(withBudget(probe, undefined), probe);
+  const execute = async () => {
+    throw probe;
+  };
+  await assert.rejects(
+    runTask('consult', { prompt: 'p', publicInput: 'p', args: { timeout_ms: 750 }, cwd: '/work' }, execute),
+    err => err.code === 'TIMEOUT' && err.message.includes('750 ms'),
+  );
 });

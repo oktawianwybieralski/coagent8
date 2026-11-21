@@ -46,6 +46,11 @@ export interface CoAgent8Config {
    * {@link DEFAULT_ANSWER_LANGUAGE}.
    */
   answerLanguage?: string | null;
+  /**
+   * `accepted`: the user agreed that agents run on this computer with the user's rights, without
+   * a sandbox (#211). Until then every model turn asks, or is refused where no form can ask.
+   */
+  hostExecution?: 'accepted';
   /** Commands the server may run after a delegated change without asking, each exactly as written. */
   allowedChecks?: string[];
   /** What the delegated tasks of one root may use together; a calling agent cannot raise it. */
@@ -185,6 +190,11 @@ export function validateConfig(value: unknown): CoAgent8Config {
     (typeof answerLanguage !== 'string' || !ANSWER_LANGUAGE.test(answerLanguage))
   ) {
     throw new Error('Configuration Error: Invalid answerLanguage: expected a language name of at most 40 letters, or null.');
+  }
+
+  const hostExecution = config.hostExecution;
+  if (hostExecution !== undefined && hostExecution !== 'accepted') {
+    throw new Error('Configuration Error: Invalid hostExecution: expected "accepted".');
   }
 
   const allowedChecks = config.allowedChecks;
@@ -332,6 +342,7 @@ export function validateConfig(value: unknown): CoAgent8Config {
     schemaVersion,
     defaultBackend: defaultBackend as BackendId | null,
     ...(answerLanguage === undefined ? {} : { answerLanguage }),
+    ...(hostExecution === undefined ? {} : { hostExecution }),
     ...(allowedChecks === undefined ? {} : { allowedChecks: allowedChecks as string[] }),
     ...(rootLimits === undefined ? {} : { rootLimits: rootLimits as Partial<RootLimits> }),
     routing: {
@@ -448,6 +459,7 @@ function computeChangeIdentity(config: CoAgent8Config, provenance: ConfigProvena
     schemaVersion: config.schemaVersion,
     defaultBackend: config.defaultBackend,
     answerLanguage: config.answerLanguage,
+    hostExecution: config.hostExecution,
     allowedChecks: config.allowedChecks,
     rootLimits: config.rootLimits,
     routing: config.routing,

@@ -25,6 +25,10 @@
       "default": "English",
       "description": "Language the backends answer the calling agent in; the calling agent relays the answer in your language. null adds no instruction, so a backend follows the workspace."
     },
+    "hostExecution": {
+      "enum": ["accepted"],
+      "description": "Set to accepted when you agree that agents run on this computer with your account's rights, without a sandbox: they can read and change files, run commands and use the network. Until then each call asks, or is refused where the client cannot ask."
+    },
     "allowedChecks": {
       "type": "array",
       "items": { "type": "string" },

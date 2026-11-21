@@ -10,12 +10,12 @@ const { evaluateStateEnvelopeGate } = require('../../src/review/gate.ts');
 const { formatExecutionResult } = require('../../src/mcp/result.ts');
 const { codexAppServerArgs } = require('../../src/backends/codex/app-server.ts');
 
-test('codexAppServerArgs keeps the read-only sandbox and selects the unelevated Windows backend without profiles', () => {
+test('codexAppServerArgs asks for full access without approvals and, on Windows, no login shell (#211)', () => {
   const args = codexAppServerArgs();
-  assert.ok(args.includes('sandbox_mode="read-only"'));
+  assert.ok(args.includes('sandbox_mode="danger-full-access"'));
   assert.ok(args.includes('approval_policy="never"'), 'approvals stay disabled');
   const windows = args.filter(arg => arg.startsWith('windows.sandbox') || arg.startsWith('allow_login_shell'));
-  assert.deepEqual(windows, process.platform === 'win32' ? ['windows.sandbox="unelevated"', 'allow_login_shell=false'] : []);
+  assert.deepEqual(windows, process.platform === 'win32' ? ['allow_login_shell=false'] : []);
 });
 
 test('createCodexStreamCollector captures filesystem permission denials only on failed items', () => {

@@ -17,7 +17,6 @@ import { createCodexStreamCollector } from './collector.js';
 import { codexAppServerArgs, codexLaunchEnvironment, createCodexAppSession } from './app-server.js';
 import { listCodexModels, readCodexRateLimits } from './models.js';
 import { classifyCodexError } from './errors.js';
-import { unreachableWriteFolder } from './windows-acl.js';
 import { parse as parseToml } from 'smol-toml';
 import { readBoundedFileSync } from '../../storage/read.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
@@ -31,25 +30,6 @@ export const CODEX_CONFIG_PATH =
 
 /** Upper bound for reading `config.toml`. */
 const CODEX_CONFIG_MAX_BYTES = 256 * 1024;
-
-/**
- * The Windows sandbox runs PowerShell in ConstrainedLanguage mode (codex-cli 0.164, 2026-11-01).
- * A worker that took the resulting error for a denial stopped without changing anything.
- */
-export const CODEX_WINDOWS_WRITE_NOTE =
-  'This sandbox runs PowerShell in ConstrainedLanguage mode: .NET types and methods such as [System.IO.File]::WriteAllText fail with a language mode error. ' +
-  'That is not a denial. Use cmdlets such as Set-Content and Get-Content, or your file editing tool.';
-
-/**
- * The prompt of a Codex turn.
- * @param prompt - The request.
- * @param profile - The execution profile.
- * @param platform - The operating system.
- * @returns The request, with the note for a writer on Windows.
- */
-export function codexTurnPrompt(prompt: string, profile: string, platform: NodeJS.Platform = process.platform): string {
-  return profile === 'workspace-write' && platform === 'win32' ? `${prompt}\n\n${CODEX_WINDOWS_WRITE_NOTE}` : prompt;
-}
 
 /**
  * Longest prompt Codex accepts, in Unicode characters. Codex itself refuses a longer one, after
@@ -216,8 +196,7 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   if (!isValidModelIdentifier(model)) return rejected('INPUT_LIMIT', 'Invalid Codex model identifier.');
   if (requestedThread && (!validEventIdentifier(requestedThread) || requestedThread.startsWith('-')))
     return rejected('SESSION_INVALID', 'Invalid native Codex session ID.');
-  const profile = options.profile ?? 'read-only';
-  const turnPrompt = codexTurnPrompt(prompt, profile);
+  const turnPrompt = prompt;
   // UTF-16 length first: it is never below the character count, so a usual prompt skips the count.
   const promptChars = turnPrompt.length > CODEX_MAX_INPUT_CHARS ? [...turnPrompt].length : 0;
   if (promptChars > CODEX_MAX_INPUT_CHARS) {
@@ -226,21 +205,10 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
       `The prompt is too large for Codex (${promptChars} > ${CODEX_MAX_INPUT_CHARS} characters). No model turn started. Send less; for a review, choose a smaller scope.`,
     );
   }
-  if (profile === 'workspace-write' && options.cwd) {
-    const closed = await unreachableWriteFolder(path.resolve(options.cwd), options.writeScope ?? [], {
-      abortSignal: options.abortSignal ?? undefined,
-    });
-    if (closed) {
-      return rejected(
-        'SANDBOX_UNAVAILABLE',
-        `Codex cannot write in '${closed}': this folder does not inherit the permissions of the workspace, so the sandbox's write access does not reach it. No model turn started. To restore it, run: icacls "${closed}" /inheritance:e`,
-      );
-    }
-  }
-  // The app-server session requests the profile's sandbox of CODEX_SANDBOX per thread and
-  // verifies the server's answer; the config overrides pin the same policy for the server's
-  // defaults and turn off the features that add tools beyond the shell.
-  const args = codexAppServerArgs(profile);
+  // The app-server session requests full access per thread and verifies the server's answer; the
+  // config overrides pin the same policy for the server's defaults and turn off the features that
+  // add tools beyond the shell and file edits.
+  const args = codexAppServerArgs();
   const collector = createCodexStreamCollector({ nativeSessionId: requestedThread, onEvent: options.onEvent });
   const app = createCodexAppSession({
     collector,
@@ -249,7 +217,6 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
     effort,
     cwd: path.resolve(options.cwd || process.cwd()),
     onEvent: options.onEvent,
-    profile,
   });
   const result = await runCommand(configuredBackendCommand('codex'), args, {
     cwd: options.cwd,
