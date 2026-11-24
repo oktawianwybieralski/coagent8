@@ -215,6 +215,8 @@ consent (`"hostExecution": "accepted"` in the configuration, or the form).
   3 MiB snapshot). From 0.8.0, a diff above 200,000 characters is reviewed in parts, each in
   its own session, then in one turn over all their findings; above 15 parts the
   review is refused and you narrow the scope.
+- From 0.8.0 the reviewing agent works in a temporary copy of exactly the reviewed state, so
+  commands it runs cannot touch your work tree; the copy is removed afterwards.
 - From 0.8.0, `checks`, such as `npm test`, are run by CoAgent8 on the reviewed change
   before the turn, and a check that does not pass blocks the verdict. The
   checks run with your account and execute the code under review. A check runs only with

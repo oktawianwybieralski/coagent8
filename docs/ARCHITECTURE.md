@@ -374,6 +374,16 @@ Review collects bounded Git input and supplies a snapshot identifier incorporati
 SHA-256 of diff/workspace input/omissions. The requested envelope ends with `CHECKS`;
 the server owns the terminator (owner decision 2026-10-18, `ENVELOPE-001`).
 
+**Snapshot work tree (#213).** A reviewer runs in a separate work tree of exactly the reviewed
+state (`src/review/snapshot.ts`): uncommitted changes become a commit of a temporary copy of the
+index plus untracked files within the review bounds, staged changes a commit of the index, and a
+commit, branch or range scope its target revision. The commit is held by a ref under
+`refs/coagent8/review/` and checked out detached, without hooks or LFS downloads, in one
+directory per workspace under the temporary directory (`c8wt`), so a follow-up resumes in the same
+place. One review per workspace holds it at a time; whatever cannot be materialized (a busy
+directory, untracked files over the bounds, a failed checkout) keeps the review in the workspace
+with a warning. The snapshot is removed after the turn; server checks still run in the workspace.
+
 **Large changes (`REVIEW-002`, 2026-11-03).** The diff stays in the prompt; reading it by reference is planned (#214). A diff above
 `REVIEW_PART_CHARS` (200,000 characters) is split into parts at file, hunk and line boundaries,
 each piece under its file header, every line in exactly one part. Each part is reviewed in a

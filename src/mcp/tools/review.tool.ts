@@ -12,6 +12,8 @@ import { ToolError } from '../../contracts/error.js';
 import { approveChecks, parseCheckCommand, runCheck, type CheckApprovalPrompt } from '../../execution/checks.js';
 import type { CheckResult } from '../../contracts/execution.js';
 import { loadConfig } from '../../config.js';
+import { isSnapshotSkipped, materializeReviewSnapshot, type ReviewSnapshot } from '../../review/snapshot.js';
+import { redactDiagnostic } from '../../security/redaction.js';
 import { MAX_REVIEW_PARTS, splitReviewDiff, type ReviewPart } from '../../review/parts.js';
 import { getSession } from '../../sessions/session.js';
 import type { TaskExecutionResult } from '../../contracts/execution.js';
@@ -227,33 +229,54 @@ export async function executeReview(
     }
   };
 
+  // The reviewer runs in a copy of exactly the reviewed state (#213); without one, in the workspace.
+  let workTree: ReviewSnapshot | undefined;
+  let workTreeNote: string | undefined;
+  try {
+    const made = await materializeReviewSnapshot(scopeInfo, workspaceCwd, reviewReadContext);
+    if (isSnapshotSkipped(made)) workTreeNote = `The reviewer ran in the workspace: ${made.skipped}.`;
+    else workTree = made;
+  } catch (err) {
+    if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) {
+      call.close();
+      throw err;
+    }
+    workTreeNote = `The reviewer ran in the workspace: no snapshot (${redactDiagnostic((err as Error).message, 200)}).`;
+  }
+  const withNote = (outcome: TaskExecutionResult): TaskExecutionResult =>
+    workTreeNote ? { ...outcome, warnings: [...(outcome.warnings ?? []), workTreeNote] } : outcome;
+  const executionCwd = workTree ? { executionCwd: workTree.path } : {};
+
   try {
     if (parts.length > 1) {
-      return await reviewInParts({
-        parts,
-        checkLines,
-        promptFor,
-        snapshot,
-        label: scopeInfo.label,
-        instructions,
-        args,
-        workspaceCwd,
-        abortSignal,
-        onProgress,
-        context,
-        turnOptions: {
-          tracker,
-          askConsent: options.askConsent,
-          // Before every backend turn, each part and the synthesis included.
-          onTurnStart: options.onTurnStart,
-          beforeExtraTurn: options.beforeExtraTurn,
-          onTiming: options.onTiming,
-          clock: options.clock,
-          budget,
-          context: reviewReadContext,
-        },
-        verifyReviewSnapshot,
-      });
+      return withNote(
+        await reviewInParts({
+          parts,
+          checkLines,
+          promptFor,
+          snapshot,
+          label: scopeInfo.label,
+          instructions,
+          args,
+          workspaceCwd,
+          abortSignal,
+          onProgress,
+          context,
+          turnOptions: {
+            tracker,
+            askConsent: options.askConsent,
+            // Before every backend turn, each part and the synthesis included.
+            onTurnStart: options.onTurnStart,
+            beforeExtraTurn: options.beforeExtraTurn,
+            onTiming: options.onTiming,
+            clock: options.clock,
+            budget,
+            context: reviewReadContext,
+            ...executionCwd,
+          },
+          verifyReviewSnapshot,
+        }),
+      );
     }
     const outcome = await runTask('review', {
       prompt,
@@ -275,10 +298,12 @@ export async function executeReview(
         budget: budget,
         context: reviewReadContext,
         verifyReviewSnapshot,
+        ...executionCwd,
       },
     });
-    return outcome;
+    return withNote(outcome);
   } finally {
+    await workTree?.dispose();
     call.dispose();
   }
 }
@@ -299,7 +324,7 @@ interface PartsReview {
   context: ReviewGateContext;
   turnOptions: Pick<
     RoleTaskOptions,
-    'onTurnStart' | 'beforeExtraTurn' | 'tracker' | 'askConsent' | 'onTiming' | 'clock' | 'budget' | 'context'
+    'onTurnStart' | 'beforeExtraTurn' | 'tracker' | 'askConsent' | 'onTiming' | 'clock' | 'budget' | 'context' | 'executionCwd'
   >;
   verifyReviewSnapshot: () => Promise<string | undefined>;
 }
