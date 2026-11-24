@@ -132,3 +132,16 @@ test('calls that start no turn ask nothing', async () => {
     await c.close();
   }
 });
+
+test('a call that still passes coordinate is refused with its replacement before anything else (#212)', async () => {
+  const c = await connect(null);
+  try {
+    const result = readResult(
+      await c.client.callTool({ name: 'delegate', arguments: { task: 'Do it', coordinate: true, workspace_path: tempDir } }),
+    );
+    assert.equal(result.error.code, 'INPUT_LIMIT');
+    assert.match(result.error.message, /coordinate was removed: start the workers yourself with delegate and root_handle/);
+  } finally {
+    await c.close();
+  }
+});

@@ -78,7 +78,7 @@ function rewrite(handle, change) {
 }
 
 test('a new session records its role with the profile the role runs', () => {
-  for (const role of ['consult', 'review', 'coordinate']) {
+  for (const role of ['consult', 'review']) {
     const s = createSession('agy', workspace, null, 'read-only', role);
     assert.equal(record(s.sessionHandle).role, role);
     assert.equal(record(s.sessionHandle).profile, undefined);
@@ -197,4 +197,13 @@ test('executionCwd moves the backend, not the session', async () => {
   } finally {
     restore();
   }
+});
+
+test('a session recorded with the removed coordinator role stays readable as a read-only session (#212)', () => {
+  const s = createSession('agy', workspace, null, 'read-only', 'consult');
+  rewrite(s.sessionHandle, { role: 'coordinate' });
+  const read = getSession(s.sessionHandle);
+  assert.ok(read, 'still a session');
+  assert.equal(read.role, undefined);
+  assert.equal(sessionProfile(read), 'read-only');
 });

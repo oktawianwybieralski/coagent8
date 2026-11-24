@@ -8,7 +8,7 @@ never relaxes one. Violations block execution and are never bypassed.
 
 Owner decision (2026-10-08): full coagents may perform implementation and command
 execution under task-scoped user policy. Owner decision (2026-11-21, #208): one
-runner serves every role (consult, review, delegate, coordinator) and every turn
+runner serves every role (consult, review, delegate) and every turn
 runs on the host, without a per-backend sandbox. Isolation comes later from the
 environment, containers or microVMs (#215); a user who accepts it runs without
 one. Skills and delegated agents cannot grant themselves permissions or model
@@ -40,8 +40,7 @@ and workspace-write profiles of earlier versions (owner decision 2026-11-21).
   hooks off and an allow rule for each tool; each run is rejected unless the CLI
   reports at startup only these tools, no MCP server and `dontAsk`.
 * **agy** runs `--dangerously-skip-permissions`; it keeps its own MCP servers and
-  subagents, which no limit of the server sees, so coordination stays refused on
-  agy (#200).
+  subagents, which no limit of the server sees (#200).
 * **Roles that answer** (consult, review) are told to leave the workspace as they
   found it. A review is bound to its snapshot, which the server checks again after
   the turn; a change blocks READY.
@@ -63,10 +62,8 @@ A path claim schedules writers and is no sandbox: nothing limits a turn's writes
 to its scope. The server reports the Git changes it observed before and after the
 turn, whoever may have made them, and never commits, resets or cleans up. Root
 limits come from the user's `rootLimits`; a calling agent, skill or worker cannot
-raise them. A coordinator (`delegate` with `coordinate: true`, #164) runs with no
-MCP server added; neither it nor its workers run on agy. Its answer is untrusted
-data that the server validates; root, parent, session and role come from the
-server's records, and no one can approve a model or a check for its workers.
+raise them. The calling agent coordinates its workers; the delegated coordinator (#164)
+was removed (owner decision 2026-11-24, #212).
 
 ### Checks the server runs (DELEGATE-001f2, REVIEW-003)
 

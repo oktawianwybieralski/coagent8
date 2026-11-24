@@ -589,3 +589,14 @@ test(
     await (await acquireWriterLease(gitDir)).release();
   },
 );
+
+test('delegate refuses the removed coordinate argument and names its replacement (#212)', async () => {
+  const { COORDINATE_REMOVED, getCanonicalDelegateToolDefinition } = require('../../../src/mcp/tools/delegate.tool.ts');
+  for (const coordinate of [true, false]) {
+    await assert.rejects(
+      handleDelegate({ task: 'Do it', coordinate }, tempDir, null, null, approve),
+      err => err.code === 'INPUT_LIMIT' && err.message === COORDINATE_REMOVED,
+    );
+  }
+  assert.ok(!('coordinate' in getCanonicalDelegateToolDefinition().inputSchema.properties));
+});

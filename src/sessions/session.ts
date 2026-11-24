@@ -90,6 +90,8 @@ function parseSession(raw: unknown, handle: string): SessionRecord | null {
   for (const value of [s.model, s.reasoningEffort, s.cliVersion, s.safetyProfile, s.lastErrorCode, s.callerSession])
     if (value != null && (typeof value !== 'string' || value.length > 256)) return null;
   if (s.profile != null && s.profile !== 'workspace-write') return null;
+  // A coordinator session (#164, removed in #212) stays readable as a read-only session without a role.
+  if ((s.role as string | undefined) === 'coordinate' && s.profile == null) delete s.role;
   if (s.role != null && (!TASK_ROLES.includes(s.role) || (s.role === 'delegate') !== (s.profile === 'workspace-write'))) return null;
   const { lastReview: rawReview, ...rest } = s;
   const lastReview = parseCompletedReview(rawReview);
@@ -548,25 +550,6 @@ export function setExecutionCanceller(fn: ExecutionCanceller): void {
  * to another live CoAgent8 server process, cancellation is refused rather than
  * signalling a foreign process.
  */
-/**
- * Keeps an idle session from expiring while its owner still needs it, such as a coordinator waiting for workers.
- * @param everyMs - How often it counts as used; shorter than the session's time to live.
- * @returns Stops it.
- */
-export function keepSessionAlive(handle: string, everyMs = DEFAULT_SESSION_TTL_MS / 4): () => void {
-  const refresh = () => {
-    updateSession(handle, {}).catch((err: unknown) => {
-      // The next look tries again, well before the session could expire.
-      process.stderr.write(`CoAgent8: session ${handle} was not refreshed: ${(err as Error).message}\n`);
-    });
-  };
-  // At once as well: a continuation may start close to the end of the session's time.
-  refresh();
-  const timer = setInterval(refresh, everyMs);
-  timer.unref();
-  return () => clearInterval(timer);
-}
-
 /**
  * Refuses a session of another workspace, before anything acts on it.
  * @throws When the handle is invalid or the session belongs to another workspace; a missing session passes.

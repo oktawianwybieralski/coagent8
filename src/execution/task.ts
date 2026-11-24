@@ -1,11 +1,11 @@
 /**
- * One entry for every backend turn: consult, review, delegate and coordinator turns.
+ * One entry for every backend turn: consult, review and delegate turns.
  *
  * @remarks
  * A role is data: the fixed {@link TaskOptions} it sets on every turn. Everything a caller
  * passes besides that stays its own (prompt, arguments, budget, review binding, write scope),
  * and server policy around a role (the review gate input, the writer lease, worker groups,
- * the coordination loop) stays in its own code (#209).
+ * the delegate loop) stays in its own code (#209).
  *
  * @packageDocumentation
  */
@@ -30,7 +30,7 @@ import { createPhaseTracker, type PhaseTracker } from './runtime/timing.js';
 export type { TaskRole };
 
 /** The options a role fixes for every turn; a caller cannot set them. */
-export type RolePolicy = Readonly<Pick<TaskOptions, 'requireEnvelope' | 'coordinatorTurn'>>;
+export type RolePolicy = Readonly<Pick<TaskOptions, 'requireEnvelope'>>;
 
 /** Options the runner sets on every turn: the role's policy and the role itself. */
 export type RunnerOptions = keyof RolePolicy | 'role' | 'treeUnconfirmed';
@@ -40,7 +40,6 @@ export const ROLE_POLICIES: Readonly<Record<TaskRole, RolePolicy>> = Object.free
   consult: Object.freeze({ requireEnvelope: false }),
   review: Object.freeze({ requireEnvelope: true }),
   delegate: Object.freeze({}),
-  coordinate: Object.freeze({ requireEnvelope: false, coordinatorTurn: true }),
 });
 
 /** Options a caller passes to a turn of a role, without those the role fixes. */

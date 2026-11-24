@@ -44,14 +44,14 @@
           "minimum": 1,
           "maximum": 1000,
           "default": 64,
-          "description": "Backend turns: first turns, turns of a coordinator, fix rounds and review attempts of a loop."
+          "description": "Backend turns: first turns, fix rounds and review attempts of a loop."
         },
         "maxConcurrent": {
           "type": "integer",
           "minimum": 1,
           "maximum": 64,
           "default": 8,
-          "description": "Tasks running at once; a coordinator counts during its turns, not while it waits for workers."
+          "description": "Tasks running at once."
         },
         "maxChildren": {
           "type": "integer",
