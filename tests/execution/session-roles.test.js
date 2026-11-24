@@ -198,3 +198,12 @@ test('executionCwd moves the backend, not the session', async () => {
     restore();
   }
 });
+
+test('a session recorded with the removed coordinator role stays readable as a read-only session (#212)', () => {
+  const s = createSession('agy', workspace, null, 'read-only', 'consult');
+  rewrite(s.sessionHandle, { role: 'coordinate' });
+  const read = getSession(s.sessionHandle);
+  assert.ok(read, 'still a session');
+  assert.equal(read.role, undefined);
+  assert.equal(sessionProfile(read), 'read-only');
+});

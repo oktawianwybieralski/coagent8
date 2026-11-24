@@ -90,6 +90,8 @@ function parseSession(raw: unknown, handle: string): SessionRecord | null {
   for (const value of [s.model, s.reasoningEffort, s.cliVersion, s.safetyProfile, s.lastErrorCode, s.callerSession])
     if (value != null && (typeof value !== 'string' || value.length > 256)) return null;
   if (s.profile != null && s.profile !== 'workspace-write') return null;
+  // A coordinator session (#164, removed in #212) stays readable as a read-only session without a role.
+  if ((s.role as string | undefined) === 'coordinate' && s.profile == null) delete s.role;
   if (s.role != null && (!TASK_ROLES.includes(s.role) || (s.role === 'delegate') !== (s.profile === 'workspace-write'))) return null;
   const { lastReview: rawReview, ...rest } = s;
   const lastReview = parseCompletedReview(rawReview);
