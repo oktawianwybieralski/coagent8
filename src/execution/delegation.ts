@@ -34,7 +34,6 @@ import {
   writeTask,
   type DelegationTask,
 } from '../sessions/tasks.js';
-import { pruneCoordinations } from '../sessions/coordinations.js';
 import {
   bindRootTask,
   cancelRoot,
@@ -254,19 +253,6 @@ export async function executeDelegation(
 /** Operations of asynchronous delegations in this server, awaited at shutdown. */
 const activeDelegations = new Map<Promise<unknown>, { controller: AbortController; rootHandle: string }>();
 
-/** The running coordinators by session: between turns no turn exists that a cancel of the session could reach. */
-const coordinatorsBySession = new Map<string, AbortController>();
-
-/**
- * Stops the coordinator of a session and with it its workers.
- * @returns Whether this server runs a coordinator in that session.
- */
-export function cancelCoordinator(sessionHandle: string): boolean {
-  const controller = coordinatorsBySession.get(sessionHandle);
-  controller?.abort();
-  return Boolean(controller);
-}
-
 /**
  * Stops every asynchronous delegation of this server, at once also one still waiting for consent.
  * @returns Settles when each has stored its evidence and released its writer.
@@ -401,23 +387,6 @@ export interface Supervision {
 /** Supervises a change after the worker's first turn, with the writer held; returns the last result. */
 export type Supervise = (first: TaskExecutionResult, turn: Supervision) => Promise<TaskExecutionResult>;
 
-/** What a task's own operation is given in place of the default write turn. */
-export interface DelegationOperationContext {
-  taskHandle: string;
-  rootHandle: string;
-  /** Ends with the task's cancellation. */
-  signal: AbortSignal;
-  /** The task's budget; its execution signal ends with its cancellation or deadline. */
-  budget: NonNullable<TaskOptions['budget']>;
-  /** Pass to the first turn: it binds the task and publishes its handle. */
-  onTurnStart: NonNullable<TaskOptions['onTurnStart']>;
-  /** Pass to every later turn: it charges the root. */
-  beforeRound: () => Promise<void>;
-}
-
-/** Runs a task other than a single write turn, such as a coordinator. */
-export type DelegationOperation = (context: DelegationOperationContext) => Promise<TaskExecutionResult>;
-
 /** A started task, or how a call ended before a turn started. */
 export type TaskCompletion = { task: DelegationTask } | { outcome: TaskExecutionResult };
 
@@ -439,14 +408,6 @@ export interface DelegationStart {
   exclusive?: boolean;
   /** The root to join and the parent to name; without either a new root starts with `limits`. */
   root?: { handle?: string; parentTask?: string; limits?: Partial<RootLimits> };
-  /** Replaces the write turn; the task then holds no writer itself. */
-  operation?: DelegationOperation;
-  /** Marks the task a coordinator: no place among running workers, and its time is the root's unless it names its own. */
-  coordinator?: boolean;
-  /** Refuses the backend the turn is about to use, also one chosen by routing, before the turn runs. */
-  assertBackend?: (backend: string) => void;
-  /** Stops the task whenever it aborts, also after the start: a worker ends with its coordinator. */
-  ownerSignal?: AbortSignal;
   /** Formats the outcome the way the tool returns it. */
   format: (outcome: TaskExecutionResult) => { text: string; isError: boolean };
   options: Pick<TaskOptions, 'askConsent' | 'requireEnvelope' | 'warnings' | 'clock'>;
@@ -510,7 +471,6 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
       taskHandle,
       ...(start.root?.parentTask ? { parentTask: start.root.parentTask } : {}),
       ...(typeof start.args.session_handle === 'string' ? { continues: start.args.session_handle } : {}),
-      ...(start.coordinator ? { coordinator: true } : {}),
     });
   } catch (err) {
     await giveUpNewRoot();
@@ -528,7 +488,6 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
   try {
     pruneTasks();
     pruneRoots();
-    pruneCoordinations();
   } catch (err) {
     // Old records are housekeeping; a new delegation does not depend on removing them.
     process.stderr.write(`CoAgent8: old tasks were not removed: ${redactDiagnostic((err as Error).message, 512)}
@@ -539,21 +498,13 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
   const abortStart = () => controller.abort();
   start.requestSignal?.addEventListener('abort', abortStart, { once: true });
   if (start.requestSignal?.aborted) controller.abort();
-  const abortByOwner = () => controller.abort();
-  start.ownerSignal?.addEventListener('abort', abortByOwner, { once: true });
-  if (start.ownerSignal?.aborted) controller.abort();
 
   // Owned by the task from the first Git read on, so cancellation and timeout_ms bound all of it.
   const timeoutMs = start.args.timeout_ms;
   const budget = createExecutionBudget({
     // The root's time is shared: no task runs past it, whatever it asked for.
     totalBudgetMs: Math.min(
-      // A coordinator's workers run inside its time, so one that names none has the root's.
-      typeof timeoutMs === 'number' && Number.isFinite(timeoutMs)
-        ? timeoutMs
-        : start.coordinator
-          ? Number.POSITIVE_INFINITY
-          : DEFAULT_EXECUTION_TIMEOUT_MS,
+      typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_EXECUTION_TIMEOUT_MS,
       Math.max(1, reservation.deadlineMs - Date.now()),
     ),
     parentSignal: controller.signal,
@@ -608,8 +559,7 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     try {
       const root = readRoot(rootHandle);
       watchFailures = root ? 0 : watchFailures + 1;
-      if (root?.state === 'cancelled' || root?.tasks.findLast(entry => entry.taskHandle === taskHandle)?.cancelRequested)
-        controller.abort();
+      if (root?.state === 'cancelled') controller.abort();
     } catch {
       // A rename by another process can fail one read on Windows; only repeated failures count.
       watchFailures++;
@@ -618,7 +568,6 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
   }, ROOT_WATCH_MS);
   watch.unref();
   const onTurnStart: NonNullable<TaskOptions['onTurnStart']> = async turn => {
-    start.assertBackend?.(turn.backend);
     const callerSession = process.env.CLAUDE_CODE_SESSION_ID;
     const initial: DelegationTask = {
       schemaVersion: 1,
@@ -636,7 +585,6 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
       rootHandle,
       ...(reservation.parentTask ? { parentTask: reservation.parentTask } : {}),
       depth: reservation.depth,
-      ...(start.coordinator ? { coordinator: true } : {}),
       ...(start.scope.length ? { scope: start.scope } : {}),
     };
     // The last check before the turn: a root cancelled until now prevents it.
@@ -644,35 +592,29 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     // A record that cannot be written fails the turn before it starts: nothing could be waited for.
     await writeTask(initial);
     task = initial;
-    if (start.coordinator) coordinatorsBySession.set(turn.sessionHandle, controller);
     start.requestSignal?.removeEventListener('abort', abortStart);
     announce();
   };
   const beforeRound = () => reserveRootCall(rootHandle);
-  const operation = start.operation
-    ? start.operation({ taskHandle, rootHandle, signal: controller.signal, budget, onTurnStart, beforeRound }).then(async outcome => {
-        await storeResult(start.format(outcome));
-        return outcome;
-      })
-    : executeDelegation(start.prompt, start.publicInput, start.args, start.cwd, start.scope, controller.signal, null, {
-        ...start.options,
-        supervise: start.supervise,
-        exclusive: start.exclusive,
-        ...(start.approve ? { approveStart: start.approve } : {}),
-        onWriter: held => {
-          writer = held;
-        },
-        onTreeUnconfirmed: () => {
-          workerMayRun = true;
-        },
-        beforeRound,
-        budget,
-        context,
-        onTurnStart,
-        // The evidence is stored while the writer is held; the state turns final after the release, so
-        // a woken caller can start the next delegation at once.
-        beforeRelease: outcome => storeResult(start.format(outcome)),
-      });
+  const operation = executeDelegation(start.prompt, start.publicInput, start.args, start.cwd, start.scope, controller.signal, null, {
+    ...start.options,
+    supervise: start.supervise,
+    exclusive: start.exclusive,
+    ...(start.approve ? { approveStart: start.approve } : {}),
+    onWriter: held => {
+      writer = held;
+    },
+    onTreeUnconfirmed: () => {
+      workerMayRun = true;
+    },
+    beforeRound,
+    budget,
+    context,
+    onTurnStart,
+    // The evidence is stored while the writer is held; the state turns final after the release, so
+    // a woken caller can start the next delegation at once.
+    beforeRelease: outcome => storeResult(start.format(outcome)),
+  });
   const settled: Promise<{ outcome: TaskExecutionResult } | { error: unknown }> = operation.then(
     async outcome => {
       // Formatted again: a failed release adds its warning after the first copy was stored.
@@ -684,11 +626,7 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     async (err: unknown) => {
       const message = redactDiagnostic((err as Error).message, 1024);
       await closeInRoot();
-      // A coordinator stopped before any turn of this task has no result to carry its end.
-      const code = errorCodeOf(err);
-      const state =
-        start.coordinator && code === 'ABORTED' ? 'cancelled' : start.coordinator && code === 'TIMEOUT' ? 'timed_out' : 'failed';
-      await finish({ state, result: { text: `The delegation failed: ${message}`, isError: true } });
+      await finish({ state: 'failed', result: { text: `The delegation failed: ${message}`, isError: true } });
       return { error: err };
     },
   );
@@ -700,8 +638,6 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
   void settled.then(() => {
     activeDelegations.delete(settled);
     clearInterval(watch);
-    start.ownerSignal?.removeEventListener('abort', abortByOwner);
-    if (task && coordinatorsBySession.get(task.sessionHandle) === controller) coordinatorsBySession.delete(task.sessionHandle);
     // Only its own entry: a newer delegation in the same session may have registered meanwhile.
     if (task && delegationBySession.get(task.sessionHandle) === outcomeStored) delegationBySession.delete(task.sessionHandle);
     budget.dispose();

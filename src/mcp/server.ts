@@ -12,6 +12,7 @@ import type { ElicitResult, Tool, Resource, ResourceTemplate } from '@modelconte
 import { createProgressReporter } from './progress.js';
 import { chooseWorkspace, deletedSessionWorkspace, type ResolvedWorkspace } from '../workspace/workspace.js';
 import { redactDiagnostic } from '../security/redaction.js';
+import { COORDINATE_REMOVED } from './tools/delegate.tool.js';
 import { ensureHostConsent, HOST_EXECUTION_NOTICE, type HostConsentPrompt } from '../execution/host-consent.js';
 import { BRAND } from '../brand.js';
 import { CANONICAL_TOOL_NAMES, SERVER_INSTRUCTIONS } from './constants.js';
@@ -436,6 +437,13 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
       if (!definition) throw new ToolError('INPUT_LIMIT', `Unknown tool: ${name}`);
       // The canonical schemas validate each declared primitive/array field here;
       // handlers receive the corresponding narrowed contributor type.
+      // A removed argument is refused with its replacement, not as an unknown one (#212).
+      if (
+        name === CANONICAL_TOOL_NAMES.DELEGATE &&
+        (request.params.arguments as Record<string, unknown> | undefined)?.coordinate !== undefined
+      ) {
+        throw new ToolError('INPUT_LIMIT', COORDINATE_REMOVED);
+      }
       const args = validateToolArguments(request.params.arguments, definition.inputSchema as Schema) as ToolArguments;
 
       switch (name) {

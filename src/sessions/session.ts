@@ -549,25 +549,6 @@ export function setExecutionCanceller(fn: ExecutionCanceller): void {
  * signalling a foreign process.
  */
 /**
- * Keeps an idle session from expiring while its owner still needs it, such as a coordinator waiting for workers.
- * @param everyMs - How often it counts as used; shorter than the session's time to live.
- * @returns Stops it.
- */
-export function keepSessionAlive(handle: string, everyMs = DEFAULT_SESSION_TTL_MS / 4): () => void {
-  const refresh = () => {
-    updateSession(handle, {}).catch((err: unknown) => {
-      // The next look tries again, well before the session could expire.
-      process.stderr.write(`CoAgent8: session ${handle} was not refreshed: ${(err as Error).message}\n`);
-    });
-  };
-  // At once as well: a continuation may start close to the end of the session's time.
-  refresh();
-  const timer = setInterval(refresh, everyMs);
-  timer.unref();
-  return () => clearInterval(timer);
-}
-
-/**
  * Refuses a session of another workspace, before anything acts on it.
  * @throws When the handle is invalid or the session belongs to another workspace; a missing session passes.
  */

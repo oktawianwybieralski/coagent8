@@ -9,13 +9,6 @@ import { EXECUTION_PARAMETERS } from '../schema.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
 import { executeDelegation, startDelegation, type DelegationStart, type Supervise } from '../../execution/delegation.js';
-import {
-  assertCoordinatorBackend,
-  coordinationOperation,
-  coordinatorPrompt,
-  type WorkerLink,
-  type WorkerRequest,
-} from '../../execution/coordination.js';
 import { approveChecks, parseCheckCommand, type CheckApprovalPrompt } from '../../execution/checks.js';
 import { reviewOnAnotherBackend, superviseChange } from '../../execution/loop.js';
 import { getCallerProvider, resolveBackend } from '../../execution/routing.js';
@@ -38,8 +31,11 @@ export type DelegateArguments = Omit<ToolArguments, 'scope'> & {
   request_id?: string;
   root_handle?: string;
   parent_task?: string;
-  coordinate?: boolean;
 };
+
+/** The refusal of the removed delegated coordinator, naming what replaces it (#212). */
+export const COORDINATE_REMOVED =
+  'coordinate was removed: start the workers yourself with delegate and root_handle, follow them with session, and stop one with cancel.';
 
 /** Scope entries and checks accepted at most. */
 const MAX_LIST_ENTRIES = 50;
@@ -60,7 +56,6 @@ export function getCanonicalDelegateToolDefinition() {
         request_id: { type: 'string' },
         root_handle: { type: 'string' },
         parent_task: { type: 'string' },
-        coordinate: { type: 'boolean' },
         ...EXECUTION_PARAMETERS,
         // Said in full on consult; the budget of the tool definitions counts every copy.
         backend: { ...EXECUTION_PARAMETERS.backend, description: 'As in consult.' },
@@ -211,48 +206,6 @@ function delegationStarted(task: DelegationTask, clientName?: string) {
   };
 }
 
-/** A worker a coordinator asked for, as one more delegation under the identity the server derived. */
-function workerStart(
-  request: WorkerRequest,
-  link: WorkerLink,
-  workspaceCwd: string,
-  options: { clock: TaskOptions['clock']; format: DelegationStart['format'] },
-): DelegationStart {
-  const publicInput = [
-    request.task,
-    request.scope.length ? `Scope: ${request.scope.join(', ')}` : '',
-    request.checks.length ? `Checks: ${request.checks.join('; ')}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
-  if (request.loop) request.checks.forEach(parseCheckCommand);
-  return {
-    prompt: delegatePrompt(request.task, request.scope, request.checks, request.loop),
-    publicInput,
-    // Without a form: a check the user did not list, or a model that needs asking, is refused.
-    approve: async signal => {
-      if (request.loop) await approveChecks(request.checks, loadConfig().allowedChecks ?? [], undefined, signal);
-    },
-    supervise: request.loop ? loopSupervisor(request.task, request.checks, workspaceCwd, options.clock) : undefined,
-    exclusive: request.loop,
-    root: { handle: link.rootHandle, parentTask: link.parentTask },
-    ownerSignal: link.ownerSignal,
-    assertBackend: assertCoordinatorBackend,
-    args: {
-      ...(request.backend ? { backend: request.backend as ExecutionRequest['backend'] } : {}),
-      ...(request.model ? { model: request.model } : {}),
-      ...(request.reasoning_effort ? { reasoning_effort: request.reasoning_effort as ExecutionRequest['reasoning_effort'] } : {}),
-      ...(request.timeout_ms !== undefined ? { timeout_ms: request.timeout_ms } : {}),
-      ...(link.sessionHandle ? { session_handle: link.sessionHandle } : {}),
-    },
-    cwd: workspaceCwd,
-    scope: request.scope,
-    requestId: link.requestId,
-    format: options.format,
-    options: { requireEnvelope: false, askConsent: undefined, warnings: undefined, clock: options.clock },
-  };
-}
-
 /**
  * Runs a delegated change.
  * @throws `INPUT_LIMIT` for a scope entry that is absolute or leaves the workspace, or too many entries.
@@ -267,6 +220,7 @@ export async function handleDelegate(
     askChecks?: CheckApprovalPrompt;
   } = {},
 ) {
+  if ((args as { coordinate?: unknown }).coordinate !== undefined) throw new ToolError('INPUT_LIMIT', COORDINATE_REMOVED);
   const task = typeof args.task === 'string' ? args.task.trim() : '';
   if (!task) throw new ToolError('INPUT_LIMIT', 'task is required.');
   const scope = list(args.scope, 'scope').map(entry => {
@@ -295,7 +249,6 @@ export async function handleDelegate(
     request_id: requestId,
     root_handle: rootHandle,
     parent_task: parentTask,
-    coordinate,
     ...request
   } = args;
   const loop = loopArgument === true;
@@ -303,42 +256,6 @@ export async function handleDelegate(
     const formatted = formatExecutionResult(outcome);
     return { text: formatted.content.map(part => part.text).join('\n'), isError: Boolean(formatted.isError) };
   };
-  if (coordinate === true) {
-    if (mode === 'sync') throw new ToolError('INPUT_LIMIT', 'coordinate needs mode async: its workers outlive the call.');
-    if (loop || checks.length)
-      throw new ToolError('INPUT_LIMIT', 'A coordinator runs no checks or loop itself; ask for them on its workers.');
-    assertCoordinatorBackend(request.backend);
-    const started = await startDelegation({
-      prompt: coordinatorPrompt(task, effectiveScope),
-      publicInput,
-      coordinator: true,
-      operation: coordinationOperation({
-        objective: task,
-        publicInput,
-        scope: effectiveScope,
-        args: request,
-        cwd: workspaceCwd,
-        askConsent: options.askConsent,
-        warnings: options.warnings,
-        clock: options.clock,
-        startWorker: (worker, link) => startDelegation(workerStart(worker, link, workspaceCwd, { clock: options.clock, format })),
-      }),
-      root: {
-        ...(rootHandle ? { handle: rootHandle } : {}),
-        ...(parentTask ? { parentTask } : {}),
-        limits: loadConfig().rootLimits,
-      },
-      args: request,
-      cwd: workspaceCwd,
-      scope: effectiveScope,
-      requestId: typeof requestId === 'string' && requestId ? requestId : undefined,
-      requestSignal: abortSignal,
-      format,
-      options: { requireEnvelope: false, askConsent: options.askConsent, warnings: options.warnings, clock: options.clock },
-    });
-    if ('outcome' in started) return formatExecutionResult(started.outcome);
-    return delegationStarted(started.task, options.clientName);
-  }
   // A check that cannot run is refused now, not after the worker's turn.
   if (loop) checks.forEach(parseCheckCommand);
   const approve = async (signal: AbortSignal | null) => {

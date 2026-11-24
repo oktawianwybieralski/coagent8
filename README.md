@@ -318,18 +318,9 @@ another agent held is marked as possibly changed by either, and a check an agent
 sees the half-finished work of the others. Roots belong to a CoAgent8 data directory:
 a client with another one does not see them.
 
-Codex or Claude Code can also coordinate workers on Codex or Claude Code (agy takes no part:
-it can start subagents that no limit sees). `delegate` with `coordinate: true` gives the agent
-an objective; it reads the workspace in its turns and ends each turn by asking
-for workers or by finishing. CoAgent8 checks each request, runs the workers under the
-coordinator's root, with scopes inside its `scope` (an agreement, as above, not a sandbox),
-waits for all of them and resumes it with their reports. It has no CoAgent8 tools and cannot name a root, a parent or a session.
-Workers cannot ask you anything: a model that needs your approval, or a check the server
-would run in a worker's `loop` that is not in `allowedChecks`, is refused and reported to the
-coordinator. Without `loop`, `checks` are only an instruction to the worker, under its own profile. Cancelling the coordinator's
-session or its root stops its workers. After a server restart nothing starts by itself:
-`delegate` with `coordinate: true` and its `session_handle` tells it what became of
-each worker. Its final report and its workers' changes are still yours to check.
+Your agent is the coordinator: it starts the workers, follows them and reviews the
+result. The delegated coordinator (`delegate` with `coordinate: true`) of the 0.8.0 previews
+is removed (#212); a call that still passes `coordinate` is refused with this replacement.
 
 ### Approving expensive models
 

@@ -41,7 +41,7 @@ const request = extra => ({ prompt: 'p', publicInput: 'p', args: {}, cwd: tempDi
 
 test('without consent and without a form the runner refuses before any turn', async () => {
   await reset();
-  for (const role of ['consult', 'review', 'delegate', 'coordinate']) {
+  for (const role of ['consult', 'review', 'delegate']) {
     const { calls, execute } = recorder();
     await assert.rejects(
       runTask(role, request(), execute),

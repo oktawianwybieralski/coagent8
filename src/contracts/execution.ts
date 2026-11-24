@@ -124,9 +124,9 @@ export interface CheckResult {
 
 /** What the delegated tasks of one root may use together (#161). */
 export interface RootLimits {
-  /** Backend turns: first turns, turns of a coordinator, fix rounds and review attempts of a loop. */
+  /** Backend turns: first turns, fix rounds and review attempts of a loop. */
   maxCalls: number;
-  /** Tasks running at once; a coordinator counts during its turns, not while it waits for workers. */
+  /** Tasks running at once. */
   maxConcurrent: number;
   /** Tasks that may name one task as their parent. */
   maxChildren: number;
@@ -173,10 +173,10 @@ export interface LoopReport {
 export type ExecutionProfile = 'read-only' | 'workspace-write';
 
 /** The kinds of turn the server runs (#209). */
-export type TaskRole = 'consult' | 'review' | 'delegate' | 'coordinate';
+export type TaskRole = 'consult' | 'review' | 'delegate';
 
 /** Every {@link TaskRole}. */
-export const TASK_ROLES: readonly TaskRole[] = Object.freeze(['consult', 'review', 'delegate', 'coordinate']);
+export const TASK_ROLES: readonly TaskRole[] = Object.freeze(['consult', 'review', 'delegate']);
 
 /** One changed path, relative to the workspace, as the server observed it. */
 export interface ObservedChange {

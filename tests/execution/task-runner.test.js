@@ -31,7 +31,6 @@ test('each role sets the options its path set before the runner', () => {
     consult: { requireEnvelope: false },
     review: { requireEnvelope: true },
     delegate: {},
-    coordinate: { requireEnvelope: false, coordinatorTurn: true },
   });
   assert.ok(Object.isFrozen(ROLE_POLICIES));
   for (const policy of Object.values(ROLE_POLICIES)) assert.ok(Object.isFrozen(policy));
@@ -43,8 +42,8 @@ test('the runner passes the request unchanged and lets the role win', async () =
   const args = { proposal: 'q', backend: 'codex' };
   // Each value the opposite of some role's: a role that fixes an option replaces it, the others keep it.
   const forged = [
-    { requireEnvelope: true, profile: 'read-only', coordinatorTurn: false },
-    { requireEnvelope: false, profile: undefined, coordinatorTurn: true },
+    { requireEnvelope: true, profile: 'read-only' },
+    { requireEnvelope: false, profile: undefined },
   ];
   for (const [role, policy] of Object.entries(ROLE_POLICIES))
     for (const fixed of forged) {

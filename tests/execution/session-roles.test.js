@@ -78,7 +78,7 @@ function rewrite(handle, change) {
 }
 
 test('a new session records its role with the profile the role runs', () => {
-  for (const role of ['consult', 'review', 'coordinate']) {
+  for (const role of ['consult', 'review']) {
     const s = createSession('agy', workspace, null, 'read-only', role);
     assert.equal(record(s.sessionHandle).role, role);
     assert.equal(record(s.sessionHandle).profile, undefined);
