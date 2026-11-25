@@ -382,8 +382,10 @@ commit, branch or range scope its target revision. The commit is held by a ref u
 directory per workspace under the temporary directory (`c8wt`), so a follow-up resumes in the same
 place; a workspace in a subdirectory runs in the same subdirectory of the snapshot. One review per
 workspace holds it at a time; whatever cannot be materialized faithfully (a busy directory, untracked
-files over the bounds, attributes that filter files such as Git LFS, a failed checkout) keeps the
-review in the workspace with a warning. The snapshot is removed after the turn, also after a
+files over the bounds, a changed file under a filter attribute such as Git LFS, a revision without the
+workspace's subdirectory, a failed checkout) keeps the
+review in the workspace with a warning. Line endings follow the repository's attributes, as in
+any checkout. The snapshot is removed after the turn, also after a
 cancellation; server checks still run in the workspace. It is a working directory, not a boundary:
 the reviewer is told to leave the workspace alone, and nothing enforces that until #215.
 

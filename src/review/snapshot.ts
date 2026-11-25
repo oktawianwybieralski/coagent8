@@ -94,17 +94,15 @@ export async function materializeReviewSnapshot(
   const target = targetRevision(info);
   const none = Promise.resolve('');
   // Independent reads at once: each Git start costs time, on Windows most of all.
-  const [where, filters, untracked, head, targetCommit] = await Promise.all([
+  const [where, untracked, head, targetCommit] = await Promise.all([
     git(['rev-parse', '--git-dir', '--show-prefix']),
-    // Attributes that filter files, such as Git LFS pointers, would not be checked out as reviewed.
-    git(['grep', '-l', '-I', '-e', 'filter=', '--', '.gitattributes', ':(glob)**/.gitattributes']).catch(() => ''),
     info.type === 'uncommitted' ? git(['ls-files', '--others', '--exclude-standard', '-z']) : none,
     target ? none : git(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']).catch(() => ''),
     target ? git(['rev-parse', '--verify', `${target}^{commit}`]) : none,
   ]);
-  if (filters.trim()) return { skipped: 'the repository uses checkout filters (such as Git LFS)' };
   const [gitDirLine, prefixLine] = where.split(/\r?\n/);
-  const prefix = (prefixLine ?? '').trim();
+  // Exactly as Git prints it, without its line end and trailing slash: a directory name may start with a space.
+  const prefix = (prefixLine ?? '').replace(/\/+$/, '');
   let commit = targetCommit.trim();
   if (!target) {
     const skipped = untrackedOverBounds(untracked, workspace);
@@ -124,6 +122,9 @@ export async function materializeReviewSnapshot(
       fs.rmSync(temporary, { force: true });
     }
   }
+  // A changed file under a filter attribute, such as a Git LFS pointer, would not be checked out as
+  // reviewed. Git's effective attributes for the snapshot's tree decide, from every attribute source.
+  if (await filtered(git, commit, info.changedPaths)) return { skipped: 'changed files use checkout filters (such as Git LFS)' };
   const target_ = snapshotPath(workspace);
   // One review at a time per workspace: another one keeps this call in the workspace.
   const release = claimSnapshot(target_);
@@ -149,17 +150,23 @@ export async function materializeReviewSnapshot(
     await removeWorkTree(git, target_);
     const hooks = path.join(snapshotRoot(), 'no-hooks');
     fs.mkdirSync(hooks, { recursive: true });
-    await Promise.all([
+    // Both settle before any cleanup: a cleanup must not race a command that is still running.
+    const settled = await Promise.allSettled([
       git(['update-ref', ref, commit]),
       git(['-c', `core.hooksPath=${hooks}`, '-c', 'core.longpaths=true', 'worktree', 'add', '--detach', '--force', target_, commit]),
     ]);
+    const failed = settled.find(result => result.status === 'rejected');
+    if (failed) throw failed.reason;
+    // A revision without the workspace's subdirectory has no place to run in.
+    if (prefix && !fs.statSync(path.join(target_, prefix), { throwIfNoEntry: false })?.isDirectory()) {
+      throw new Error('the reviewed revision has no such subdirectory');
+    }
   } catch (err) {
     await dispose();
     if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) throw err;
     return { skipped: `the snapshot could not be prepared: ${(err as Error).message.slice(0, 200)}` };
   }
-  // Git prints the prefix with a trailing slash.
-  return { path: target_, cwd: prefix ? path.join(target_, prefix.replace(/\/+$/, '')) : target_, commit, dispose };
+  return { path: target_, cwd: prefix ? path.join(target_, prefix) : target_, commit, dispose };
 }
 
 /** The reason to skip a snapshot whose untracked files exceed the review bounds, if any. */
@@ -172,6 +179,18 @@ function untrackedOverBounds(listing: string, workspace: string): string | null 
     if (total > SNAPSHOT_MAX_UNTRACKED_TOTAL_BYTES) return 'untracked files are larger than the review bounds';
   }
   return null;
+}
+
+/** Paths checked per `git check-attr` call. */
+const ATTR_BATCH = 200;
+
+/** Whether any of the paths has a filter attribute in the given tree. */
+async function filtered(git: (args: string[]) => Promise<string>, commit: string, paths: readonly string[]): Promise<boolean> {
+  for (let i = 0; i < paths.length; i += ATTR_BATCH) {
+    const out = await git(['check-attr', '--source', commit, 'filter', '--', ...paths.slice(i, i + ATTR_BATCH)]);
+    if (out.split(/\r?\n/).some(line => /: filter: (?!unspecified$|unset$)/.test(line))) return true;
+  }
+  return false;
 }
 
 /** Removes a snapshot work tree and its registration; a missing one is fine. */
@@ -222,7 +241,26 @@ export function claimSnapshot(target: string): (() => void) | null {
         }
         const known = Number.isSafeInteger(owner) && owner > 0;
         if (known ? isAlive(owner) : age < CLAIM_SETTLE_MS) return null;
-        fs.rmSync(lock, { force: true });
+        // Only the process whose rename succeeds removes the stale claim, and only that claim:
+        // it checks the owner again on its private copy, which no other process can replace.
+        const stale = `${own}.stale`;
+        try {
+          fs.renameSync(lock, stale);
+        } catch {
+          continue;
+        }
+        const moved = Number(fs.readFileSync(stale, 'utf8'));
+        if (moved !== owner) {
+          // Another process replaced the claim meanwhile: put it back and leave it alone.
+          try {
+            fs.linkSync(stale, lock);
+          } catch {
+            // A third claim took the place; this one is not ours to keep.
+          }
+          fs.rmSync(stale, { force: true });
+          return null;
+        }
+        fs.rmSync(stale, { force: true });
       }
     }
     return null;

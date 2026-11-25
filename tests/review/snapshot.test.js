@@ -200,6 +200,8 @@ test('a repository with checkout filters such as Git LFS keeps the review in the
   fs.writeFileSync(path.join(dir, 'x.bin'), 'pointer\n');
   git('-c', 'filter.fixture.clean=cat', '-c', 'filter.fixture.smudge=cat', 'add', '.');
   git('-c', 'filter.fixture.clean=cat', '-c', 'filter.fixture.smudge=cat', 'commit', '-qm', 'filtered');
+  // Only a changed file under the filter matters.
+  fs.writeFileSync(path.join(dir, 'x.bin'), 'changed\n');
   const made = await materializeReviewSnapshot(await collectGitScope('uncommitted', dir), dir);
   assert.ok(isSnapshotSkipped(made));
   assert.match(made.skipped, /checkout filters/);
@@ -227,4 +229,18 @@ test('a cancelled call still removes its snapshot', async () => {
   await made.dispose();
   assert.equal(fs.existsSync(made.path), false);
   assert.equal(git('for-each-ref', 'refs/coagent8'), '');
+});
+
+test('a reviewed revision without the workspace subdirectory keeps the review in the workspace', async () => {
+  const { dir, git } = repo();
+  const base = git('rev-parse', 'HEAD');
+  fs.mkdirSync(path.join(dir, 'pkg'));
+  fs.writeFileSync(path.join(dir, 'pkg', 'b.txt'), 'sub\n');
+  git('add', '.');
+  git('commit', '-qm', 'sub');
+  const workspace = path.join(dir, 'pkg');
+  const made = await materializeReviewSnapshot(await collectGitScope(base, workspace), workspace);
+  assert.ok(isSnapshotSkipped(made));
+  assert.match(made.skipped, /no such subdirectory/);
+  assert.equal(git('for-each-ref', 'refs/coagent8'), '', 'nothing stays behind');
 });
