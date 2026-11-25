@@ -78,9 +78,7 @@ test('uncommitted: staged, unstaged and untracked content, and the user index st
   });
   assert.equal(git('ls-files', '-s'), indexBefore, 'the user index is unchanged');
   const again = await inSnapshot(dir, 'uncommitted', async snapshot => [read(snapshot, 'a.txt'), read(snapshot, 'new.txt')]);
-  assert.deepEqual(again, ['worked
-', 'untracked
-'], 'a later review sees the same content');
+  assert.deepEqual(again, ['worked\n', 'untracked\n'], 'a later review sees the same content');
 });
 
 test('staged: the index only', async () => {
