@@ -143,3 +143,7 @@ test('a small change stays inlined', async () => {
     f.restore();
   }
 });
+
+test('lowercase envelope fields name no file either', () => {
+  assert.equal(namesFile('verdict: READY', 'READY'), false);
+});

@@ -249,11 +249,7 @@ export async function executeReview(
             parts,
             textFor: (part, index) =>
               byReference && workTree
-                ? diffReference(
-                    writeReviewDiff(diffDir(), `part-${index + 1}.diff`, part.text),
-                    part.text,
-                    partFiles(part.paths, part.text),
-                  )
+                ? diffReference(writeReviewDiff(diffDir(), `part-${index + 1}.diff`, part.text), part.text, part.files)
                 : part.text,
             byReference,
             checkLines,
@@ -328,14 +324,6 @@ export async function executeReview(
   }
 }
 
-/** Labels a part carries for diff text that belongs to no file; they name nothing to read. */
-const PART_LABELS = new Set(['(diff preamble)', '(untracked files)']);
-
-/** A part's paths without its labels. */
-export function filePaths(paths: readonly string[]): string[] {
-  return paths.filter(entry => !PART_LABELS.has(entry));
-}
-
 /** Diffs up to this size are inlined; larger ones are read by the reviewer in the snapshot (#214). */
 export const INLINE_DIFF_CHARS = 40_000;
 
@@ -350,13 +338,6 @@ export function writeReviewDiff(dir: string, name: string, text: string): string
   const file = path.join(dir, name);
   fs.writeFileSync(file, text, { flag: 'wx' });
   return file;
-}
-
-/** The files a part's diff text touches: its paths without labels, and the new name of a renamed file. */
-export function partFiles(paths: readonly string[], text: string): string[] {
-  const files = new Set(filePaths(paths));
-  for (const match of text.matchAll(/^(?:rename to (.+)|\+\+\+ b\/(.+))$/gm)) files.add((match[1] ?? match[2])!);
-  return [...files];
 }
 
 /** What a prompt shows instead of an inlined diff: where to read it and which files it touches. */
@@ -466,7 +447,7 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
           ...review.context,
           expectedSnapshot: partSnapshot,
           requiredFiles: part.paths,
-          ...(review.byReference ? { filesToName: partFiles(part.paths, part.text) } : {}),
+          ...(review.byReference ? { filesToName: part.files } : {}),
         },
       },
     });

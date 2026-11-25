@@ -97,7 +97,7 @@ export interface ReviewGateContext {
 }
 
 /** Envelope fields, which name no file however their values read. */
-const ENVELOPE_FIELD = /^(?:REVIEW|SNAPSHOT|COVERAGE|VERDICT|CHECKS|END_REVIEW):/;
+const ENVELOPE_FIELD = /^(?:REVIEW|SNAPSHOT|COVERAGE|VERDICT|CHECKS|END_REVIEW):/i;
 
 /**
  * Whether `text` names `file` as a whole path outside the envelope fields: bounded by the line's
