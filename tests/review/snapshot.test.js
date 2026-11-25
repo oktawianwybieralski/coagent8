@@ -223,12 +223,19 @@ test('a skipped snapshot still removes what a crashed review left', async () => 
   await inSnapshot(dir, 'uncommitted', async snapshot => assert.equal(snapshot, undefined));
 });
 
-test('a repository with submodules keeps the review in the workspace', async () => {
+test('a nested repository added without .gitmodules keeps the review in the workspace', async () => {
   const { dir, git } = repo();
-  fs.writeFileSync(path.join(dir, '.gitmodules'), '[submodule "lib"]\n\tpath = lib\n\turl = ./lib\n');
-  git('add', '.gitmodules');
-  git('commit', '-qm', 'modules');
+  const nested = path.join(dir, 'nested');
+  fs.mkdirSync(nested);
+  execFileSync('git', ['init', '-q'], { cwd: nested, windowsHide: true });
+  execFileSync('git', ['-c', 'user.name=x', '-c', 'user.email=x@x.invalid', 'commit', '-q', '--allow-empty', '-m', 'n'], {
+    cwd: nested,
+    windowsHide: true,
+  });
+  git('add', 'nested');
+  git('commit', '-qm', 'gitlink');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'changed\n');
+  assert.equal(fs.existsSync(path.join(dir, '.gitmodules')), false);
   const why = await inSnapshot(dir, 'uncommitted', async (snapshot, skipped) => (assert.equal(snapshot, undefined), skipped));
-  assert.match(why, /submodules/);
+  assert.match(why, /nested repositories/);
 });

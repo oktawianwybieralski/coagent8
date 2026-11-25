@@ -200,10 +200,10 @@ async function materialize(
       fs.rmSync(temporary, { force: true });
     }
   }
-  // A submodule would be an empty directory in the snapshot, not the reviewed content.
-  if ((await git(['rev-parse', '--verify', '--quiet', `${commit}:.gitmodules`]).catch(() => '')).trim()) {
-    return 'the repository has submodules, which a snapshot would leave empty';
-  }
+  // A gitlink (a submodule, or a nested repository added without one) would be an empty directory
+  // in the snapshot, not the reviewed content. One word per entry keeps the listing small.
+  const types = await git(['ls-tree', '-r', '--full-tree', '--format=%(objecttype)', commit]);
+  if (/^commit$/m.test(types)) return 'the repository has submodules or nested repositories, which a snapshot would leave empty';
   // An earlier review's tree and ref at this place are replaced, also those of a server that ended.
   await removeWorkTree(git, target);
   const hooks = path.join(snapshotRoot(), 'no-hooks');
