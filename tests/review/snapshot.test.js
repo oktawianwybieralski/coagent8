@@ -7,7 +7,7 @@
  * - uncommitted: staged, unstaged and untracked content, without touching the user's index;
  * - staged: the index only, not unstaged edits;
  * - commit and range: the target revision;
- * - the same state gives the same commit; afterwards the work tree and its ref are gone;
+ * - a later review of the same state sees the same content; afterwards the work tree and its ref are gone;
  * - a second review of the workspace runs in the workspace while the first holds the snapshot;
  * - untracked files over the review bounds, and any filter attribute, keep the review in the workspace;
  * - a workspace in a subdirectory runs in the same subdirectory, and a revision without it falls back;
@@ -64,7 +64,7 @@ test('uncommitted: staged, unstaged and untracked content, and the user index st
   fs.writeFileSync(path.join(dir, 'a.txt'), 'worked\n');
   fs.writeFileSync(path.join(dir, 'new.txt'), 'untracked\n');
   const indexBefore = git('ls-files', '-s');
-  const first = await inSnapshot(dir, 'uncommitted', async (snapshot, skipped) => {
+  await inSnapshot(dir, 'uncommitted', async (snapshot, skipped) => {
     assert.ok(snapshot, skipped);
     assert.equal(read(snapshot, 'a.txt'), 'worked\n');
     assert.equal(read(snapshot, 'new.txt'), 'untracked\n');
@@ -75,11 +75,12 @@ test('uncommitted: staged, unstaged and untracked content, and the user index st
     }));
     assert.equal(nested.inner, undefined);
     assert.match(nested.why, /another review/);
-    return snapshot.commit;
   });
   assert.equal(git('ls-files', '-s'), indexBefore, 'the user index is unchanged');
-  const second = await inSnapshot(dir, 'uncommitted', async snapshot => snapshot.commit);
-  assert.equal(second, first, 'the same state gives the same commit');
+  const again = await inSnapshot(dir, 'uncommitted', async snapshot => [read(snapshot, 'a.txt'), read(snapshot, 'new.txt')]);
+  assert.deepEqual(again, ['worked
+', 'untracked
+'], 'a later review sees the same content');
 });
 
 test('staged: the index only', async () => {

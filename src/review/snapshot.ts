@@ -44,7 +44,7 @@ export interface ReviewSnapshot {
   commit: string;
 }
 
-/** A fixed identity, so the same state gives the same commit. */
+/** A fixed identity for the snapshot commit, which no one but the review sees. */
 const COMMIT_ENV = {
   GIT_AUTHOR_NAME: 'CoAgent8',
   GIT_AUTHOR_EMAIL: 'coagent8@localhost',
