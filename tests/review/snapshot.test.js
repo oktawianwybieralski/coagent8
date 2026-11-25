@@ -239,3 +239,15 @@ test('a nested repository added without .gitmodules keeps the review in the work
   const why = await inSnapshot(dir, 'uncommitted', async (snapshot, skipped) => (assert.equal(snapshot, undefined), skipped));
   assert.match(why, /nested repositories/);
 });
+
+test('an attribute file deleted from the working tree still counts from the index', async () => {
+  const { dir, git } = repo();
+  git('config', 'filter.fixture.clean', 'false');
+  git('config', 'filter.fixture.required', 'true');
+  fs.writeFileSync(path.join(dir, '.gitattributes'), '*.bin filter=fixture\n');
+  execFileSync('git', ['-c', 'filter.fixture.clean=cat', 'add', '.gitattributes'], { cwd: dir, windowsHide: true });
+  fs.rmSync(path.join(dir, '.gitattributes'));
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'changed\n');
+  const why = await inSnapshot(dir, 'uncommitted', async (snapshot, skipped) => (assert.equal(snapshot, undefined), skipped));
+  assert.match(why, /checkout filter/);
+});

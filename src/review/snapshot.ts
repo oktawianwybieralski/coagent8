@@ -190,7 +190,13 @@ async function materialize(
     const temporary = path.join(gitDir, `coagent8-index-${crypto.randomBytes(6).toString('hex')}`);
     try {
       // A copy of the user's index: its staged entries and flags stay, and the user's index is never written.
-      if (fs.existsSync(index)) fs.copyFileSync(index, temporary);
+      if (fs.existsSync(index)) {
+        fs.copyFileSync(index, temporary);
+        // The copy keeps the index's time: Git compares an entry's time with it to tell a file changed
+        // in the same second as it was staged ("racily clean"), and a newer copy would hide that change.
+        const { atime, mtime } = fs.statSync(index);
+        fs.utimesSync(temporary, atime, mtime);
+      }
       const env = { GIT_INDEX_FILE: temporary };
       if (info.type === 'uncommitted') await git(['-c', 'core.autocrlf=false', 'add', '-A', '--', ':(top)'], env);
       const tree = (await git(['write-tree'], env)).trim();
@@ -227,13 +233,22 @@ async function namesFilter(
 ): Promise<boolean> {
   const pathspec = ['--', ':(top,glob)**/.gitattributes'];
   // The attribute files the snapshot will contain: the working tree's (tracked or not), the index's, or the revision's.
-  const files =
+  // `git grep` exits 1 for no match; any other failure leaves an attribute file unread, which ends
+  // the snapshot (the caller then runs in the workspace).
+  const grep = (args: string[], tree?: string) =>
+    git(['grep', ...args, '-l', '-I', '-e', 'filter=', ...(tree ? [tree] : []), ...pathspec]).catch((err: unknown) => {
+      if ((err as Error).message === 'Git exited with code 1') return '';
+      throw err;
+    });
+  // The working tree's (tracked or not, ignored too) and the index's: Git falls back to the index
+  // for an attribute file missing from the working tree. Staged: the index's. Committed: the revision's.
+  const searches =
     type === 'uncommitted'
-      ? await git(['grep', '--untracked', '--no-exclude-standard', '-l', '-I', '-e', 'filter=', ...pathspec]).catch(() => '')
+      ? [grep(['--untracked', '--no-exclude-standard']), grep(['--cached'])]
       : type === 'staged'
-        ? await git(['grep', '--cached', '-l', '-I', '-e', 'filter=', ...pathspec]).catch(() => '')
-        : await git(['grep', '-l', '-I', '-e', 'filter=', revision ?? 'HEAD', ...pathspec]).catch(() => '');
-  if (files.trim()) return true;
+        ? [grep(['--cached'])]
+        : [grep([], revision ?? 'HEAD')];
+  if ((await Promise.all(searches)).some(found => found.trim())) return true;
   for (const file of attributeFiles.map(entry => entry.trim()).filter(Boolean)) {
     if (/(^|\s)filter=/m.test(readText(path.resolve(workspace, file)))) return true;
   }
