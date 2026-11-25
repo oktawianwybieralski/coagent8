@@ -390,7 +390,11 @@ repository's attributes, as in any checkout. The snapshot is removed after the t
 cancellation; server checks still run in the workspace. It is a working directory, not a boundary:
 the reviewer is told to leave the workspace alone, and nothing enforces that until #215.
 
-**Large changes (`REVIEW-002`, 2026-11-03).** The diff stays in the prompt; reading it by reference is planned (#214). A diff above
+**Large changes (`REVIEW-002`, 2026-11-03).** A diff up to 40,000 characters stays in the prompt. A larger one, when the review has a snapshot
+(#213), is read by the reviewer itself (#214): the prompt gives the command that shows it in the
+snapshot and the changed files, and the gate keeps the review from READY unless the answer names
+every one of them (`filesToName`), since nothing else shows that it read them. Without a snapshot the
+diff stays inlined. A diff above
 `REVIEW_PART_CHARS` (200,000 characters) is split into parts at file, hunk and line boundaries,
 each piece under its file header, every line in exactly one part. Each part is reviewed in a
 session of its own, bound to `<snapshot>/part-<n>-of-<total>`; then one synthesis turn, which

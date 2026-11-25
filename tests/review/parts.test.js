@@ -146,10 +146,12 @@ function stubReviewer(answer) {
     execute: async prompt => {
       prompts.push(prompt);
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)?.[1] ?? 'snapshot';
+      // A part read by reference lists its files; the reviewer names each, as the gate requires (#214).
+      const files = [...prompt.matchAll(/^- (\S+)$/gm)].map(match => match[1]).join(', ');
       return {
         status: 'completed',
         isError: false,
-        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\n${answer(prompt, prompts.length)}\nCHECKS: typecheck=PASS; tests=PASS`,
+        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\n${answer(prompt, prompts.length)}${files ? ` Files: ${files}.` : ''}\nCHECKS: typecheck=PASS; tests=PASS`,
         nativeSessionId: `11111111-2222-3333-4444-55555555555${prompts.length % 10}`,
         model: 'fixture-model',
         truncated: false,

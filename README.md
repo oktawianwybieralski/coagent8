@@ -218,6 +218,8 @@ consent (`"hostExecution": "accepted"` in the configuration, or the form).
 - From 0.8.0 the reviewing agent works in a temporary copy of exactly the reviewed state and
   is told to leave your work tree alone; nothing enforces that until containers come (#215).
   The copy is removed afterwards.
+- From 0.8.0 a large change is not pasted into the reviewer's prompt: it reads the diff itself in
+  that copy, and its review is READY only if it names every changed file.
 - From 0.8.0, `checks`, such as `npm test`, are run by CoAgent8 on the reviewed change
   before the turn, and a check that does not pass blocks the verdict. The
   checks run with your account and execute the code under review. A check runs only with

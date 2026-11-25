@@ -3,7 +3,7 @@ import { EXECUTION_PARAMETERS } from '../schema.js';
 import type { TaskOptions } from '../../execution/controller.js';
 import { openCallScope, runTask, type CallScopeOptions, type RoleTaskOptions } from '../../execution/task.js';
 import { collectReviewInput } from '../../review/index.js';
-import { assertReviewWorkspace } from '../../workspace/git.js';
+import { assertReviewWorkspace, type GitScopeInfo } from '../../workspace/git.js';
 import { CANONICAL_TOOL_NAMES, HOST_TOOL_GUIDANCE } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
 import type { BackendReadContext } from '../../contracts/execution.js';
@@ -235,10 +235,14 @@ export async function executeReview(
     const withNote = (outcome: TaskExecutionResult): TaskExecutionResult =>
       workTreeNote ? { ...outcome, warnings: [...(outcome.warnings ?? []), workTreeNote] } : outcome;
     const executionCwd = workTree ? { executionCwd: workTree.cwd } : {};
+    // A large diff is read by the reviewer in the snapshot, not inlined (#214); a small one stays inline.
+    const byReference = Boolean(workTree) && scopeInfo.diff.length > INLINE_DIFF_CHARS;
     if (parts.length > 1) {
       return withNote(
         await reviewInParts({
           parts,
+          textFor: part => (byReference ? diffReference(scopeInfo, filePaths(part.paths), true) : part.text),
+          byReference,
           checkLines,
           promptFor,
           snapshot,
@@ -266,7 +270,7 @@ export async function executeReview(
       );
     }
     const outcome = await runTask('review', {
-      prompt,
+      prompt: byReference ? promptFor(diffReference(scopeInfo, scopeInfo.changedPaths, false), snapshot, []) : prompt,
       publicInput: 'Review ' + scopeInfo.label + '\n' + instructions,
       args: { ...args, backend: args.backend },
       cwd: workspaceCwd,
@@ -277,7 +281,7 @@ export async function executeReview(
         askConsent: options.askConsent,
         onTurnStart: options.onTurnStart,
         beforeExtraTurn: options.beforeExtraTurn,
-        reviewContext: context,
+        reviewContext: byReference ? { ...context, filesToName: scopeInfo.changedPaths } : context,
         // A repeat with checks runs again: a verdict reached with other check results must not return.
         ...(serverChecks?.length ? {} : { reviewIdentity: { snapshot, scope: scopeInfo.label } }),
         onTiming: options.onTiming,
@@ -301,9 +305,46 @@ export async function executeReview(
   }
 }
 
+/** Labels a part carries for diff text that belongs to no file; they name nothing to read. */
+const PART_LABELS = new Set(['(diff preamble)', '(untracked files)']);
+
+/** A part's paths without its labels. */
+export function filePaths(paths: readonly string[]): string[] {
+  return paths.filter(entry => !PART_LABELS.has(entry));
+}
+
+/** Diffs up to this size are inlined; larger ones are read by the reviewer in the snapshot (#214). */
+export const INLINE_DIFF_CHARS = 40_000;
+
+/**
+ * The command that shows a scope's diff in its snapshot work tree, where HEAD is the snapshot's commit.
+ * @param withPaths - Limit it to the files, as for one part of a large change.
+ */
+export function diffCommand(info: Pick<GitScopeInfo, 'type' | 'revision'>, paths: readonly string[], withPaths: boolean): string {
+  const quoted = withPaths && paths.length ? ` -- ${paths.map(file => `"${file.replace(/"/g, '\\"')}"`).join(' ')}` : '';
+  if (info.type === 'range') return `git diff ${info.revision}${quoted}`;
+  if (info.type === 'branch') return `git diff ${info.revision}...HEAD${quoted}`;
+  // Uncommitted, staged and commit scopes: the snapshot's commit against its parent.
+  return `git show --format= HEAD${quoted || ' --'}`;
+}
+
+/** What a prompt shows instead of an inlined diff: how to read it and which files it touches. */
+export function diffReference(info: Pick<GitScopeInfo, 'type' | 'revision'>, paths: readonly string[], withPaths: boolean): string {
+  return [
+    '[The diff is not inlined. Read it yourself by running this command in your working directory, a copy of exactly the reviewed state:]',
+    diffCommand(info, paths, withPaths),
+    `[Changed files, ${paths.length}. Name every one of them in your answer, in Reviewed or a finding: a file you do not name counts as not reviewed.]`,
+    ...paths.map(file => `- ${file}`),
+  ].join('\n');
+}
+
 /** Everything a review in parts needs from the call. */
 interface PartsReview {
   parts: ReviewPart[];
+  /** What a part's prompt shows of its diff: the text, or how to read it. */
+  textFor: (part: ReviewPart) => string;
+  /** Whether each part reads its diff by reference, so it must name its files. */
+  byReference: boolean;
   /** What the server's checks showed, for the synthesis as for each part. */
   checkLines: readonly string[];
   promptFor: (diffText: string, snapshotText: string, scopeNote: readonly string[]) => string;
@@ -371,7 +412,7 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
   }
   for (const [index, part] of parts.entries()) {
     const partSnapshot = `${snapshot}/part-${index + 1}-of-${parts.length}`;
-    const prompt = review.promptFor(part.text, partSnapshot, [
+    const prompt = review.promptFor(review.textFor(part), partSnapshot, [
       `This change is too large for one turn, so it is reviewed in ${parts.length} parts; you have part ${index + 1}. COVERAGE refers to this part. Every part is listed here; read files of other parts only to check a call site:`,
       manifest,
     ]);
@@ -390,7 +431,12 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
       onProgress: review.onProgress,
       options: {
         ...review.turnOptions,
-        reviewContext: { ...review.context, expectedSnapshot: partSnapshot, requiredFiles: part.paths },
+        reviewContext: {
+          ...review.context,
+          expectedSnapshot: partSnapshot,
+          requiredFiles: part.paths,
+          ...(review.byReference ? { filesToName: filePaths(part.paths) } : {}),
+        },
       },
     });
     results.push({ index, outcome });

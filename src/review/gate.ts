@@ -87,6 +87,11 @@ export interface ReviewGateContext {
   unreviewedBinaryFiles?: number;
   invalidatedReason?: string;
   requiredFiles?: readonly string[];
+  /**
+   * Files a reviewer read by reference instead of an inlined diff (#214): each must appear in its
+   * answer, or the review is not READY, since nothing else shows that it read them.
+   */
+  filesToName?: readonly string[];
   observedDenials?: readonly { path?: string; operation?: string; reason?: string }[];
   workspaceRoot?: string;
 }
@@ -271,7 +276,9 @@ export function evaluateStateEnvelopeGate(
     const incompleteInput = Boolean(context && context.inputComplete === false);
     const judged = Boolean(isCompleteEnvelope && checks && !truncated && !lengthLimited && !wrongSnapshot && !deniedRequiredScope);
     const appendTerminator = Boolean(isCompleteEnvelope && serverTerminated);
+    const unnamedFiles = (context?.filesToName ?? []).filter(file => !output.includes(file));
     const shouldBlock =
+      unnamedFiles.length > 0 ||
       !isCompleteEnvelope ||
       !checks ||
       failedChecks ||
@@ -303,6 +310,10 @@ export function evaluateStateEnvelopeGate(
           reasons.push(`Filesystem access to required review scope was denied: ${deniedRequiredFiles.join(', ')}`);
       }
       if (coverageVal === 'PARTIAL') reasons.push('Review coverage is partial');
+      if (unnamedFiles.length > 0)
+        reasons.push(
+          `The reviewer did not name ${unnamedFiles.length} of the changed files it was to read (${unnamedFiles.slice(0, 5).join(', ')}${unnamedFiles.length > 5 ? ', ...' : ''})`,
+        );
       if (truncated) reasons.push('Output was truncated');
       if (lengthLimited) reasons.push('The model stopped at its output length limit');
       // Without an answer or an envelope, its field checks would only restate that absence.
