@@ -219,7 +219,7 @@ consent (`"hostExecution": "accepted"` in the configuration, or the form).
   is told to leave your work tree alone; nothing enforces that until containers come (#215).
   The copy is removed afterwards.
 - From 0.8.0, when that copy exists, a large change is not pasted into the reviewer's prompt:
-  it reads the collected diff from a file in the copy, and its review is READY only if it names
+  it reads the collected diff from a file CoAgent8 writes for it, and its review is READY only if it names
   every changed file.
 - From 0.8.0, `checks`, such as `npm test`, are run by CoAgent8 on the reviewed change
   before the turn, and a check that does not pass blocks the verdict. The

@@ -96,10 +96,18 @@ export interface ReviewGateContext {
   workspaceRoot?: string;
 }
 
-/** Whether `text` names `file` as a whole path, bounded by start, end, whitespace or punctuation. */
+/** Envelope fields, which name no file however their values read. */
+const ENVELOPE_FIELD = /^(?:REVIEW|SNAPSHOT|COVERAGE|VERDICT|CHECKS|END_REVIEW):/;
+
+/**
+ * Whether `text` names `file` as a whole path outside the envelope fields: bounded by the line's
+ * start or end, whitespace, quotes, brackets or Markdown emphasis, and on the right also by a colon
+ * (a line number) or by a period, comma or semicolon that ends the sentence or the list item.
+ */
 export function namesFile(text: string, file: string): boolean {
   const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(^|[\\s\`'"(,;])${escaped}($|[\\s\`'"),;:]|\\.(\\s|$))`, 'm').test(text);
+  const pattern = new RegExp(`(^|[\\s\`'"([*])${escaped}($|[\\s\`'")\\]*:]|[.,;](\\s|$))`);
+  return text.split(/\r?\n/).some(line => !ENVELOPE_FIELD.test(line.trim()) && pattern.test(line));
 }
 
 /**

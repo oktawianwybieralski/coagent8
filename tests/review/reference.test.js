@@ -45,6 +45,11 @@ test('a file is named only as a whole path', () => {
   assert.equal(namesFile('Reviewed: src/a.ts.', 'src/a.ts'), true);
   assert.equal(namesFile('[P2] src/a.ts:12', 'src/a.ts'), true);
   assert.equal(namesFile('Reviewed: lib/src/a.ts', 'src/a.ts'), false);
+  assert.equal(namesFile('Reviewed: [src/a.ts](x) and **src/b.ts**', 'src/b.ts'), true);
+  assert.equal(namesFile('Reviewed: [src/a.ts](x)', 'src/a.ts'), true);
+  assert.equal(namesFile('VERDICT: READY', 'READY'), false, 'an envelope field names no file');
+  assert.equal(namesFile('Reviewed: a.ts,b.ts', 'a.ts'), false, 'a comma inside a name is no boundary');
+  assert.equal(namesFile('Reviewed: a.ts, b.ts', 'a.ts'), true);
 });
 
 test('the gate blocks a reviewer that did not name every file, and leaves the review unjudged', () => {
@@ -78,8 +83,8 @@ function fixture(answer) {
     name: 'fixture',
     probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (prompt, options) => {
-      const file = /from the file (\S+) in your working directory/.exec(prompt)?.[1];
-      seen.push({ prompt, diff: file ? fs.readFileSync(path.join(options.cwd, file), 'utf8') : null });
+      const file = /from the file (.+?) \(\d+ lines/.exec(prompt)?.[1];
+      seen.push({ prompt, file, diff: file ? fs.readFileSync(file, 'utf8') : null });
       const snapshot = /SNAPSHOT: (\S+)/.exec(prompt)[1];
       const text = answer(snapshot);
       options.onEvent({ type: 'assistant_message', messageId: 'm', text });
@@ -116,6 +121,8 @@ test('a large change is read from a file holding exactly the collected diff, and
       assert.match(prompt, /^- a\.txt$/m);
       assert.ok(!prompt.includes(big.repeat(3)), 'the diff text is not in the prompt');
       assert.equal(diff, collected, 'the file holds exactly the collected diff');
+      assert.ok(!f.seen[0].file.startsWith(dir), 'the diff file is outside the reviewed tree');
+      assert.equal(fs.existsSync(f.seen[0].file), false, 'the diff file is removed after the review');
       assert.equal(outcome.review.verdict, verdict, names);
     } finally {
       f.restore();

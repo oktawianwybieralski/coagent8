@@ -14,7 +14,7 @@ import { ToolError } from '../../contracts/error.js';
 import { approveChecks, parseCheckCommand, runCheck, type CheckApprovalPrompt } from '../../execution/checks.js';
 import type { CheckResult } from '../../contracts/execution.js';
 import { loadConfig } from '../../config.js';
-import { withReviewSnapshot, type ReviewSnapshot } from '../../review/snapshot.js';
+import { snapshotRoot, withReviewSnapshot, type ReviewSnapshot } from '../../review/snapshot.js';
 import { redactDiagnostic } from '../../security/redaction.js';
 import { MAX_REVIEW_PARTS, splitReviewDiff, type ReviewPart } from '../../review/parts.js';
 import { getSession } from '../../sessions/session.js';
@@ -239,72 +239,83 @@ export async function executeReview(
     const executionCwd = workTree ? { executionCwd: workTree.cwd } : {};
     // A large diff is read by the reviewer in the snapshot, not inlined (#214); a small one stays inline.
     const byReference = Boolean(workTree) && scopeInfo.diff.length > INLINE_DIFF_CHARS;
-    if (parts.length > 1) {
-      return withNote(
-        await reviewInParts({
-          parts,
-          textFor: (part, index) =>
-            byReference && workTree
-              ? diffReference(writeReviewDiff(workTree.cwd, `part-${index + 1}.diff`, part.text), part.text, filePaths(part.paths))
-              : part.text,
-          byReference,
-          checkLines,
-          promptFor,
-          snapshot,
-          label: scopeInfo.label,
-          instructions,
-          args,
-          workspaceCwd,
-          abortSignal,
-          onProgress,
-          context,
-          turnOptions: {
-            tracker,
-            askConsent: options.askConsent,
-            // Before every backend turn, each part and the synthesis included.
-            onTurnStart: options.onTurnStart,
-            beforeExtraTurn: options.beforeExtraTurn,
-            onTiming: options.onTiming,
-            clock: options.clock,
-            budget,
-            context: reviewReadContext,
-            ...executionCwd,
-          },
+    // A fresh directory per review, created only when needed and removed after it.
+    let referenceDir: string | undefined;
+    const diffDir = () => (referenceDir ??= fs.mkdtempSync(path.join(snapshotRoot(), 'diff-')));
+    try {
+      if (parts.length > 1) {
+        return withNote(
+          await reviewInParts({
+            parts,
+            textFor: (part, index) =>
+              byReference && workTree
+                ? diffReference(
+                    writeReviewDiff(diffDir(), `part-${index + 1}.diff`, part.text),
+                    part.text,
+                    partFiles(part.paths, part.text),
+                  )
+                : part.text,
+            byReference,
+            checkLines,
+            promptFor,
+            snapshot,
+            label: scopeInfo.label,
+            instructions,
+            args,
+            workspaceCwd,
+            abortSignal,
+            onProgress,
+            context,
+            turnOptions: {
+              tracker,
+              askConsent: options.askConsent,
+              // Before every backend turn, each part and the synthesis included.
+              onTurnStart: options.onTurnStart,
+              beforeExtraTurn: options.beforeExtraTurn,
+              onTiming: options.onTiming,
+              clock: options.clock,
+              budget,
+              context: reviewReadContext,
+              ...executionCwd,
+            },
+            verifyReviewSnapshot,
+          }),
+        );
+      }
+      const outcome = await runTask('review', {
+        prompt:
+          byReference && workTree
+            ? promptFor(
+                diffReference(writeReviewDiff(diffDir(), 'review.diff', scopeInfo.diff), scopeInfo.diff, scopeInfo.changedPaths),
+                snapshot,
+                [],
+              )
+            : prompt,
+        publicInput: 'Review ' + scopeInfo.label + '\n' + instructions,
+        args: { ...args, backend: args.backend },
+        cwd: workspaceCwd,
+        abortSignal,
+        onProgress,
+        options: {
+          tracker,
+          askConsent: options.askConsent,
+          onTurnStart: options.onTurnStart,
+          beforeExtraTurn: options.beforeExtraTurn,
+          reviewContext: byReference ? { ...context, filesToName: scopeInfo.changedPaths } : context,
+          // A repeat with checks runs again: a verdict reached with other check results must not return.
+          ...(serverChecks?.length ? {} : { reviewIdentity: { snapshot, scope: scopeInfo.label } }),
+          onTiming: options.onTiming,
+          clock: options.clock,
+          budget: budget,
+          context: reviewReadContext,
           verifyReviewSnapshot,
-        }),
-      );
+          ...executionCwd,
+        },
+      });
+      return withNote(outcome);
+    } finally {
+      if (referenceDir) fs.rmSync(referenceDir, { recursive: true, force: true });
     }
-    const outcome = await runTask('review', {
-      prompt:
-        byReference && workTree
-          ? promptFor(
-              diffReference(writeReviewDiff(workTree.cwd, 'review.diff', scopeInfo.diff), scopeInfo.diff, scopeInfo.changedPaths),
-              snapshot,
-              [],
-            )
-          : prompt,
-      publicInput: 'Review ' + scopeInfo.label + '\n' + instructions,
-      args: { ...args, backend: args.backend },
-      cwd: workspaceCwd,
-      abortSignal,
-      onProgress,
-      options: {
-        tracker,
-        askConsent: options.askConsent,
-        onTurnStart: options.onTurnStart,
-        beforeExtraTurn: options.beforeExtraTurn,
-        reviewContext: byReference ? { ...context, filesToName: scopeInfo.changedPaths } : context,
-        // A repeat with checks runs again: a verdict reached with other check results must not return.
-        ...(serverChecks?.length ? {} : { reviewIdentity: { snapshot, scope: scopeInfo.label } }),
-        onTiming: options.onTiming,
-        clock: options.clock,
-        budget: budget,
-        context: reviewReadContext,
-        verifyReviewSnapshot,
-        ...executionCwd,
-      },
-    });
-    return withNote(outcome);
   };
   try {
     return await withReviewSnapshot(scopeInfo, workspaceCwd, reviewReadContext, reviewIn);
@@ -328,26 +339,31 @@ export function filePaths(paths: readonly string[]): string[] {
 /** Diffs up to this size are inlined; larger ones are read by the reviewer in the snapshot (#214). */
 export const INLINE_DIFF_CHARS = 40_000;
 
-/** Where the diff files of a review by reference go, inside the reviewer's working directory. */
-export const REVIEW_DIFF_DIR = '.coagent8-review';
-
 /**
  * Writes diff text where the reviewer reads it: exactly what the server collected, so scope,
- * exclusions, staged and unstaged changes, renames and part boundaries are as reviewed.
- * @returns The file's path relative to the reviewer's working directory.
+ * exclusions, staged and unstaged changes, renames and part boundaries are as reviewed. The file is
+ * new, in a directory the server just created outside the reviewed tree, so no path from the
+ * repository decides where it goes.
+ * @returns The file's absolute path.
  */
-export function writeReviewDiff(cwd: string, name: string, text: string): string {
-  const dir = path.join(cwd, REVIEW_DIFF_DIR);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, name), text);
-  return `${REVIEW_DIFF_DIR}/${name}`;
+export function writeReviewDiff(dir: string, name: string, text: string): string {
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, text, { flag: 'wx' });
+  return file;
+}
+
+/** The files a part's diff text touches: its paths without labels, and the new name of a renamed file. */
+export function partFiles(paths: readonly string[], text: string): string[] {
+  const files = new Set(filePaths(paths));
+  for (const match of text.matchAll(/^(?:rename to (.+)|\+\+\+ b\/(.+))$/gm)) files.add((match[1] ?? match[2])!);
+  return [...files];
 }
 
 /** What a prompt shows instead of an inlined diff: where to read it and which files it touches. */
 export function diffReference(file: string, text: string, paths: readonly string[]): string {
   const lines = text.split('\n').length;
   return [
-    `[The diff is not inlined. Read all of it from the file ${file} in your working directory (${lines} lines; read it in pieces if it is long). It is exactly the change under review; the working directory is a copy of the reviewed state. Do not edit or delete the file.]`,
+    `[The diff is not inlined. Read all of it from the file ${file} (${lines} lines; read it in pieces if it is long, with a shell command if your file tools cannot reach it). It is exactly the change under review; your working directory is a copy of the reviewed state.]`,
     `[Changed files, ${paths.length}. Name every one of them in your answer, in Reviewed or a finding: a file you do not name counts as not reviewed.]`,
     ...paths.map(entry => `- ${entry}`),
   ].join('\n');
@@ -450,7 +466,7 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
           ...review.context,
           expectedSnapshot: partSnapshot,
           requiredFiles: part.paths,
-          ...(review.byReference ? { filesToName: filePaths(part.paths) } : {}),
+          ...(review.byReference ? { filesToName: partFiles(part.paths, part.text) } : {}),
         },
       },
     });
