@@ -97,10 +97,10 @@ export async function withReviewSnapshot<T>(
   context: BackendReadContext | undefined,
   fn: (snapshot: ReviewSnapshot | undefined, skipped?: string) => Promise<T>,
 ): Promise<T> {
-  fs.mkdirSync(snapshotRoot(), { recursive: true });
   const lock = path.join(snapshotRoot(), `${workspaceKey(workspace)}.lock`);
   let ran = false;
   try {
+    fs.mkdirSync(snapshotRoot(), { recursive: true });
     return await withFileLock(
       lock,
       async () => {
@@ -110,9 +110,16 @@ export async function withReviewSnapshot<T>(
       { timeoutMs: SNAPSHOT_LOCK_WAIT_MS },
     );
   } catch (err) {
-    // Only a lock another review holds sends this one to the workspace; anything `fn` threw stands.
-    if (!ran && err instanceof LockTimeoutError) return fn(undefined, 'another review of this workspace is using its snapshot');
-    throw err;
+    // Anything `fn` threw stands; before it ran, a lock another review holds, or any failure to set
+    // up the lock, sends this review to the workspace. A cancellation or deadline ends it.
+    if (ran) throw err;
+    if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) throw err;
+    return fn(
+      undefined,
+      err instanceof LockTimeoutError
+        ? 'another review of this workspace is using its snapshot'
+        : `the snapshot lock could not be set up: ${(err as Error).message.slice(0, 200)}`,
+    );
   }
 }
 
@@ -138,6 +145,8 @@ async function runInSnapshot<T>(
     if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) throw err;
     skipped = `the snapshot could not be prepared: ${(err as Error).message.slice(0, 200)}`;
   }
+  // Without a snapshot, what an earlier, crashed review left is removed before the turn.
+  if (!snapshot) await cleanUp(cleanupGit, target, ref);
   try {
     return await fn(snapshot, skipped);
   } finally {
@@ -158,7 +167,7 @@ async function materialize(
   // Independent reads at once: each Git start costs time, on Windows most of all.
   const [where, untracked, head, targetCommit, globalAttributes] = await Promise.all([
     git(['rev-parse', '--git-dir', '--show-prefix', '--git-path', 'info/attributes']),
-    info.type === 'uncommitted' ? git(['ls-files', '--others', '--exclude-standard', '-z']) : none,
+    info.type === 'uncommitted' ? git(['ls-files', '--others', '--exclude-standard', '-z', '--', ':(top)']) : none,
     revision ? none : git(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']).catch(() => ''),
     revision ? git(['rev-parse', '--verify', `${revision}^{commit}`]) : none,
     git(['config', '--path', 'core.attributesFile']).catch(() => ''),

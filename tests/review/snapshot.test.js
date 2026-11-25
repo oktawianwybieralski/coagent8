@@ -203,3 +203,23 @@ test('a review turn runs in the snapshot', async () => {
     adapterRegistry.agy = original;
   }
 });
+
+test('in a subdirectory workspace, untracked files elsewhere in the repository count against the bounds', async () => {
+  const { dir } = repo();
+  fs.mkdirSync(path.join(dir, 'pkg'));
+  fs.writeFileSync(path.join(dir, 'pkg', 'b.txt'), 'sub\n');
+  fs.writeFileSync(path.join(dir, 'big.bin'), Buffer.alloc(SNAPSHOT_MAX_UNTRACKED_FILE_BYTES + 1));
+  const workspace = path.join(dir, 'pkg');
+  const why = await inSnapshot(dir, 'uncommitted', async (snapshot, skipped) => (assert.equal(snapshot, undefined), skipped), workspace);
+  assert.match(why, /larger than the review bounds/);
+});
+
+test('a skipped snapshot still removes what a crashed review left', async () => {
+  const { dir, git } = repo();
+  const target = snapshotPath(dir);
+  const key = path.basename(target);
+  git('update-ref', `refs/coagent8/review/${key}`, 'HEAD');
+  git('worktree', 'add', '--detach', target, 'HEAD');
+  fs.writeFileSync(path.join(dir, 'big.bin'), Buffer.alloc(SNAPSHOT_MAX_UNTRACKED_FILE_BYTES + 1));
+  await inSnapshot(dir, 'uncommitted', async snapshot => assert.equal(snapshot, undefined));
+});
