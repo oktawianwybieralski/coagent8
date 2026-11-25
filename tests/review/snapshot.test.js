@@ -223,3 +223,13 @@ test('a skipped snapshot still removes what a crashed review left', async () => 
   fs.writeFileSync(path.join(dir, 'big.bin'), Buffer.alloc(SNAPSHOT_MAX_UNTRACKED_FILE_BYTES + 1));
   await inSnapshot(dir, 'uncommitted', async snapshot => assert.equal(snapshot, undefined));
 });
+
+test('a repository with submodules keeps the review in the workspace', async () => {
+  const { dir, git } = repo();
+  fs.writeFileSync(path.join(dir, '.gitmodules'), '[submodule "lib"]\n\tpath = lib\n\turl = ./lib\n');
+  git('add', '.gitmodules');
+  git('commit', '-qm', 'modules');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'changed\n');
+  const why = await inSnapshot(dir, 'uncommitted', async (snapshot, skipped) => (assert.equal(snapshot, undefined), skipped));
+  assert.match(why, /submodules/);
+});

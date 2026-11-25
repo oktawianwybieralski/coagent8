@@ -11,7 +11,7 @@
  * its sessions per directory). The file lock of the workspace's snapshot holds both for the
  * whole review, so a second review of the workspace runs in the workspace instead. A repository
  * whose attributes name any filter (such as Git LFS) is not materialized: neither its clean nor
- * its smudge filter runs. Whatever cannot be materialized runs the review in the workspace, as
+ * its smudge filter runs; nor is one with submodules. Whatever cannot be materialized runs the review in the workspace, as
  * before. The snapshot is a working directory, not a boundary.
  *
  * @packageDocumentation
@@ -165,18 +165,20 @@ async function materialize(
   const revision = targetRevision(info);
   const none = Promise.resolve('');
   // Independent reads at once: each Git start costs time, on Windows most of all.
-  const [where, untracked, head, targetCommit, globalAttributes] = await Promise.all([
+  const [where, untracked, head, targetCommit, systemAttributes, globalAttributes] = await Promise.all([
     git(['rev-parse', '--git-dir', '--show-prefix', '--git-path', 'info/attributes']),
     info.type === 'uncommitted' ? git(['ls-files', '--others', '--exclude-standard', '-z', '--', ':(top)']) : none,
     revision ? none : git(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']).catch(() => ''),
     revision ? git(['rev-parse', '--verify', `${revision}^{commit}`]) : none,
-    git(['config', '--path', 'core.attributesFile']).catch(() => ''),
+    // Where Git itself reads system and global attributes, whatever this installation configured.
+    git(['var', 'GIT_ATTR_SYSTEM']).catch(() => ''),
+    git(['var', 'GIT_ATTR_GLOBAL']).catch(() => ''),
   ]);
   const [gitDirLine = '', prefixLine = '', infoAttributesLine = ''] = where.split(/\r?\n/);
   // Exactly as Git prints it, without its trailing slash: a directory name may start with a space.
   const prefix = prefixLine.replace(/\/+$/, '');
   // Any filter in any attribute source keeps the review in the workspace, before a filter could run.
-  if (await namesFilter(git, info.type, revision, workspace, infoAttributesLine, globalAttributes.trim())) {
+  if (await namesFilter(git, info.type, revision, workspace, [infoAttributesLine, systemAttributes, globalAttributes])) {
     return 'the repository names a checkout filter (such as Git LFS) in its attributes';
   }
   let commit = targetCommit.trim();
@@ -198,6 +200,10 @@ async function materialize(
       fs.rmSync(temporary, { force: true });
     }
   }
+  // A submodule would be an empty directory in the snapshot, not the reviewed content.
+  if ((await git(['rev-parse', '--verify', '--quiet', `${commit}:.gitmodules`]).catch(() => '')).trim()) {
+    return 'the repository has submodules, which a snapshot would leave empty';
+  }
   // An earlier review's tree and ref at this place are replaced, also those of a server that ended.
   await removeWorkTree(git, target);
   const hooks = path.join(snapshotRoot(), 'no-hooks');
@@ -217,8 +223,7 @@ async function namesFilter(
   type: GitScopeInfo['type'],
   revision: string | null,
   workspace: string,
-  infoAttributes: string,
-  globalAttributes: string,
+  attributeFiles: readonly string[],
 ): Promise<boolean> {
   const pathspec = ['--', ':(top,glob)**/.gitattributes'];
   // The attribute files the snapshot will contain: the working tree's (tracked or not), the index's, or the revision's.
@@ -229,9 +234,8 @@ async function namesFilter(
         ? await git(['grep', '--cached', '-l', '-I', '-e', 'filter=', ...pathspec]).catch(() => '')
         : await git(['grep', '-l', '-I', '-e', 'filter=', revision ?? 'HEAD', ...pathspec]).catch(() => '');
   if (files.trim()) return true;
-  const defaultGlobal = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'git', 'attributes');
-  for (const file of [path.resolve(workspace, infoAttributes.trim()), globalAttributes || defaultGlobal]) {
-    if (file && /(^|\s)filter=/m.test(readText(file))) return true;
+  for (const file of attributeFiles.map(entry => entry.trim()).filter(Boolean)) {
+    if (/(^|\s)filter=/m.test(readText(path.resolve(workspace, file)))) return true;
   }
   return false;
 }

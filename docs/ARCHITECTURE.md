@@ -383,8 +383,8 @@ to each workspace; the lock holds them for the whole review, so a second review 
 runs in the workspace, and the next review replaces what a crashed server left. The checkout is
 detached and runs no hooks; a workspace in a subdirectory runs in the same subdirectory of the
 snapshot, so a follow-up resumes in the same place. A repository whose attributes name any filter
-(Git LFS and the like, in any attribute file the snapshot has, `info/attributes` or the global
-one), untracked files over the bounds, a revision without the workspace's subdirectory or a failed
+(Git LFS and the like, in any attribute file the snapshot has, `info/attributes`, or the system
+or global file Git reports), submodules, untracked files over the bounds, a revision without the workspace's subdirectory or a failed
 step keep the review in the workspace with a warning; no filter runs. Line endings follow the
 repository's attributes, as in any checkout. The snapshot is removed after the turn, also after a
 cancellation; server checks still run in the workspace. It is a working directory, not a boundary:
