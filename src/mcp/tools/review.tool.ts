@@ -12,7 +12,7 @@ import { ToolError } from '../../contracts/error.js';
 import { approveChecks, parseCheckCommand, runCheck, type CheckApprovalPrompt } from '../../execution/checks.js';
 import type { CheckResult } from '../../contracts/execution.js';
 import { loadConfig } from '../../config.js';
-import { isSnapshotSkipped, materializeReviewSnapshot, type ReviewSnapshot } from '../../review/snapshot.js';
+import { withReviewSnapshot, type ReviewSnapshot } from '../../review/snapshot.js';
 import { redactDiagnostic } from '../../security/redaction.js';
 import { MAX_REVIEW_PARTS, splitReviewDiff, type ReviewPart } from '../../review/parts.js';
 import { getSession } from '../../sessions/session.js';
@@ -230,24 +230,11 @@ export async function executeReview(
   };
 
   // The reviewer runs in a copy of exactly the reviewed state (#213); without one, in the workspace.
-  let workTree: ReviewSnapshot | undefined;
-  let workTreeNote: string | undefined;
-  try {
-    const made = await materializeReviewSnapshot(scopeInfo, workspaceCwd, reviewReadContext);
-    if (isSnapshotSkipped(made)) workTreeNote = `The reviewer ran in the workspace: ${redactDiagnostic(made.skipped, 256)}.`;
-    else workTree = made;
-  } catch (err) {
-    if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) {
-      call.close();
-      throw err;
-    }
-    workTreeNote = `The reviewer ran in the workspace: no snapshot (${redactDiagnostic((err as Error).message, 200)}).`;
-  }
-  const withNote = (outcome: TaskExecutionResult): TaskExecutionResult =>
-    workTreeNote ? { ...outcome, warnings: [...(outcome.warnings ?? []), workTreeNote] } : outcome;
-  const executionCwd = workTree ? { executionCwd: workTree.cwd } : {};
-
-  try {
+  const reviewIn = async (workTree: ReviewSnapshot | undefined, skipped?: string): Promise<TaskExecutionResult> => {
+    const workTreeNote = skipped ? `The reviewer ran in the workspace: ${redactDiagnostic(skipped, 256)}.` : undefined;
+    const withNote = (outcome: TaskExecutionResult): TaskExecutionResult =>
+      workTreeNote ? { ...outcome, warnings: [...(outcome.warnings ?? []), workTreeNote] } : outcome;
+    const executionCwd = workTree ? { executionCwd: workTree.cwd } : {};
     if (parts.length > 1) {
       return withNote(
         await reviewInParts({
@@ -302,8 +289,14 @@ export async function executeReview(
       },
     });
     return withNote(outcome);
+  };
+  try {
+    return await withReviewSnapshot(scopeInfo, workspaceCwd, reviewReadContext, reviewIn);
+  } catch (err) {
+    // A snapshot cancelled or out of time before the turn reports the trace, as an early end does.
+    if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) call.close();
+    throw err;
   } finally {
-    await workTree?.dispose();
     call.dispose();
   }
 }

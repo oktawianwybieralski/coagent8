@@ -7,10 +7,12 @@
  * - uncommitted: staged, unstaged and untracked content, without touching the user's index;
  * - staged: the index only, not unstaged edits;
  * - commit and range: the target revision;
- * - the same state gives the same commit; disposing removes the work tree and its ref;
- * - a second review of the workspace is turned away while the first holds the snapshot;
- * - untracked files over the review bounds skip the snapshot;
- * - a review turn runs in the snapshot, and the work tree is gone afterwards.
+ * - the same state gives the same commit; afterwards the work tree and its ref are gone;
+ * - a second review of the workspace runs in the workspace while the first holds the snapshot;
+ * - untracked files over the review bounds, and any filter attribute, keep the review in the workspace;
+ * - a workspace in a subdirectory runs in the same subdirectory, and a revision without it falls back;
+ * - a cancelled call still removes its snapshot;
+ * - a review turn runs in the snapshot.
  */
 
 const { test } = require('node:test');
@@ -24,13 +26,7 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-snapshot-'));
 process.env.coagent8_DIR = path.join(tempDir, 'data');
 
 const { collectGitScope } = require('../../src/workspace/git.ts');
-const {
-  materializeReviewSnapshot,
-  isSnapshotSkipped,
-  claimSnapshot,
-  snapshotPath,
-  SNAPSHOT_MAX_UNTRACKED_FILE_BYTES,
-} = require('../../src/review/snapshot.ts');
+const { withReviewSnapshot, snapshotPath, SNAPSHOT_MAX_UNTRACKED_FILE_BYTES } = require('../../src/review/snapshot.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -49,13 +45,17 @@ function repo() {
   return { dir, git };
 }
 
-const read = (snapshot, file) => fs.readFileSync(path.join(snapshot.path, file), 'utf8');
-
-async function materialize(dir, scope) {
-  const made = await materializeReviewSnapshot(await collectGitScope(scope, dir), dir);
-  assert.ok(!isSnapshotSkipped(made), made.skipped);
-  return made;
+/** Runs `fn` in the snapshot of a scope and returns what it saw, then checks that nothing stayed behind. */
+async function inSnapshot(dir, scope, fn, workspace = dir, context) {
+  const seen = await withReviewSnapshot(await collectGitScope(scope, workspace), workspace, context, async (snapshot, skipped) =>
+    fn(snapshot, skipped),
+  );
+  assert.equal(fs.existsSync(snapshotPath(workspace)), false, 'the work tree is removed');
+  assert.equal(execFileSync('git', ['for-each-ref', 'refs/coagent8'], { cwd: dir, encoding: 'utf8' }).trim(), '', 'the ref is removed');
+  return seen;
 }
+
+const read = (snapshot, file) => fs.readFileSync(path.join(snapshot.cwd, file), 'utf8');
 
 test('uncommitted: staged, unstaged and untracked content, and the user index stays as it was', async () => {
   const { dir, git } = repo();
@@ -64,23 +64,22 @@ test('uncommitted: staged, unstaged and untracked content, and the user index st
   fs.writeFileSync(path.join(dir, 'a.txt'), 'worked\n');
   fs.writeFileSync(path.join(dir, 'new.txt'), 'untracked\n');
   const indexBefore = git('ls-files', '-s');
-  const snapshot = await materialize(dir, 'uncommitted');
-  try {
+  const first = await inSnapshot(dir, 'uncommitted', async (snapshot, skipped) => {
+    assert.ok(snapshot, skipped);
     assert.equal(read(snapshot, 'a.txt'), 'worked\n');
     assert.equal(read(snapshot, 'new.txt'), 'untracked\n');
-    assert.equal(git('ls-files', '-s'), indexBefore, 'the user index is unchanged');
-    assert.equal(git('status', '--porcelain'), 'MM a.txt\n?? new.txt'.replace(/\n/g, '\n'));
-    const again = await materializeReviewSnapshot(await collectGitScope('uncommitted', dir), dir);
-    assert.ok(isSnapshotSkipped(again), 'a second review waits for the first');
-  } finally {
-    await snapshot.dispose();
-  }
-  assert.equal(fs.existsSync(snapshot.path), false, 'the work tree is removed');
-  assert.equal(git('for-each-ref', 'refs/coagent8'), '', 'the ref is removed');
-  assert.ok(!git('worktree', 'list').includes(snapshot.path), 'Git no longer lists it');
-  const second = await materialize(dir, 'uncommitted');
-  assert.equal(second.commit, snapshot.commit, 'the same state gives the same commit');
-  await second.dispose();
+    // A second review of the workspace meanwhile runs in the workspace.
+    const nested = await withReviewSnapshot(await collectGitScope('uncommitted', dir), dir, undefined, async (inner, why) => ({
+      inner,
+      why,
+    }));
+    assert.equal(nested.inner, undefined);
+    assert.match(nested.why, /another review/);
+    return snapshot.commit;
+  });
+  assert.equal(git('ls-files', '-s'), indexBefore, 'the user index is unchanged');
+  const second = await inSnapshot(dir, 'uncommitted', async snapshot => snapshot.commit);
+  assert.equal(second, first, 'the same state gives the same commit');
 });
 
 test('staged: the index only', async () => {
@@ -88,12 +87,7 @@ test('staged: the index only', async () => {
   fs.writeFileSync(path.join(dir, 'a.txt'), 'staged\n');
   git('add', 'a.txt');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'unstaged\n');
-  const snapshot = await materialize(dir, 'staged');
-  try {
-    assert.equal(read(snapshot, 'a.txt'), 'staged\n');
-  } finally {
-    await snapshot.dispose();
-  }
+  assert.equal(await inSnapshot(dir, 'staged', async snapshot => read(snapshot, 'a.txt')), 'staged\n');
 });
 
 test('commit and range: the target revision', async () => {
@@ -104,40 +98,74 @@ test('commit and range: the target revision', async () => {
   const two = git('rev-parse', 'HEAD');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'three\n');
   git('commit', '-qam', 'three');
-  for (const [scope, expected] of [
-    [two, 'two\n'],
-    [`${base}..${two}`, 'two\n'],
-    [`${base}...${two}`, 'two\n'],
-  ]) {
-    const snapshot = await materialize(dir, scope);
-    try {
-      assert.equal(read(snapshot, 'a.txt'), expected, scope);
-    } finally {
-      await snapshot.dispose();
-    }
+  for (const scope of [two, `${base}..${two}`, `${base}...${two}`]) {
+    assert.equal(await inSnapshot(dir, scope, async snapshot => read(snapshot, 'a.txt')), 'two\n', scope);
   }
 });
 
-test('untracked files over the review bounds skip the snapshot', async () => {
+test('untracked files over the review bounds keep the review in the workspace', async () => {
   const { dir } = repo();
   fs.writeFileSync(path.join(dir, 'big.bin'), Buffer.alloc(SNAPSHOT_MAX_UNTRACKED_FILE_BYTES + 1));
-  const made = await materializeReviewSnapshot(await collectGitScope('uncommitted', dir), dir);
-  assert.ok(isSnapshotSkipped(made));
-  assert.match(made.skipped, /larger than the review bounds/);
+  const why = await inSnapshot(dir, 'uncommitted', async (snapshot, skipped) => (assert.equal(snapshot, undefined), skipped));
+  assert.match(why, /larger than the review bounds/);
 });
 
-test('a claim of a live process holds, and a released claim can be taken again', () => {
-  const target = snapshotPath(path.join(tempDir, 'claims'));
-  const release = claimSnapshot(target);
-  assert.equal(typeof release, 'function');
-  assert.equal(claimSnapshot(target), null);
-  release();
-  const again = claimSnapshot(target);
-  assert.equal(typeof again, 'function');
-  again();
+test('a filter attribute anywhere keeps the review in the workspace, before any filter runs', async () => {
+  const { dir, git } = repo();
+  // A filter that would fail loudly if Git ran it.
+  git('config', 'filter.fixture.clean', 'false');
+  git('config', 'filter.fixture.required', 'true');
+  fs.writeFileSync(path.join(dir, '.gitattributes'), '*.bin filter=fixture\n');
+  fs.writeFileSync(path.join(dir, 'x.bin'), 'content\n');
+  const why = await inSnapshot(dir, 'uncommitted', async (snapshot, skipped) => (assert.equal(snapshot, undefined), skipped));
+  assert.match(why, /checkout filter/);
+  const { dir: other, git: otherGit } = repo();
+  const infoAttributes = otherGit('rev-parse', '--git-path', 'info/attributes');
+  fs.mkdirSync(path.dirname(path.resolve(other, infoAttributes)), { recursive: true });
+  fs.writeFileSync(path.resolve(other, infoAttributes), '*.txt filter=fixture\n');
+  fs.writeFileSync(path.join(other, 'a.txt'), 'changed\n');
+  const whyInfo = await inSnapshot(other, 'uncommitted', async (snapshot, skipped) => (assert.equal(snapshot, undefined), skipped));
+  assert.match(whyInfo, /checkout filter/, 'info/attributes counts too');
 });
 
-test('a review turn runs in the snapshot, and the snapshot is gone afterwards', async () => {
+test('a workspace in a subdirectory runs in the same subdirectory; a revision without it falls back', async () => {
+  const { dir, git } = repo();
+  const base = git('rev-parse', 'HEAD');
+  fs.mkdirSync(path.join(dir, 'pkg'));
+  fs.writeFileSync(path.join(dir, 'pkg', 'b.txt'), 'sub\n');
+  git('add', '.');
+  git('commit', '-qm', 'sub');
+  fs.writeFileSync(path.join(dir, 'pkg', 'b.txt'), 'changed\n');
+  const workspace = path.join(dir, 'pkg');
+  const seen = await inSnapshot(
+    dir,
+    'uncommitted',
+    async snapshot => ({ cwd: snapshot.cwd, root: snapshot.path, content: read(snapshot, 'b.txt') }),
+    workspace,
+  );
+  assert.equal(seen.cwd, path.join(seen.root, 'pkg'));
+  assert.equal(seen.content, 'changed\n');
+  const why = await inSnapshot(dir, base, async (snapshot, skipped) => (assert.equal(snapshot, undefined), skipped), workspace);
+  assert.match(why, /no such subdirectory/);
+});
+
+test('a cancelled call still removes its snapshot', async () => {
+  const { dir } = repo();
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'changed\n');
+  const controller = new AbortController();
+  await inSnapshot(
+    dir,
+    'uncommitted',
+    async snapshot => {
+      assert.ok(snapshot);
+      controller.abort();
+    },
+    dir,
+    { abortSignal: controller.signal },
+  );
+});
+
+test('a review turn runs in the snapshot', async () => {
   const { dir } = repo();
   fs.writeFileSync(path.join(dir, 'a.txt'), 'changed\n');
   const { adapterRegistry } = require('../../src/backends/registry.ts');
@@ -174,73 +202,4 @@ test('a review turn runs in the snapshot, and the snapshot is gone afterwards', 
   } finally {
     adapterRegistry.agy = original;
   }
-});
-
-test('a workspace in a subdirectory runs the reviewer in the same subdirectory of the snapshot', async () => {
-  const { dir, git } = repo();
-  fs.mkdirSync(path.join(dir, 'pkg'));
-  fs.writeFileSync(path.join(dir, 'pkg', 'b.txt'), 'sub\n');
-  git('add', '.');
-  git('commit', '-qm', 'sub');
-  fs.writeFileSync(path.join(dir, 'pkg', 'b.txt'), 'changed\n');
-  const workspace = path.join(dir, 'pkg');
-  const made = await materializeReviewSnapshot(await collectGitScope('uncommitted', workspace), workspace);
-  assert.ok(!isSnapshotSkipped(made), made.skipped);
-  try {
-    assert.equal(made.cwd, path.join(made.path, 'pkg'));
-    assert.equal(fs.readFileSync(path.join(made.cwd, 'b.txt'), 'utf8'), 'changed\n');
-  } finally {
-    await made.dispose();
-  }
-});
-
-test('a repository with checkout filters such as Git LFS keeps the review in the workspace', async () => {
-  const { dir, git } = repo();
-  fs.writeFileSync(path.join(dir, '.gitattributes'), '*.bin filter=fixture\n');
-  fs.writeFileSync(path.join(dir, 'x.bin'), 'pointer\n');
-  git('-c', 'filter.fixture.clean=cat', '-c', 'filter.fixture.smudge=cat', 'add', '.');
-  git('-c', 'filter.fixture.clean=cat', '-c', 'filter.fixture.smudge=cat', 'commit', '-qm', 'filtered');
-  // Only a changed file under the filter matters.
-  fs.writeFileSync(path.join(dir, 'x.bin'), 'changed\n');
-  const made = await materializeReviewSnapshot(await collectGitScope('uncommitted', dir), dir);
-  assert.ok(isSnapshotSkipped(made));
-  assert.match(made.skipped, /checkout filters/);
-});
-
-test('a claim being written is not taken over, and a stale claim without an owner is', () => {
-  const target = snapshotPath(path.join(tempDir, 'claims-empty'));
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(`${target}.lock`, '');
-  assert.equal(claimSnapshot(target), null, 'a fresh claim without its owner yet holds');
-  const old = new Date(Date.now() - 120_000);
-  fs.utimesSync(`${target}.lock`, old, old);
-  const release = claimSnapshot(target);
-  assert.equal(typeof release, 'function', 'an abandoned one is taken over');
-  release();
-});
-
-test('a cancelled call still removes its snapshot', async () => {
-  const { dir, git } = repo();
-  fs.writeFileSync(path.join(dir, 'a.txt'), 'changed\n');
-  const controller = new AbortController();
-  const made = await materializeReviewSnapshot(await collectGitScope('uncommitted', dir), dir, { abortSignal: controller.signal });
-  assert.ok(!isSnapshotSkipped(made), made.skipped);
-  controller.abort();
-  await made.dispose();
-  assert.equal(fs.existsSync(made.path), false);
-  assert.equal(git('for-each-ref', 'refs/coagent8'), '');
-});
-
-test('a reviewed revision without the workspace subdirectory keeps the review in the workspace', async () => {
-  const { dir, git } = repo();
-  const base = git('rev-parse', 'HEAD');
-  fs.mkdirSync(path.join(dir, 'pkg'));
-  fs.writeFileSync(path.join(dir, 'pkg', 'b.txt'), 'sub\n');
-  git('add', '.');
-  git('commit', '-qm', 'sub');
-  const workspace = path.join(dir, 'pkg');
-  const made = await materializeReviewSnapshot(await collectGitScope(base, workspace), workspace);
-  assert.ok(isSnapshotSkipped(made));
-  assert.match(made.skipped, /no such subdirectory/);
-  assert.equal(git('for-each-ref', 'refs/coagent8'), '', 'nothing stays behind');
 });

@@ -1,15 +1,18 @@
 /**
  * The reviewed state as a separate work tree (#213): a reviewer runs its commands in a copy of
- * exactly what it reviews, and the user's work tree stays untouched.
+ * exactly what it reviews, not in the user's work tree.
  *
  * @remarks
  * Uncommitted changes become a commit built from a temporary index (a copy of the user's index
  * plus every untracked, non-ignored file within the review bounds); staged changes become a
- * commit of the index alone; committed scopes use their target revision. The commit is held by a
- * ref until the turn ends and is checked out detached, without hooks, filters' downloads (LFS) or
- * submodules (a repository with checkout filters such as Git LFS is not materialized), in one directory per workspace, so a follow-up review resumes in the same place
- * (Claude Code keeps its sessions per directory). Whatever cannot be materialized within the
- * bounds is skipped: the review then runs in the workspace as before.
+ * commit of the index alone; committed scopes use their target revision. The commit is held by
+ * one ref per workspace while the turn runs and is checked out detached, without hooks, in one
+ * directory per workspace, so a follow-up review resumes in the same place (Claude Code keeps
+ * its sessions per directory). The file lock of the workspace's snapshot holds both for the
+ * whole review, so a second review of the workspace runs in the workspace instead. A repository
+ * whose attributes name any filter (such as Git LFS) is not materialized: neither its clean nor
+ * its smudge filter runs. Whatever cannot be materialized runs the review in the workspace, as
+ * before. The snapshot is a working directory, not a boundary.
  *
  * @packageDocumentation
  */
@@ -22,10 +25,14 @@ import { runGit, type GitScopeInfo } from '../workspace/git.js';
 import { canonicalPath } from '../workspace/identity.js';
 import type { BackendReadContext } from '../contracts/execution.js';
 import { ToolError } from '../contracts/error.js';
+import { LockTimeoutError, withFileLock } from '../storage/lock.js';
 
 /** Untracked bytes a snapshot hashes at most, per file and in total, as the review input does. */
 export const SNAPSHOT_MAX_UNTRACKED_FILE_BYTES = 256 * 1024;
 export const SNAPSHOT_MAX_UNTRACKED_TOTAL_BYTES = 3 * 1024 * 1024;
+
+/** How long a review waits for another review's snapshot of the same workspace. */
+const SNAPSHOT_LOCK_WAIT_MS = 250;
 
 /** A materialized review state. */
 export interface ReviewSnapshot {
@@ -35,13 +42,6 @@ export interface ReviewSnapshot {
   cwd: string;
   /** The commit it shows. */
   commit: string;
-  /** Removes the work tree and its ref; safe to call more than once. */
-  dispose: () => Promise<void>;
-}
-
-/** Why no snapshot was made; the review then runs in the workspace. */
-export interface SnapshotSkipped {
-  skipped: string;
 }
 
 /** A fixed identity, so the same state gives the same commit. */
@@ -59,9 +59,14 @@ export function snapshotRoot(): string {
   return path.join(os.tmpdir(), 'c8wt');
 }
 
+/** The workspace's key: one snapshot directory, lock and ref per workspace. */
+function workspaceKey(workspace: string): string {
+  return crypto.createHash('sha256').update(canonicalPath(workspace)).digest('hex').slice(0, 12);
+}
+
 /** One directory per workspace: a follow-up review resumes where the first ran. */
 export function snapshotPath(workspace: string): string {
-  return path.join(snapshotRoot(), crypto.createHash('sha256').update(canonicalPath(workspace)).digest('hex').slice(0, 12));
+  return path.join(snapshotRoot(), workspaceKey(workspace));
 }
 
 /**
@@ -79,34 +84,96 @@ export function targetRevision(info: Pick<GitScopeInfo, 'type' | 'revision'>): s
 }
 
 /**
- * Materializes the reviewed state in its own work tree.
+ * Runs `fn` with the reviewed state materialized, or in the workspace when it cannot be.
  * @param info - The collected review scope.
  * @param workspace - The user's work tree.
- * @param context - The call's read context; its budget bounds every Git command.
- * @returns The snapshot, or why none was made.
+ * @param context - The call's read context; its budget bounds the Git commands that build the snapshot.
+ * @param fn - Gets the snapshot, or undefined and why there is none.
+ * @returns What `fn` returns.
  */
-export async function materializeReviewSnapshot(
+export async function withReviewSnapshot<T>(
   info: GitScopeInfo,
   workspace: string,
-  context?: BackendReadContext,
-): Promise<ReviewSnapshot | SnapshotSkipped> {
+  context: BackendReadContext | undefined,
+  fn: (snapshot: ReviewSnapshot | undefined, skipped?: string) => Promise<T>,
+): Promise<T> {
+  fs.mkdirSync(snapshotRoot(), { recursive: true });
+  const lock = path.join(snapshotRoot(), `${workspaceKey(workspace)}.lock`);
+  let ran = false;
+  try {
+    return await withFileLock(
+      lock,
+      async () => {
+        ran = true;
+        return runInSnapshot(info, workspace, context, fn);
+      },
+      { timeoutMs: SNAPSHOT_LOCK_WAIT_MS },
+    );
+  } catch (err) {
+    // Only a lock another review holds sends this one to the workspace; anything `fn` threw stands.
+    if (!ran && err instanceof LockTimeoutError) return fn(undefined, 'another review of this workspace is using its snapshot');
+    throw err;
+  }
+}
+
+async function runInSnapshot<T>(
+  info: GitScopeInfo,
+  workspace: string,
+  context: BackendReadContext | undefined,
+  fn: (snapshot: ReviewSnapshot | undefined, skipped?: string) => Promise<T>,
+): Promise<T> {
   const git = (args: string[], env?: NodeJS.ProcessEnv) => runGit(args, workspace, context, 15000, undefined, undefined, env);
-  const target = targetRevision(info);
+  // Cleanup runs without the call's signal: a cancelled or expired call still removes what it made.
+  const cleanupGit = (args: string[]) => runGit(args, workspace, null, 15000);
+  const target = snapshotPath(workspace);
+  const ref = `refs/coagent8/review/${workspaceKey(workspace)}`;
+  let snapshot: ReviewSnapshot | undefined;
+  let skipped: string | undefined;
+  try {
+    const made = await materialize(info, workspace, git, target, ref);
+    if (typeof made === 'string') skipped = made;
+    else snapshot = made;
+  } catch (err) {
+    await cleanUp(cleanupGit, target, ref);
+    if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) throw err;
+    skipped = `the snapshot could not be prepared: ${(err as Error).message.slice(0, 200)}`;
+  }
+  try {
+    return await fn(snapshot, skipped);
+  } finally {
+    if (snapshot) await cleanUp(cleanupGit, target, ref);
+  }
+}
+
+/** Builds the snapshot, or says why it cannot be built; throws on a Git failure. */
+async function materialize(
+  info: GitScopeInfo,
+  workspace: string,
+  git: (args: string[], env?: NodeJS.ProcessEnv) => Promise<string>,
+  target: string,
+  ref: string,
+): Promise<ReviewSnapshot | string> {
+  const revision = targetRevision(info);
   const none = Promise.resolve('');
   // Independent reads at once: each Git start costs time, on Windows most of all.
-  const [where, untracked, head, targetCommit] = await Promise.all([
-    git(['rev-parse', '--git-dir', '--show-prefix']),
+  const [where, untracked, head, targetCommit, globalAttributes] = await Promise.all([
+    git(['rev-parse', '--git-dir', '--show-prefix', '--git-path', 'info/attributes']),
     info.type === 'uncommitted' ? git(['ls-files', '--others', '--exclude-standard', '-z']) : none,
-    target ? none : git(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']).catch(() => ''),
-    target ? git(['rev-parse', '--verify', `${target}^{commit}`]) : none,
+    revision ? none : git(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']).catch(() => ''),
+    revision ? git(['rev-parse', '--verify', `${revision}^{commit}`]) : none,
+    git(['config', '--path', 'core.attributesFile']).catch(() => ''),
   ]);
-  const [gitDirLine, prefixLine] = where.split(/\r?\n/);
-  // Exactly as Git prints it, without its line end and trailing slash: a directory name may start with a space.
-  const prefix = (prefixLine ?? '').replace(/\/+$/, '');
+  const [gitDirLine = '', prefixLine = '', infoAttributesLine = ''] = where.split(/\r?\n/);
+  // Exactly as Git prints it, without its trailing slash: a directory name may start with a space.
+  const prefix = prefixLine.replace(/\/+$/, '');
+  // Any filter in any attribute source keeps the review in the workspace, before a filter could run.
+  if (await namesFilter(git, info.type, revision, workspace, infoAttributesLine, globalAttributes.trim())) {
+    return 'the repository names a checkout filter (such as Git LFS) in its attributes';
+  }
   let commit = targetCommit.trim();
-  if (!target) {
-    const skipped = untrackedOverBounds(untracked, workspace);
-    if (skipped) return { skipped };
+  if (!revision) {
+    const overBounds = untrackedOverBounds(untracked, workspace);
+    if (overBounds) return overBounds;
     const gitDir = path.resolve(workspace, gitDirLine.trim());
     const index = path.join(gitDir, 'index');
     const temporary = path.join(gitDir, `coagent8-index-${crypto.randomBytes(6).toString('hex')}`);
@@ -114,7 +181,7 @@ export async function materializeReviewSnapshot(
       // A copy of the user's index: its staged entries and flags stay, and the user's index is never written.
       if (fs.existsSync(index)) fs.copyFileSync(index, temporary);
       const env = { GIT_INDEX_FILE: temporary };
-      if (info.type === 'uncommitted') await git(['-c', 'core.autocrlf=false', 'add', '-A', '--', '.'], env);
+      if (info.type === 'uncommitted') await git(['-c', 'core.autocrlf=false', 'add', '-A', '--', ':(top)'], env);
       const tree = (await git(['write-tree'], env)).trim();
       const parent = head.trim();
       commit = (await git(['commit-tree', tree, ...(parent ? ['-p', parent] : []), '-m', 'CoAgent8 review snapshot'], COMMIT_ENV)).trim();
@@ -122,51 +189,50 @@ export async function materializeReviewSnapshot(
       fs.rmSync(temporary, { force: true });
     }
   }
-  // A changed file under a filter attribute, such as a Git LFS pointer, would not be checked out as
-  // reviewed. Git's effective attributes for the snapshot's tree decide, from every attribute source.
-  if (await filtered(git, commit, info.changedPaths)) return { skipped: 'changed files use checkout filters (such as Git LFS)' };
-  const target_ = snapshotPath(workspace);
-  // One review at a time per workspace: another one keeps this call in the workspace.
-  const release = claimSnapshot(target_);
-  if (!release) return { skipped: 'another review of this workspace is using its snapshot' };
-  const ref = `refs/coagent8/review/${crypto.randomBytes(8).toString('hex')}`;
-  // Cleanup runs without the call's signal: a cancelled or expired call still removes what it made.
-  const cleanupGit = (args: string[]) => runGit(args, workspace, null, 15000);
-  let disposed = false;
-  const dispose = async () => {
-    if (disposed) return;
-    disposed = true;
-    try {
-      await Promise.all([
-        cleanupGit(['update-ref', '-d', ref]).catch(() => undefined),
-        removeWorkTree(cleanupGit, target_).catch(() => undefined),
-      ]);
-    } finally {
-      release();
-    }
-  };
-  try {
-    // An earlier review's tree at this place is replaced.
-    await removeWorkTree(git, target_);
-    const hooks = path.join(snapshotRoot(), 'no-hooks');
-    fs.mkdirSync(hooks, { recursive: true });
-    // Both settle before any cleanup: a cleanup must not race a command that is still running.
-    const settled = await Promise.allSettled([
-      git(['update-ref', ref, commit]),
-      git(['-c', `core.hooksPath=${hooks}`, '-c', 'core.longpaths=true', 'worktree', 'add', '--detach', '--force', target_, commit]),
-    ]);
-    const failed = settled.find(result => result.status === 'rejected');
-    if (failed) throw failed.reason;
-    // A revision without the workspace's subdirectory has no place to run in.
-    if (prefix && !fs.statSync(path.join(target_, prefix), { throwIfNoEntry: false })?.isDirectory()) {
-      throw new Error('the reviewed revision has no such subdirectory');
-    }
-  } catch (err) {
-    await dispose();
-    if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) throw err;
-    return { skipped: `the snapshot could not be prepared: ${(err as Error).message.slice(0, 200)}` };
+  // An earlier review's tree and ref at this place are replaced, also those of a server that ended.
+  await removeWorkTree(git, target);
+  const hooks = path.join(snapshotRoot(), 'no-hooks');
+  fs.mkdirSync(hooks, { recursive: true });
+  await git(['update-ref', ref, commit]);
+  await git(['-c', `core.hooksPath=${hooks}`, '-c', 'core.longpaths=true', 'worktree', 'add', '--detach', '--force', target, commit]);
+  // A revision without the workspace's subdirectory has no place to run in.
+  if (prefix && !fs.statSync(path.join(target, prefix), { throwIfNoEntry: false })?.isDirectory()) {
+    throw new Error('the reviewed revision has no such subdirectory');
   }
-  return { path: target_, cwd: prefix ? path.join(target_, prefix) : target_, commit, dispose };
+  return { path: target, cwd: prefix ? path.join(target, prefix) : target, commit };
+}
+
+/** Whether any attribute source of the reviewed state names a filter. */
+async function namesFilter(
+  git: (args: string[]) => Promise<string>,
+  type: GitScopeInfo['type'],
+  revision: string | null,
+  workspace: string,
+  infoAttributes: string,
+  globalAttributes: string,
+): Promise<boolean> {
+  const pathspec = ['--', ':(top,glob)**/.gitattributes'];
+  // The attribute files the snapshot will contain: the working tree's (tracked or not), the index's, or the revision's.
+  const files =
+    type === 'uncommitted'
+      ? await git(['grep', '--untracked', '-l', '-I', '-e', 'filter=', ...pathspec]).catch(() => '')
+      : type === 'staged'
+        ? await git(['grep', '--cached', '-l', '-I', '-e', 'filter=', ...pathspec]).catch(() => '')
+        : await git(['grep', '-l', '-I', '-e', 'filter=', revision ?? 'HEAD', ...pathspec]).catch(() => '');
+  if (files.trim()) return true;
+  const defaultGlobal = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'git', 'attributes');
+  for (const file of [path.resolve(workspace, infoAttributes.trim()), globalAttributes || defaultGlobal]) {
+    if (file && /(^|\s)filter=/m.test(readText(file))) return true;
+  }
+  return false;
+}
+
+function readText(file: string): string {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return '';
+  }
 }
 
 /** The reason to skip a snapshot whose untracked files exceed the review bounds, if any. */
@@ -181,16 +247,9 @@ function untrackedOverBounds(listing: string, workspace: string): string | null 
   return null;
 }
 
-/** Paths checked per `git check-attr` call. */
-const ATTR_BATCH = 200;
-
-/** Whether any of the paths has a filter attribute in the given tree. */
-async function filtered(git: (args: string[]) => Promise<string>, commit: string, paths: readonly string[]): Promise<boolean> {
-  for (let i = 0; i < paths.length; i += ATTR_BATCH) {
-    const out = await git(['check-attr', '--source', commit, 'filter', '--', ...paths.slice(i, i + ATTR_BATCH)]);
-    if (out.split(/\r?\n/).some(line => /: filter: (?!unspecified$|unset$)/.test(line))) return true;
-  }
-  return false;
+/** Removes the snapshot's ref and work tree; nothing there is fine, and nothing here throws. */
+async function cleanUp(git: (args: string[]) => Promise<string>, target: string, ref: string): Promise<void> {
+  await Promise.all([git(['update-ref', '-d', ref]).catch(() => undefined), removeWorkTree(git, target).catch(() => undefined)]);
 }
 
 /** Removes a snapshot work tree and its registration; a missing one is fine. */
@@ -201,79 +260,5 @@ async function removeWorkTree(git: (args: string[]) => Promise<string>, target: 
   if (fs.existsSync(target)) {
     fs.rmSync(target, { recursive: true, force: true, maxRetries: 3 });
     await git(['worktree', 'prune']);
-  }
-}
-
-/** Whether a materialization was skipped. */
-export function isSnapshotSkipped(value: ReviewSnapshot | SnapshotSkipped): value is SnapshotSkipped {
-  return 'skipped' in value;
-}
-
-/** How long a claim without a readable owner counts as being written, not as abandoned. */
-const CLAIM_SETTLE_MS = 60_000;
-
-/**
- * Claims a snapshot directory for this process; a claim of a process that ended is taken over.
- * The owner is written to a private file first and linked into place, so a claim is never seen
- * without its owner; a claim that still has none is left alone for a minute.
- * @returns Releases the claim, or null while another live claim holds it.
- */
-export function claimSnapshot(target: string): (() => void) | null {
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  const lock = `${target}.lock`;
-  const own = `${lock}.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
-  fs.writeFileSync(own, String(process.pid));
-  try {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        fs.linkSync(own, lock);
-        return () => fs.rmSync(lock, { force: true });
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') return null;
-        let owner: number;
-        let age: number;
-        try {
-          owner = Number(fs.readFileSync(lock, 'utf8'));
-          age = Date.now() - fs.statSync(lock).mtimeMs;
-        } catch {
-          // Released meanwhile: try again.
-          continue;
-        }
-        const known = Number.isSafeInteger(owner) && owner > 0;
-        if (known ? isAlive(owner) : age < CLAIM_SETTLE_MS) return null;
-        // Only the process whose rename succeeds removes the stale claim, and only that claim:
-        // it checks the owner again on its private copy, which no other process can replace.
-        const stale = `${own}.stale`;
-        try {
-          fs.renameSync(lock, stale);
-        } catch {
-          continue;
-        }
-        const moved = Number(fs.readFileSync(stale, 'utf8'));
-        if (moved !== owner) {
-          // Another process replaced the claim meanwhile: put it back and leave it alone.
-          try {
-            fs.linkSync(stale, lock);
-          } catch {
-            // A third claim took the place; this one is not ours to keep.
-          }
-          fs.rmSync(stale, { force: true });
-          return null;
-        }
-        fs.rmSync(stale, { force: true });
-      }
-    }
-    return null;
-  } finally {
-    fs.rmSync(own, { force: true });
-  }
-}
-
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
