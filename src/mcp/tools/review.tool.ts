@@ -12,6 +12,8 @@ import { ToolError } from '../../contracts/error.js';
 import { approveChecks, parseCheckCommand, runCheck, type CheckApprovalPrompt } from '../../execution/checks.js';
 import type { CheckResult } from '../../contracts/execution.js';
 import { loadConfig } from '../../config.js';
+import { withReviewSnapshot, type ReviewSnapshot } from '../../review/snapshot.js';
+import { redactDiagnostic } from '../../security/redaction.js';
 import { MAX_REVIEW_PARTS, splitReviewDiff, type ReviewPart } from '../../review/parts.js';
 import { getSession } from '../../sessions/session.js';
 import type { TaskExecutionResult } from '../../contracts/execution.js';
@@ -227,33 +229,41 @@ export async function executeReview(
     }
   };
 
-  try {
+  // The reviewer runs in a copy of exactly the reviewed state (#213); without one, in the workspace.
+  const reviewIn = async (workTree: ReviewSnapshot | undefined, skipped?: string): Promise<TaskExecutionResult> => {
+    const workTreeNote = skipped ? `The reviewer ran in the workspace: ${redactDiagnostic(skipped, 256)}.` : undefined;
+    const withNote = (outcome: TaskExecutionResult): TaskExecutionResult =>
+      workTreeNote ? { ...outcome, warnings: [...(outcome.warnings ?? []), workTreeNote] } : outcome;
+    const executionCwd = workTree ? { executionCwd: workTree.cwd } : {};
     if (parts.length > 1) {
-      return await reviewInParts({
-        parts,
-        checkLines,
-        promptFor,
-        snapshot,
-        label: scopeInfo.label,
-        instructions,
-        args,
-        workspaceCwd,
-        abortSignal,
-        onProgress,
-        context,
-        turnOptions: {
-          tracker,
-          askConsent: options.askConsent,
-          // Before every backend turn, each part and the synthesis included.
-          onTurnStart: options.onTurnStart,
-          beforeExtraTurn: options.beforeExtraTurn,
-          onTiming: options.onTiming,
-          clock: options.clock,
-          budget,
-          context: reviewReadContext,
-        },
-        verifyReviewSnapshot,
-      });
+      return withNote(
+        await reviewInParts({
+          parts,
+          checkLines,
+          promptFor,
+          snapshot,
+          label: scopeInfo.label,
+          instructions,
+          args,
+          workspaceCwd,
+          abortSignal,
+          onProgress,
+          context,
+          turnOptions: {
+            tracker,
+            askConsent: options.askConsent,
+            // Before every backend turn, each part and the synthesis included.
+            onTurnStart: options.onTurnStart,
+            beforeExtraTurn: options.beforeExtraTurn,
+            onTiming: options.onTiming,
+            clock: options.clock,
+            budget,
+            context: reviewReadContext,
+            ...executionCwd,
+          },
+          verifyReviewSnapshot,
+        }),
+      );
     }
     const outcome = await runTask('review', {
       prompt,
@@ -275,9 +285,17 @@ export async function executeReview(
         budget: budget,
         context: reviewReadContext,
         verifyReviewSnapshot,
+        ...executionCwd,
       },
     });
-    return outcome;
+    return withNote(outcome);
+  };
+  try {
+    return await withReviewSnapshot(scopeInfo, workspaceCwd, reviewReadContext, reviewIn);
+  } catch (err) {
+    // A snapshot cancelled or out of time before the turn reports the trace, as an early end does.
+    if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) call.close();
+    throw err;
   } finally {
     call.dispose();
   }
@@ -299,7 +317,7 @@ interface PartsReview {
   context: ReviewGateContext;
   turnOptions: Pick<
     RoleTaskOptions,
-    'onTurnStart' | 'beforeExtraTurn' | 'tracker' | 'askConsent' | 'onTiming' | 'clock' | 'budget' | 'context'
+    'onTurnStart' | 'beforeExtraTurn' | 'tracker' | 'askConsent' | 'onTiming' | 'clock' | 'budget' | 'context' | 'executionCwd'
   >;
   verifyReviewSnapshot: () => Promise<string | undefined>;
 }

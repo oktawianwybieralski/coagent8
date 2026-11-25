@@ -374,6 +374,22 @@ Review collects bounded Git input and supplies a snapshot identifier incorporati
 SHA-256 of diff/workspace input/omissions. The requested envelope ends with `CHECKS`;
 the server owns the terminator (owner decision 2026-10-18, `ENVELOPE-001`).
 
+**Snapshot work tree (#213).** A reviewer runs in a separate work tree of exactly the reviewed
+state (`src/review/snapshot.ts`): uncommitted changes become a commit of a temporary copy of the
+index plus untracked files within the review bounds, staged changes a commit of the index, and a
+commit, branch or range scope its target revision. One file lock, one ref
+(`refs/coagent8/review/<key>`) and one directory under the temporary directory (`c8wt`) belong
+to each workspace; the lock holds them for the whole review, so a second review of the workspace
+runs in the workspace, and the next review replaces what a crashed server left. The checkout is
+detached and runs no hooks; a workspace in a subdirectory runs in the same subdirectory of the
+snapshot, so a follow-up resumes in the same place. A repository whose attributes name any filter
+(Git LFS and the like, in any attribute file the snapshot has, `info/attributes`, or the system
+or global file Git reports), submodules, untracked files over the bounds, a revision without the workspace's subdirectory or a failed
+step keep the review in the workspace with a warning; no filter runs. Line endings follow the
+repository's attributes, as in any checkout. The snapshot is removed after the turn, also after a
+cancellation; server checks still run in the workspace. It is a working directory, not a boundary:
+the reviewer is told to leave the workspace alone, and nothing enforces that until #215.
+
 **Large changes (`REVIEW-002`, 2026-11-03).** The diff stays in the prompt; reading it by reference is planned (#214). A diff above
 `REVIEW_PART_CHARS` (200,000 characters) is split into parts at file, hunk and line boundaries,
 each piece under its file header, every line in exactly one part. Each part is reviewed in a

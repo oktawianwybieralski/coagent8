@@ -154,6 +154,8 @@ export async function runGit(
   timeoutMs = 15000,
   onTruncated?: () => void,
   explicitContext?: BackendReadContext,
+  /** Variables added to the environment, such as a temporary index. */
+  env?: NodeJS.ProcessEnv,
 ): Promise<string> {
   const { abortSignal, context } = normalizeSignalAndContext(abortSignalOrContext, explicitContext);
   const contextSignal =
@@ -171,6 +173,7 @@ export async function runGit(
 
   const result = await runCommand('git', args, {
     cwd,
+    ...(env ? { env: { ...process.env, ...env } } : {}),
     abortSignal: effectiveSignal,
     timeoutMs: effectiveTimeout,
     maxBufferBytes: 4 * 1024 * 1024,
