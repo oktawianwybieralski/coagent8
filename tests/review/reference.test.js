@@ -1,12 +1,13 @@
 'use strict';
 
 /**
- * #214: a large diff is read by the reviewer in the snapshot, not inlined.
+ * #214: a large diff is read by the reviewer from a file in the snapshot, not inlined.
  *
  * Verifies:
- * - the command that shows each scope's diff in its snapshot;
- * - the gate blocks a reviewer that did not name every file it was to read;
- * - a large change sends a reference and the file list instead of the diff, and READY needs every file named;
+ * - the gate blocks a reviewer that did not name every file it was to read, by whole names only,
+ *   and leaves such a review unjudged so an unchanged repeat may run again;
+ * - a large change sends a file reference and the file list, the file holds exactly the collected
+ *   diff, and READY needs every file named;
  * - a small change stays inlined.
  */
 
@@ -20,24 +21,13 @@ const { execFileSync } = require('node:child_process');
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-reference-'));
 process.env.coagent8_DIR = path.join(tempDir, 'data');
 
-const { diffCommand, diffReference, INLINE_DIFF_CHARS, executeReview } = require('../../src/mcp/tools/review.tool.ts');
-const { evaluateStateEnvelopeGate } = require('../../src/review/gate.ts');
+const { INLINE_DIFF_CHARS, executeReview } = require('../../src/mcp/tools/review.tool.ts');
+const { evaluateStateEnvelopeGate, namesFile } = require('../../src/review/gate.ts');
+const { collectGitScope } = require('../../src/workspace/git.ts');
 const { adapterRegistry } = require('../../src/backends/registry.ts');
 const { saveConfig } = require('../../src/config.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
-
-test('the diff command per scope, in the snapshot where HEAD is the reviewed commit', () => {
-  assert.equal(diffCommand({ type: 'uncommitted' }, ['a.ts'], false), 'git show --format= HEAD --');
-  assert.equal(diffCommand({ type: 'staged' }, ['a.ts', 'b c.ts'], true), 'git show --format= HEAD -- "a.ts" "b c.ts"');
-  assert.equal(diffCommand({ type: 'commit', revision: 'abc' }, [], false), 'git show --format= HEAD --');
-  assert.equal(diffCommand({ type: 'range', revision: 'a...b' }, ['x'], true), 'git diff a...b -- "x"');
-  assert.equal(diffCommand({ type: 'branch', revision: 'main' }, [], false), 'git diff main...HEAD');
-  const reference = diffReference({ type: 'uncommitted' }, ['a.ts', 'b.ts'], false);
-  assert.match(reference, /not inlined/);
-  assert.match(reference, /^- a\.ts$/m);
-  assert.match(reference, /^- b\.ts$/m);
-});
 
 const envelope = (snapshot, reviewed) =>
   [
@@ -49,11 +39,20 @@ const envelope = (snapshot, reviewed) =>
     'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
   ].join('\n');
 
-test('the gate blocks a reviewer that did not name every file it was to read', () => {
+test('a file is named only as a whole path', () => {
+  assert.equal(namesFile('Reviewed: src/a.tsx.', 'src/a.ts'), false);
+  assert.equal(namesFile('Reviewed: src/a.ts and src/a.tsx.', 'src/a.ts'), true);
+  assert.equal(namesFile('Reviewed: src/a.ts.', 'src/a.ts'), true);
+  assert.equal(namesFile('[P2] src/a.ts:12', 'src/a.ts'), true);
+  assert.equal(namesFile('Reviewed: lib/src/a.ts', 'src/a.ts'), false);
+});
+
+test('the gate blocks a reviewer that did not name every file, and leaves the review unjudged', () => {
   const context = { expectedSnapshot: 's', inputComplete: true, requiredChecks: [], filesToName: ['src/a.ts', 'src/b.ts'] };
-  const missing = evaluateStateEnvelopeGate(envelope('s', 'src/a.ts'), false, true, context, { completed: true });
+  const missing = evaluateStateEnvelopeGate(envelope('s', 'src/a.ts and src/b.tsx'), false, true, context, { completed: true });
   assert.equal(missing.verdict, 'BLOCKED');
   assert.match(missing.reason, /did not name 1 of the changed files.*src\/b\.ts/);
+  assert.equal(missing.judged, false, 'an unchanged repeat may run again');
   const named = evaluateStateEnvelopeGate(envelope('s', 'src/a.ts and src/b.ts'), false, true, context, { completed: true });
   assert.equal(named.verdict, 'READY');
 });
@@ -72,14 +71,15 @@ function repo() {
 }
 
 function fixture(answer) {
-  const prompts = [];
+  const seen = [];
   const original = adapterRegistry.agy;
   adapterRegistry.agy = {
     id: 'agy',
     name: 'fixture',
     probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (prompt, options) => {
-      prompts.push(prompt);
+      const file = /from the file (\S+) in your working directory/.exec(prompt)?.[1];
+      seen.push({ prompt, diff: file ? fs.readFileSync(path.join(options.cwd, file), 'utf8') : null });
       const snapshot = /SNAPSHOT: (\S+)/.exec(prompt)[1];
       const text = answer(snapshot);
       options.onEvent({ type: 'assistant_message', messageId: 'm', text });
@@ -94,10 +94,10 @@ function fixture(answer) {
       };
     },
   };
-  return { prompts, restore: () => (adapterRegistry.agy = original) };
+  return { seen, restore: () => (adapterRegistry.agy = original) };
 }
 
-test('a large change is read by reference, and READY needs every changed file named', async () => {
+test('a large change is read from a file holding exactly the collected diff, and READY needs every file named', async () => {
   await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
   const big = 'x'.repeat(80) + '\n';
   for (const [names, verdict] of [
@@ -107,14 +107,15 @@ test('a large change is read by reference, and READY needs every changed file na
     const dir = repo();
     fs.writeFileSync(path.join(dir, 'a.txt'), big.repeat(Math.ceil(INLINE_DIFF_CHARS / big.length) + 10));
     fs.writeFileSync(path.join(dir, 'b.txt'), 'two\n');
+    const collected = (await collectGitScope('uncommitted', dir)).diff;
     const f = fixture(snapshot => envelope(snapshot, names));
     try {
       const outcome = await executeReview({ backend: 'agy' }, dir);
-      const prompt = f.prompts[0];
+      const [{ prompt, diff }] = f.seen;
       assert.match(prompt, /The diff is not inlined/);
-      assert.match(prompt, /git show --format= HEAD --/);
       assert.match(prompt, /^- a\.txt$/m);
       assert.ok(!prompt.includes(big.repeat(3)), 'the diff text is not in the prompt');
+      assert.equal(diff, collected, 'the file holds exactly the collected diff');
       assert.equal(outcome.review.verdict, verdict, names);
     } finally {
       f.restore();
@@ -129,8 +130,8 @@ test('a small change stays inlined', async () => {
   const f = fixture(snapshot => envelope(snapshot, 'a.txt'));
   try {
     await executeReview({ backend: 'agy' }, dir);
-    assert.ok(!/The diff is not inlined/.test(f.prompts[0]));
-    assert.match(f.prompts[0], /\+small change/);
+    assert.ok(!/The diff is not inlined/.test(f.seen[0].prompt));
+    assert.match(f.seen[0].prompt, /\+small change/);
   } finally {
     f.restore();
   }

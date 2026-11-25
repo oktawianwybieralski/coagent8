@@ -391,10 +391,11 @@ cancellation; server checks still run in the workspace. It is a working director
 the reviewer is told to leave the workspace alone, and nothing enforces that until #215.
 
 **Large changes (`REVIEW-002`, 2026-11-03).** A diff up to 40,000 characters stays in the prompt. A larger one, when the review has a snapshot
-(#213), is read by the reviewer itself (#214): the prompt gives the command that shows it in the
-snapshot and the changed files, and the gate keeps the review from READY unless the answer names
-every one of them (`filesToName`), since nothing else shows that it read them. Without a snapshot the
-diff stays inlined. A diff above
+(#213), is read by the reviewer itself (#214): the server writes exactly the collected diff (or
+each part's text) to `.coagent8-review/` in the reviewer's working directory, and the prompt names
+that file and the changed files. The gate keeps the review from READY, and unjudged so an unchanged
+repeat may run, unless the answer names every file as a whole path (`filesToName`), since nothing
+else shows that it read them. Without a snapshot the diff stays inlined. A diff above
 `REVIEW_PART_CHARS` (200,000 characters) is split into parts at file, hunk and line boundaries,
 each piece under its file header, every line in exactly one part. Each part is reviewed in a
 session of its own, bound to `<snapshot>/part-<n>-of-<total>`; then one synthesis turn, which

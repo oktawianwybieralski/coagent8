@@ -3,7 +3,9 @@ import { EXECUTION_PARAMETERS } from '../schema.js';
 import type { TaskOptions } from '../../execution/controller.js';
 import { openCallScope, runTask, type CallScopeOptions, type RoleTaskOptions } from '../../execution/task.js';
 import { collectReviewInput } from '../../review/index.js';
-import { assertReviewWorkspace, type GitScopeInfo } from '../../workspace/git.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { assertReviewWorkspace } from '../../workspace/git.js';
 import { CANONICAL_TOOL_NAMES, HOST_TOOL_GUIDANCE } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
 import type { BackendReadContext } from '../../contracts/execution.js';
@@ -241,7 +243,10 @@ export async function executeReview(
       return withNote(
         await reviewInParts({
           parts,
-          textFor: part => (byReference ? diffReference(scopeInfo, filePaths(part.paths), true) : part.text),
+          textFor: (part, index) =>
+            byReference && workTree
+              ? diffReference(writeReviewDiff(workTree.cwd, `part-${index + 1}.diff`, part.text), part.text, filePaths(part.paths))
+              : part.text,
           byReference,
           checkLines,
           promptFor,
@@ -270,7 +275,14 @@ export async function executeReview(
       );
     }
     const outcome = await runTask('review', {
-      prompt: byReference ? promptFor(diffReference(scopeInfo, scopeInfo.changedPaths, false), snapshot, []) : prompt,
+      prompt:
+        byReference && workTree
+          ? promptFor(
+              diffReference(writeReviewDiff(workTree.cwd, 'review.diff', scopeInfo.diff), scopeInfo.diff, scopeInfo.changedPaths),
+              snapshot,
+              [],
+            )
+          : prompt,
       publicInput: 'Review ' + scopeInfo.label + '\n' + instructions,
       args: { ...args, backend: args.backend },
       cwd: workspaceCwd,
@@ -316,25 +328,28 @@ export function filePaths(paths: readonly string[]): string[] {
 /** Diffs up to this size are inlined; larger ones are read by the reviewer in the snapshot (#214). */
 export const INLINE_DIFF_CHARS = 40_000;
 
+/** Where the diff files of a review by reference go, inside the reviewer's working directory. */
+export const REVIEW_DIFF_DIR = '.coagent8-review';
+
 /**
- * The command that shows a scope's diff in its snapshot work tree, where HEAD is the snapshot's commit.
- * @param withPaths - Limit it to the files, as for one part of a large change.
+ * Writes diff text where the reviewer reads it: exactly what the server collected, so scope,
+ * exclusions, staged and unstaged changes, renames and part boundaries are as reviewed.
+ * @returns The file's path relative to the reviewer's working directory.
  */
-export function diffCommand(info: Pick<GitScopeInfo, 'type' | 'revision'>, paths: readonly string[], withPaths: boolean): string {
-  const quoted = withPaths && paths.length ? ` -- ${paths.map(file => `"${file.replace(/"/g, '\\"')}"`).join(' ')}` : '';
-  if (info.type === 'range') return `git diff ${info.revision}${quoted}`;
-  if (info.type === 'branch') return `git diff ${info.revision}...HEAD${quoted}`;
-  // Uncommitted, staged and commit scopes: the snapshot's commit against its parent.
-  return `git show --format= HEAD${quoted || ' --'}`;
+export function writeReviewDiff(cwd: string, name: string, text: string): string {
+  const dir = path.join(cwd, REVIEW_DIFF_DIR);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, name), text);
+  return `${REVIEW_DIFF_DIR}/${name}`;
 }
 
-/** What a prompt shows instead of an inlined diff: how to read it and which files it touches. */
-export function diffReference(info: Pick<GitScopeInfo, 'type' | 'revision'>, paths: readonly string[], withPaths: boolean): string {
+/** What a prompt shows instead of an inlined diff: where to read it and which files it touches. */
+export function diffReference(file: string, text: string, paths: readonly string[]): string {
+  const lines = text.split('\n').length;
   return [
-    '[The diff is not inlined. Read it yourself by running this command in your working directory, a copy of exactly the reviewed state:]',
-    diffCommand(info, paths, withPaths),
+    `[The diff is not inlined. Read all of it from the file ${file} in your working directory (${lines} lines; read it in pieces if it is long). It is exactly the change under review; the working directory is a copy of the reviewed state. Do not edit or delete the file.]`,
     `[Changed files, ${paths.length}. Name every one of them in your answer, in Reviewed or a finding: a file you do not name counts as not reviewed.]`,
-    ...paths.map(file => `- ${file}`),
+    ...paths.map(entry => `- ${entry}`),
   ].join('\n');
 }
 
@@ -342,7 +357,7 @@ export function diffReference(info: Pick<GitScopeInfo, 'type' | 'revision'>, pat
 interface PartsReview {
   parts: ReviewPart[];
   /** What a part's prompt shows of its diff: the text, or how to read it. */
-  textFor: (part: ReviewPart) => string;
+  textFor: (part: ReviewPart, index: number) => string;
   /** Whether each part reads its diff by reference, so it must name its files. */
   byReference: boolean;
   /** What the server's checks showed, for the synthesis as for each part. */
@@ -412,7 +427,7 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
   }
   for (const [index, part] of parts.entries()) {
     const partSnapshot = `${snapshot}/part-${index + 1}-of-${parts.length}`;
-    const prompt = review.promptFor(review.textFor(part), partSnapshot, [
+    const prompt = review.promptFor(review.textFor(part, index), partSnapshot, [
       `This change is too large for one turn, so it is reviewed in ${parts.length} parts; you have part ${index + 1}. COVERAGE refers to this part. Every part is listed here; read files of other parts only to check a call site:`,
       manifest,
     ]);

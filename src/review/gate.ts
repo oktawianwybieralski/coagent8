@@ -96,6 +96,12 @@ export interface ReviewGateContext {
   workspaceRoot?: string;
 }
 
+/** Whether `text` names `file` as a whole path, bounded by start, end, whitespace or punctuation. */
+export function namesFile(text: string, file: string): boolean {
+  const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[\\s\`'"(,;])${escaped}($|[\\s\`'"),;:]|\\.(\\s|$))`, 'm').test(text);
+}
+
 /**
  * Gates reported review text on unique nonempty envelope fields and coverage/verdict.
  * @param output - Model-written review text.
@@ -274,9 +280,12 @@ export function evaluateStateEnvelopeGate(
     const notRunChecks = checkValues ? (context?.requiredChecks ?? []).filter(check => checkValues[check] === 'NOT_RUN') : [];
     const wrongSnapshot = Boolean(context?.expectedSnapshot && snapshotVal !== context.expectedSnapshot);
     const incompleteInput = Boolean(context && context.inputComplete === false);
-    const judged = Boolean(isCompleteEnvelope && checks && !truncated && !lengthLimited && !wrongSnapshot && !deniedRequiredScope);
+    // A file counts as named only as a whole path, not inside a longer one (`a.ts` is not in `a.tsx`).
+    const unnamedFiles = (context?.filesToName ?? []).filter(file => !namesFile(output, file));
+    const judged = Boolean(
+      isCompleteEnvelope && checks && !truncated && !lengthLimited && !wrongSnapshot && !deniedRequiredScope && unnamedFiles.length === 0,
+    );
     const appendTerminator = Boolean(isCompleteEnvelope && serverTerminated);
-    const unnamedFiles = (context?.filesToName ?? []).filter(file => !output.includes(file));
     const shouldBlock =
       unnamedFiles.length > 0 ||
       !isCompleteEnvelope ||
