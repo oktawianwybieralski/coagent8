@@ -88,26 +88,13 @@ export interface ReviewGateContext {
   invalidatedReason?: string;
   requiredFiles?: readonly string[];
   /**
-   * Files a reviewer read by reference instead of an inlined diff (#214): each must appear in its
-   * answer, or the review is not READY, since nothing else shows that it read them.
+   * The random mark that ends the diff file a reviewer read by reference instead of an inlined
+   * diff (#214): only a reviewer that read the file can quote it, so without it the review is not
+   * READY, and it stays unjudged so an unchanged repeat may run.
    */
-  filesToName?: readonly string[];
+  readToken?: string;
   observedDenials?: readonly { path?: string; operation?: string; reason?: string }[];
   workspaceRoot?: string;
-}
-
-/** Envelope fields, which name no file however their values read. */
-const ENVELOPE_FIELD = /^(?:REVIEW|SNAPSHOT|COVERAGE|VERDICT|CHECKS|END_REVIEW):/i;
-
-/**
- * Whether `text` names `file` as a whole path outside the envelope fields: bounded by the line's
- * start or end, whitespace, quotes, brackets or Markdown emphasis, and on the right also by a colon
- * (a line number) or by a period, comma or semicolon that ends the sentence or the list item.
- */
-export function namesFile(text: string, file: string): boolean {
-  const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`(^|[\\s\`'"([*])${escaped}($|[\\s\`'")\\]*:]|[.,;](\\s|$))`);
-  return text.split(/\r?\n/).some(line => !ENVELOPE_FIELD.test(line.trim()) && pattern.test(line));
 }
 
 /**
@@ -288,14 +275,13 @@ export function evaluateStateEnvelopeGate(
     const notRunChecks = checkValues ? (context?.requiredChecks ?? []).filter(check => checkValues[check] === 'NOT_RUN') : [];
     const wrongSnapshot = Boolean(context?.expectedSnapshot && snapshotVal !== context.expectedSnapshot);
     const incompleteInput = Boolean(context && context.inputComplete === false);
-    // A file counts as named only as a whole path, not inside a longer one (`a.ts` is not in `a.tsx`).
-    const unnamedFiles = (context?.filesToName ?? []).filter(file => !namesFile(output, file));
+    const unread = Boolean(context?.readToken && !output.includes(context.readToken));
     const judged = Boolean(
-      isCompleteEnvelope && checks && !truncated && !lengthLimited && !wrongSnapshot && !deniedRequiredScope && unnamedFiles.length === 0,
+      isCompleteEnvelope && checks && !truncated && !lengthLimited && !wrongSnapshot && !deniedRequiredScope && !unread,
     );
     const appendTerminator = Boolean(isCompleteEnvelope && serverTerminated);
     const shouldBlock =
-      unnamedFiles.length > 0 ||
+      unread ||
       !isCompleteEnvelope ||
       !checks ||
       failedChecks ||
@@ -327,10 +313,7 @@ export function evaluateStateEnvelopeGate(
           reasons.push(`Filesystem access to required review scope was denied: ${deniedRequiredFiles.join(', ')}`);
       }
       if (coverageVal === 'PARTIAL') reasons.push('Review coverage is partial');
-      if (unnamedFiles.length > 0)
-        reasons.push(
-          `The reviewer did not name ${unnamedFiles.length} of the changed files it was to read (${unnamedFiles.slice(0, 5).join(', ')}${unnamedFiles.length > 5 ? ', ...' : ''})`,
-        );
+      if (unread) reasons.push('The reviewer did not quote the end mark of the diff file it was to read');
       if (truncated) reasons.push('Output was truncated');
       if (lengthLimited) reasons.push('The model stopped at its output length limit');
       // Without an answer or an envelope, its field checks would only restate that absence.

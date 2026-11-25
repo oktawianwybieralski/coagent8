@@ -3,6 +3,7 @@ import { EXECUTION_PARAMETERS } from '../schema.js';
 import type { TaskOptions } from '../../execution/controller.js';
 import { openCallScope, runTask, type CallScopeOptions, type RoleTaskOptions } from '../../execution/task.js';
 import { collectReviewInput } from '../../review/index.js';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { assertReviewWorkspace } from '../../workspace/git.js';
@@ -242,6 +243,13 @@ export async function executeReview(
     // A fresh directory per review, created only when needed and removed after it.
     let referenceDir: string | undefined;
     const diffDir = () => (referenceDir ??= fs.mkdtempSync(path.join(snapshotRoot(), 'diff-')));
+    // The end mark of each diff file, by part index (-1 for a single turn).
+    const tokens = new Map<number, string>();
+    const referenceFor = (name: string, text: string, paths: readonly string[], index: number) => {
+      const written = writeReviewDiff(diffDir(), name, text);
+      tokens.set(index, written.token);
+      return diffReference(written.file, text, paths);
+    };
     try {
       if (parts.length > 1) {
         return withNote(
@@ -249,9 +257,14 @@ export async function executeReview(
             parts,
             textFor: (part, index) =>
               byReference && workTree
-                ? diffReference(writeReviewDiff(diffDir(), `part-${index + 1}.diff`, part.text), part.text, part.files)
+                ? referenceFor(
+                    `part-${index + 1}.diff`,
+                    part.text,
+                    part.paths.filter(entry => !entry.startsWith('(')),
+                    index,
+                  )
                 : part.text,
-            byReference,
+            readToken: index => tokens.get(index),
             checkLines,
             promptFor,
             snapshot,
@@ -281,11 +294,7 @@ export async function executeReview(
       const outcome = await runTask('review', {
         prompt:
           byReference && workTree
-            ? promptFor(
-                diffReference(writeReviewDiff(diffDir(), 'review.diff', scopeInfo.diff), scopeInfo.diff, scopeInfo.changedPaths),
-                snapshot,
-                [],
-              )
+            ? promptFor(referenceFor('review.diff', scopeInfo.diff, scopeInfo.changedPaths, -1), snapshot, [])
             : prompt,
         publicInput: 'Review ' + scopeInfo.label + '\n' + instructions,
         args: { ...args, backend: args.backend },
@@ -297,7 +306,7 @@ export async function executeReview(
           askConsent: options.askConsent,
           onTurnStart: options.onTurnStart,
           beforeExtraTurn: options.beforeExtraTurn,
-          reviewContext: byReference ? { ...context, filesToName: scopeInfo.changedPaths } : context,
+          reviewContext: byReference ? { ...context, readToken: tokens.get(-1) } : context,
           // A repeat with checks runs again: a verdict reached with other check results must not return.
           ...(serverChecks?.length ? {} : { reviewIdentity: { snapshot, scope: scopeInfo.label } }),
           onTiming: options.onTiming,
@@ -329,23 +338,26 @@ export const INLINE_DIFF_CHARS = 40_000;
 
 /**
  * Writes diff text where the reviewer reads it: exactly what the server collected, so scope,
- * exclusions, staged and unstaged changes, renames and part boundaries are as reviewed. The file is
- * new, in a directory the server just created outside the reviewed tree, so no path from the
- * repository decides where it goes.
- * @returns The file's absolute path.
+ * exclusions, staged and unstaged changes, renames and part boundaries are as reviewed, followed by
+ * a random end mark that only a reviewer who read the file can quote. The file is new, in a
+ * directory the server just created outside the reviewed tree, so no path from the repository
+ * decides where it goes.
+ * @returns The file's absolute path and its end mark.
  */
-export function writeReviewDiff(dir: string, name: string, text: string): string {
+export function writeReviewDiff(dir: string, name: string, text: string): { file: string; token: string } {
   const file = path.join(dir, name);
-  fs.writeFileSync(file, text, { flag: 'wx' });
-  return file;
+  const token = crypto.randomBytes(8).toString('hex');
+  fs.writeFileSync(file, `${text}${text.endsWith('\n') ? '' : '\n'}[END OF DIFF ${token}]\n`, { flag: 'wx' });
+  return { file, token };
 }
 
-/** What a prompt shows instead of an inlined diff: where to read it and which files it touches. */
+/** What a prompt shows instead of an inlined diff: where to read it, how to show it was read, and the files it touches. */
 export function diffReference(file: string, text: string, paths: readonly string[]): string {
-  const lines = text.split('\n').length;
+  const lines = text.split('\n').length + 1;
   return [
     `[The diff is not inlined. Read all of it from the file ${file} (${lines} lines; read it in pieces if it is long, with a shell command if your file tools cannot reach it). It is exactly the change under review; your working directory is a copy of the reviewed state.]`,
-    `[Changed files, ${paths.length}. Name every one of them in your answer, in Reviewed or a finding: a file you do not name counts as not reviewed.]`,
+    '[Its last line is [END OF DIFF <mark>]. Quote that mark in your Reviewed line: without it your review counts as not read.]',
+    `[Changed files, ${paths.length}:]`,
     ...paths.map(entry => `- ${entry}`),
   ].join('\n');
 }
@@ -355,8 +367,8 @@ interface PartsReview {
   parts: ReviewPart[];
   /** What a part's prompt shows of its diff: the text, or how to read it. */
   textFor: (part: ReviewPart, index: number) => string;
-  /** Whether each part reads its diff by reference, so it must name its files. */
-  byReference: boolean;
+  /** The end mark of a part's diff file when it reads its diff by reference. */
+  readToken: (index: number) => string | undefined;
   /** What the server's checks showed, for the synthesis as for each part. */
   checkLines: readonly string[];
   promptFor: (diffText: string, snapshotText: string, scopeNote: readonly string[]) => string;
@@ -447,7 +459,7 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
           ...review.context,
           expectedSnapshot: partSnapshot,
           requiredFiles: part.paths,
-          ...(review.byReference ? { filesToName: part.files } : {}),
+          ...(review.readToken(index) ? { readToken: review.readToken(index) } : {}),
         },
       },
     });

@@ -21,17 +21,13 @@ export const MAX_REVIEW_PARTS = 15;
 
 /** One part of a diff. */
 export interface ReviewPart {
-  /** The paths whose lines this part holds, with labels for text of no file. */
+  /** The paths whose lines this part holds. */
   paths: string[];
-  /** The files this part holds, read from Git's file headers (both names of a rename) and the untracked files; no labels. */
-  files: string[];
   text: string;
 }
 
 interface FileDiff {
   path: string;
-  /** The real files: none for a label, both names of a rename. */
-  files: string[];
   /** What starts every piece of the file. */
   header: string;
   /** Git hunks, or one block of plain content (an untracked file, a block without hunks). */
@@ -39,20 +35,19 @@ interface FileDiff {
 }
 
 /** The text of one file, header apart: Git hunks are kept as hunks, anything else as plain content. */
-function toFile(path: string, text: string, git: boolean, files: string[] = []): FileDiff {
+function toFile(path: string, text: string, git: boolean): FileDiff {
   const lines = text.split(/(?<=\n)/);
   const firstHunk = git ? lines.findIndex(line => line.startsWith('@@ ')) : -1;
   const headerEnd = firstHunk < 0 ? Math.min(1, lines.length) : firstHunk;
   const header = lines.slice(0, headerEnd).join('');
   const body = lines.slice(headerEnd);
-  const named = git ? [...new Set([...files, ...headerNames(header)])] : files;
-  if (firstHunk < 0) return { path, files: named, header, hunks: body.length ? [body.join('')] : [] };
+  if (firstHunk < 0) return { path, header, hunks: body.length ? [body.join('')] : [] };
   const hunks: string[] = [];
   for (const line of body) {
     if (line.startsWith('@@ ') || !hunks.length) hunks.push(line);
     else hunks[hunks.length - 1] += line;
   }
-  return { path, files: named, header, hunks };
+  return { path, header, hunks };
 }
 
 /**
@@ -60,21 +55,7 @@ function toFile(path: string, text: string, git: boolean, files: string[] = []):
  */
 function gitPath(line: string): string {
   const quoted = /^diff --git "a\/((?:[^"\\]|\\.)*)"/.exec(line);
-  // Git quotes each side on its own: an unquoted old name may be followed by a quoted new one.
-  return quoted ? unquoteGitPath(quoted[1]!) : (/^diff --git a\/(.+?) "?b\//.exec(line)?.[1] ?? UNREADABLE_PATH);
-}
-
-/** The label of a Git file whose header could not be read; it names no file. */
-const UNREADABLE_PATH = '(diff)';
-
-/** The new name of a renamed or copied file, from its Git header only (never from content). */
-function headerNames(header: string): string[] {
-  const names: string[] = [];
-  for (const line of header.split(/\r?\n/)) {
-    const rename = /^(?:rename|copy) to (.+)$/.exec(line)?.[1];
-    if (rename) names.push(rename.startsWith('"') && rename.endsWith('"') ? unquoteGitPath(rename.slice(1, -1)) : rename);
-  }
-  return names;
+  return quoted ? unquoteGitPath(quoted[1]!) : (/^diff --git a\/(.+?) b\//.exec(line)?.[1] ?? '(diff)');
 }
 
 const C_ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 };
@@ -99,23 +80,20 @@ export function unquoteGitPath(quoted: string): string {
 function filesOf(diff: string, untracked: GitScopeInfo['untracked']): FileDiff[] {
   const files: FileDiff[] = [];
   const gitEnd = untracked ? untracked.section : diff.length;
-  let current: { path: string; text: string; git: boolean } | null = null;
+  let current: { path: string; text: string } | null = null;
   for (const line of diff.slice(0, gitEnd).split(/(?<=\n)/)) {
     if (line.startsWith('diff --git ')) {
-      if (current)
-        files.push(toFile(current.path, current.text, current.git, current.git && current.path !== UNREADABLE_PATH ? [current.path] : []));
-      current = { path: gitPath(line), text: line, git: true };
+      if (current) files.push(toFile(current.path, current.text, true));
+      current = { path: gitPath(line), text: line };
     } else if (current) current.text += line;
-    else current = { path: '(diff preamble)', text: line, git: false };
+    else current = { path: '(diff preamble)', text: line };
   }
-  if (current)
-    files.push(toFile(current.path, current.text, current.git, current.git && current.path !== UNREADABLE_PATH ? [current.path] : []));
+  if (current) files.push(toFile(current.path, current.text, true));
   if (!untracked) return files;
   const starts = [{ path: '(untracked files)', offset: untracked.section }, ...untracked.files];
   for (const [index, start] of starts.entries()) {
     const text = diff.slice(start.offset, starts[index + 1]?.offset ?? diff.length);
-    // The section heading is a label; each untracked file names itself.
-    if (text) files.push(toFile(start.path, text, false, index === 0 ? [] : [start.path]));
+    if (text) files.push(toFile(start.path, text, false));
   }
   return files;
 }
@@ -183,13 +161,12 @@ function piecesOf(file: FileDiff, budget: number): string[] {
  */
 export function splitReviewDiff(diff: string, untracked?: GitScopeInfo['untracked'], budget = REVIEW_PART_CHARS): ReviewPart[] {
   const files = filesOf(diff, untracked);
-  if (diff.length <= budget)
-    return [{ paths: [...new Set(files.map(file => file.path))], files: [...new Set(files.flatMap(file => file.files))], text: diff }];
+  if (diff.length <= budget) return [{ paths: [...new Set(files.map(file => file.path))], text: diff }];
   const parts: ReviewPart[] = [];
-  let current: ReviewPart = { paths: [], files: [], text: '' };
+  let current: ReviewPart = { paths: [], text: '' };
   const flush = () => {
     if (current.text) parts.push(current);
-    current = { paths: [], files: [], text: '' };
+    current = { paths: [], text: '' };
   };
   for (const file of files) {
     // A header too large to repeat on every piece is cut like content: the file still lands somewhere.
@@ -198,7 +175,6 @@ export function splitReviewDiff(diff: string, untracked?: GitScopeInfo['untracke
       if (current.text.length + piece.length > budget) flush();
       current.text += piece;
       if (!current.paths.includes(file.path)) current.paths.push(file.path);
-      for (const name of file.files) if (!current.files.includes(name)) current.files.push(name);
     }
   }
   flush();

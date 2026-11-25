@@ -393,10 +393,10 @@ the reviewer is told to leave the workspace alone, and nothing enforces that unt
 **Large changes (`REVIEW-002`, 2026-11-03).** A diff up to 40,000 characters stays in the prompt. A larger one, when the review has a snapshot
 (#213), is read by the reviewer itself (#214): the server writes exactly the collected diff (or
 each part's text) as a new file in a fresh directory of its own under `c8wt`, outside the reviewed
-tree, removed after the review; the prompt names that file and the changed files (a renamed file
-under both names). The gate keeps the review from READY, and unjudged so an unchanged
-repeat may run, unless the answer names every file as a whole path outside the envelope fields (`filesToName`), since nothing
-else shows that it read them. Without a snapshot the diff stays inlined. A diff above
+tree, removed after the review, and ends it with a random mark the prompt does not show. The prompt
+names the file and the changed files; the gate keeps the review from READY, and unjudged so an
+unchanged repeat may run, unless the answer quotes the mark (`readToken`), which shows that the
+reviewer reached the file. Without a snapshot the diff stays inlined. A diff above
 `REVIEW_PART_CHARS` (200,000 characters) is split into parts at file, hunk and line boundaries,
 each piece under its file header, every line in exactly one part. Each part is reviewed in a
 session of its own, bound to `<snapshot>/part-<n>-of-<total>`; then one synthesis turn, which

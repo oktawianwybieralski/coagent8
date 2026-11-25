@@ -22,7 +22,7 @@ const fileDiff = (name, hunks) =>
 
 test('a diff that fits stays one part', () => {
   const diff = fileDiff('a.ts', [['x']]);
-  assert.deepEqual(splitReviewDiff(diff), [{ paths: ['a.ts'], files: ['a.ts'], text: diff }]);
+  assert.deepEqual(splitReviewDiff(diff), [{ paths: ['a.ts'], text: diff }]);
 });
 
 /** A diff with an untracked section, laid out as the collector writes it. */
@@ -146,12 +146,13 @@ function stubReviewer(answer) {
     execute: async prompt => {
       prompts.push(prompt);
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)?.[1] ?? 'snapshot';
-      // A part read by reference lists its files; the reviewer names each, as the gate requires (#214).
-      const files = [...prompt.matchAll(/^- (\S+)$/gm)].map(match => match[1]).join(', ');
+      // A part read by reference: the reviewer reads its file and quotes the end mark (#214).
+      const file = /from the file (.+?) \(\d+ lines/.exec(prompt)?.[1];
+      const mark = file ? ` Read mark ${/\[END OF DIFF (\w+)\]/.exec(require('node:fs').readFileSync(file, 'utf8'))[1]}.` : '';
       return {
         status: 'completed',
         isError: false,
-        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\n${answer(prompt, prompts.length)}${files ? ` Files: ${files}.` : ''}\nCHECKS: typecheck=PASS; tests=PASS`,
+        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\n${answer(prompt, prompts.length)}${mark}\nCHECKS: typecheck=PASS; tests=PASS`,
         nativeSessionId: `11111111-2222-3333-4444-55555555555${prompts.length % 10}`,
         model: 'fixture-model',
         truncated: false,
@@ -221,33 +222,4 @@ test('a part that is not READY keeps the review BLOCKED, whatever the synthesis 
   } finally {
     adapterRegistry.agy = original;
   }
-});
-
-test('a part names its real files: both sides of a rename from Git headers, untracked files, no labels (#214 review)', () => {
-  const diff = [
-    String.raw`diff --git a/old.ts "b/caf\303\251.ts"`,
-    'similarity index 90%',
-    'rename from old.ts',
-    String.raw`rename to "caf\303\251.ts"`,
-    '--- a/old.ts',
-    String.raw`+++ "b/caf\303\251.ts"`,
-    '@@ -1 +1 @@',
-    '-a',
-    '+b',
-    '',
-  ].join('\n');
-  const section = diff.length;
-  const untrackedText = '\n\n--- UNTRACKED FILE SNAPSHOT (workspace scope) ---\n';
-  const fileOffset = section + untrackedText.length;
-  const untrackedFile = 'notes.md\nrename to nonexistent.ts\n+++ b/also-not-a-file.ts\n';
-  const labelLike = '(untracked files)\ncontent\n';
-  const full = diff + untrackedText + untrackedFile + labelLike;
-  const [part] = splitReviewDiff(full, {
-    section,
-    files: [
-      { path: 'notes.md', offset: fileOffset },
-      { path: '(untracked files)', offset: fileOffset + untrackedFile.length },
-    ],
-  });
-  assert.deepEqual(part.files.sort(), ['(untracked files)', 'café.ts', 'notes.md', 'old.ts'].sort());
 });
