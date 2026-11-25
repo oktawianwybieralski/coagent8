@@ -171,8 +171,8 @@ async function materialize(
     revision ? none : git(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']).catch(() => ''),
     revision ? git(['rev-parse', '--verify', `${revision}^{commit}`]) : none,
     // Where Git itself reads system and global attributes, whatever this installation configured.
-    git(['var', 'GIT_ATTR_SYSTEM']).catch(() => ''),
-    git(['var', 'GIT_ATTR_GLOBAL']).catch(() => ''),
+    git(['var', 'GIT_ATTR_SYSTEM']),
+    git(['var', 'GIT_ATTR_GLOBAL']),
   ]);
   const [gitDirLine = '', prefixLine = '', infoAttributesLine = ''] = where.split(/\r?\n/);
   // Exactly as Git prints it, without its trailing slash: a directory name may start with a space.
@@ -229,7 +229,7 @@ async function namesFilter(
   // The attribute files the snapshot will contain: the working tree's (tracked or not), the index's, or the revision's.
   const files =
     type === 'uncommitted'
-      ? await git(['grep', '--untracked', '-l', '-I', '-e', 'filter=', ...pathspec]).catch(() => '')
+      ? await git(['grep', '--untracked', '--no-exclude-standard', '-l', '-I', '-e', 'filter=', ...pathspec]).catch(() => '')
       : type === 'staged'
         ? await git(['grep', '--cached', '-l', '-I', '-e', 'filter=', ...pathspec]).catch(() => '')
         : await git(['grep', '-l', '-I', '-e', 'filter=', revision ?? 'HEAD', ...pathspec]).catch(() => '');
