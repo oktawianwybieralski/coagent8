@@ -234,7 +234,7 @@ export async function executeReview(
   let workTreeNote: string | undefined;
   try {
     const made = await materializeReviewSnapshot(scopeInfo, workspaceCwd, reviewReadContext);
-    if (isSnapshotSkipped(made)) workTreeNote = `The reviewer ran in the workspace: ${made.skipped}.`;
+    if (isSnapshotSkipped(made)) workTreeNote = `The reviewer ran in the workspace: ${redactDiagnostic(made.skipped, 256)}.`;
     else workTree = made;
   } catch (err) {
     if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) {
@@ -245,7 +245,7 @@ export async function executeReview(
   }
   const withNote = (outcome: TaskExecutionResult): TaskExecutionResult =>
     workTreeNote ? { ...outcome, warnings: [...(outcome.warnings ?? []), workTreeNote] } : outcome;
-  const executionCwd = workTree ? { executionCwd: workTree.path } : {};
+  const executionCwd = workTree ? { executionCwd: workTree.cwd } : {};
 
   try {
     if (parts.length > 1) {

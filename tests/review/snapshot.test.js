@@ -175,3 +175,56 @@ test('a review turn runs in the snapshot, and the snapshot is gone afterwards', 
     adapterRegistry.agy = original;
   }
 });
+
+test('a workspace in a subdirectory runs the reviewer in the same subdirectory of the snapshot', async () => {
+  const { dir, git } = repo();
+  fs.mkdirSync(path.join(dir, 'pkg'));
+  fs.writeFileSync(path.join(dir, 'pkg', 'b.txt'), 'sub\n');
+  git('add', '.');
+  git('commit', '-qm', 'sub');
+  fs.writeFileSync(path.join(dir, 'pkg', 'b.txt'), 'changed\n');
+  const workspace = path.join(dir, 'pkg');
+  const made = await materializeReviewSnapshot(await collectGitScope('uncommitted', workspace), workspace);
+  assert.ok(!isSnapshotSkipped(made), made.skipped);
+  try {
+    assert.equal(made.cwd, path.join(made.path, 'pkg'));
+    assert.equal(fs.readFileSync(path.join(made.cwd, 'b.txt'), 'utf8'), 'changed\n');
+  } finally {
+    await made.dispose();
+  }
+});
+
+test('a repository with checkout filters such as Git LFS keeps the review in the workspace', async () => {
+  const { dir, git } = repo();
+  fs.writeFileSync(path.join(dir, '.gitattributes'), '*.bin filter=fixture\n');
+  fs.writeFileSync(path.join(dir, 'x.bin'), 'pointer\n');
+  git('-c', 'filter.fixture.clean=cat', '-c', 'filter.fixture.smudge=cat', 'add', '.');
+  git('-c', 'filter.fixture.clean=cat', '-c', 'filter.fixture.smudge=cat', 'commit', '-qm', 'filtered');
+  const made = await materializeReviewSnapshot(await collectGitScope('uncommitted', dir), dir);
+  assert.ok(isSnapshotSkipped(made));
+  assert.match(made.skipped, /checkout filters/);
+});
+
+test('a claim being written is not taken over, and a stale claim without an owner is', () => {
+  const target = snapshotPath(path.join(tempDir, 'claims-empty'));
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(`${target}.lock`, '');
+  assert.equal(claimSnapshot(target), null, 'a fresh claim without its owner yet holds');
+  const old = new Date(Date.now() - 120_000);
+  fs.utimesSync(`${target}.lock`, old, old);
+  const release = claimSnapshot(target);
+  assert.equal(typeof release, 'function', 'an abandoned one is taken over');
+  release();
+});
+
+test('a cancelled call still removes its snapshot', async () => {
+  const { dir, git } = repo();
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'changed\n');
+  const controller = new AbortController();
+  const made = await materializeReviewSnapshot(await collectGitScope('uncommitted', dir), dir, { abortSignal: controller.signal });
+  assert.ok(!isSnapshotSkipped(made), made.skipped);
+  controller.abort();
+  await made.dispose();
+  assert.equal(fs.existsSync(made.path), false);
+  assert.equal(git('for-each-ref', 'refs/coagent8'), '');
+});
