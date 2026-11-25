@@ -3,6 +3,9 @@ import { EXECUTION_PARAMETERS } from '../schema.js';
 import type { TaskOptions } from '../../execution/controller.js';
 import { openCallScope, runTask, type CallScopeOptions, type RoleTaskOptions } from '../../execution/task.js';
 import { collectReviewInput } from '../../review/index.js';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { assertReviewWorkspace } from '../../workspace/git.js';
 import { CANONICAL_TOOL_NAMES, HOST_TOOL_GUIDANCE } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
@@ -12,7 +15,7 @@ import { ToolError } from '../../contracts/error.js';
 import { approveChecks, parseCheckCommand, runCheck, type CheckApprovalPrompt } from '../../execution/checks.js';
 import type { CheckResult } from '../../contracts/execution.js';
 import { loadConfig } from '../../config.js';
-import { withReviewSnapshot, type ReviewSnapshot } from '../../review/snapshot.js';
+import { snapshotRoot, withReviewSnapshot, type ReviewSnapshot } from '../../review/snapshot.js';
 import { redactDiagnostic } from '../../security/redaction.js';
 import { MAX_REVIEW_PARTS, splitReviewDiff, type ReviewPart } from '../../review/parts.js';
 import { getSession } from '../../sessions/session.js';
@@ -235,60 +238,89 @@ export async function executeReview(
     const withNote = (outcome: TaskExecutionResult): TaskExecutionResult =>
       workTreeNote ? { ...outcome, warnings: [...(outcome.warnings ?? []), workTreeNote] } : outcome;
     const executionCwd = workTree ? { executionCwd: workTree.cwd } : {};
-    if (parts.length > 1) {
-      return withNote(
-        await reviewInParts({
-          parts,
-          checkLines,
-          promptFor,
-          snapshot,
-          label: scopeInfo.label,
-          instructions,
-          args,
-          workspaceCwd,
-          abortSignal,
-          onProgress,
-          context,
-          turnOptions: {
-            tracker,
-            askConsent: options.askConsent,
-            // Before every backend turn, each part and the synthesis included.
-            onTurnStart: options.onTurnStart,
-            beforeExtraTurn: options.beforeExtraTurn,
-            onTiming: options.onTiming,
-            clock: options.clock,
-            budget,
-            context: reviewReadContext,
-            ...executionCwd,
-          },
+    // A large diff is read by the reviewer in the snapshot, not inlined (#214); a small one stays inline.
+    const byReference = Boolean(workTree) && scopeInfo.diff.length > INLINE_DIFF_CHARS;
+    // A fresh directory per review, created only when needed and removed after it.
+    let referenceDir: string | undefined;
+    const diffDir = () => (referenceDir ??= fs.mkdtempSync(path.join(snapshotRoot(), 'diff-')));
+    // The end mark of each diff file, by part index (-1 for a single turn).
+    const tokens = new Map<number, string>();
+    const referenceFor = (name: string, text: string, paths: readonly string[], index: number) => {
+      const written = writeReviewDiff(diffDir(), name, text);
+      tokens.set(index, written.token);
+      return diffReference(written.file, text, paths);
+    };
+    try {
+      if (parts.length > 1) {
+        return withNote(
+          await reviewInParts({
+            parts,
+            textFor: (part, index) =>
+              byReference && workTree
+                ? referenceFor(
+                    `part-${index + 1}.diff`,
+                    part.text,
+                    part.paths.filter(entry => !entry.startsWith('(')),
+                    index,
+                  )
+                : part.text,
+            readToken: index => tokens.get(index),
+            checkLines,
+            promptFor,
+            snapshot,
+            label: scopeInfo.label,
+            instructions,
+            args,
+            workspaceCwd,
+            abortSignal,
+            onProgress,
+            context,
+            turnOptions: {
+              tracker,
+              askConsent: options.askConsent,
+              // Before every backend turn, each part and the synthesis included.
+              onTurnStart: options.onTurnStart,
+              beforeExtraTurn: options.beforeExtraTurn,
+              onTiming: options.onTiming,
+              clock: options.clock,
+              budget,
+              context: reviewReadContext,
+              ...executionCwd,
+            },
+            verifyReviewSnapshot,
+          }),
+        );
+      }
+      const outcome = await runTask('review', {
+        prompt:
+          byReference && workTree
+            ? promptFor(referenceFor('review.diff', scopeInfo.diff, scopeInfo.changedPaths, -1), snapshot, [])
+            : prompt,
+        publicInput: 'Review ' + scopeInfo.label + '\n' + instructions,
+        args: { ...args, backend: args.backend },
+        cwd: workspaceCwd,
+        abortSignal,
+        onProgress,
+        options: {
+          tracker,
+          askConsent: options.askConsent,
+          onTurnStart: options.onTurnStart,
+          beforeExtraTurn: options.beforeExtraTurn,
+          reviewContext: byReference ? { ...context, readToken: tokens.get(-1) } : context,
+          // A repeat with checks runs again: a verdict reached with other check results must not return.
+          ...(serverChecks?.length ? {} : { reviewIdentity: { snapshot, scope: scopeInfo.label } }),
+          onTiming: options.onTiming,
+          clock: options.clock,
+          budget: budget,
+          context: reviewReadContext,
           verifyReviewSnapshot,
-        }),
-      );
+          ...executionCwd,
+        },
+      });
+      return withNote(outcome);
+    } finally {
+      if (referenceDir) fs.rmSync(referenceDir, { recursive: true, force: true });
     }
-    const outcome = await runTask('review', {
-      prompt,
-      publicInput: 'Review ' + scopeInfo.label + '\n' + instructions,
-      args: { ...args, backend: args.backend },
-      cwd: workspaceCwd,
-      abortSignal,
-      onProgress,
-      options: {
-        tracker,
-        askConsent: options.askConsent,
-        onTurnStart: options.onTurnStart,
-        beforeExtraTurn: options.beforeExtraTurn,
-        reviewContext: context,
-        // A repeat with checks runs again: a verdict reached with other check results must not return.
-        ...(serverChecks?.length ? {} : { reviewIdentity: { snapshot, scope: scopeInfo.label } }),
-        onTiming: options.onTiming,
-        clock: options.clock,
-        budget: budget,
-        context: reviewReadContext,
-        verifyReviewSnapshot,
-        ...executionCwd,
-      },
-    });
-    return withNote(outcome);
   };
   try {
     return await withReviewSnapshot(scopeInfo, workspaceCwd, reviewReadContext, reviewIn);
@@ -301,9 +333,42 @@ export async function executeReview(
   }
 }
 
+/** Diffs up to this size are inlined; larger ones are read by the reviewer in the snapshot (#214). */
+export const INLINE_DIFF_CHARS = 40_000;
+
+/**
+ * Writes diff text where the reviewer reads it: exactly what the server collected, so scope,
+ * exclusions, staged and unstaged changes, renames and part boundaries are as reviewed, followed by
+ * a random end mark that only a reviewer who read the file can quote. The file is new, in a
+ * directory the server just created outside the reviewed tree, so no path from the repository
+ * decides where it goes.
+ * @returns The file's absolute path and its end mark.
+ */
+export function writeReviewDiff(dir: string, name: string, text: string): { file: string; token: string } {
+  const file = path.join(dir, name);
+  const token = crypto.randomBytes(8).toString('hex');
+  fs.writeFileSync(file, `${text}${text.endsWith('\n') ? '' : '\n'}[END OF DIFF ${token}]\n`, { flag: 'wx' });
+  return { file, token };
+}
+
+/** What a prompt shows instead of an inlined diff: where to read it, how to show it was read, and the files it touches. */
+export function diffReference(file: string, text: string, paths: readonly string[]): string {
+  const lines = text.split('\n').length + 1;
+  return [
+    `[The diff is not inlined. Read all of it from the file ${file} (${lines} lines; read it in pieces if it is long, with a shell command if your file tools cannot reach it). It is exactly the change under review; your working directory is a copy of the reviewed state.]`,
+    '[Its last line is [END OF DIFF <mark>]. Quote that mark in your Reviewed line: without it your review counts as not read.]',
+    `[Changed files, ${paths.length}:]`,
+    ...paths.map(entry => `- ${entry}`),
+  ].join('\n');
+}
+
 /** Everything a review in parts needs from the call. */
 interface PartsReview {
   parts: ReviewPart[];
+  /** What a part's prompt shows of its diff: the text, or how to read it. */
+  textFor: (part: ReviewPart, index: number) => string;
+  /** The end mark of a part's diff file when it reads its diff by reference. */
+  readToken: (index: number) => string | undefined;
   /** What the server's checks showed, for the synthesis as for each part. */
   checkLines: readonly string[];
   promptFor: (diffText: string, snapshotText: string, scopeNote: readonly string[]) => string;
@@ -371,7 +436,7 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
   }
   for (const [index, part] of parts.entries()) {
     const partSnapshot = `${snapshot}/part-${index + 1}-of-${parts.length}`;
-    const prompt = review.promptFor(part.text, partSnapshot, [
+    const prompt = review.promptFor(review.textFor(part, index), partSnapshot, [
       `This change is too large for one turn, so it is reviewed in ${parts.length} parts; you have part ${index + 1}. COVERAGE refers to this part. Every part is listed here; read files of other parts only to check a call site:`,
       manifest,
     ]);
@@ -390,7 +455,12 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
       onProgress: review.onProgress,
       options: {
         ...review.turnOptions,
-        reviewContext: { ...review.context, expectedSnapshot: partSnapshot, requiredFiles: part.paths },
+        reviewContext: {
+          ...review.context,
+          expectedSnapshot: partSnapshot,
+          requiredFiles: part.paths,
+          ...(review.readToken(index) ? { readToken: review.readToken(index) } : {}),
+        },
       },
     });
     results.push({ index, outcome });

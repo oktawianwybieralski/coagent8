@@ -87,6 +87,12 @@ export interface ReviewGateContext {
   unreviewedBinaryFiles?: number;
   invalidatedReason?: string;
   requiredFiles?: readonly string[];
+  /**
+   * The random mark that ends the diff file a reviewer read by reference instead of an inlined
+   * diff (#214): only a reviewer that read the file can quote it, so without it the review is not
+   * READY, and it stays unjudged so an unchanged repeat may run.
+   */
+  readToken?: string;
   observedDenials?: readonly { path?: string; operation?: string; reason?: string }[];
   workspaceRoot?: string;
 }
@@ -269,9 +275,13 @@ export function evaluateStateEnvelopeGate(
     const notRunChecks = checkValues ? (context?.requiredChecks ?? []).filter(check => checkValues[check] === 'NOT_RUN') : [];
     const wrongSnapshot = Boolean(context?.expectedSnapshot && snapshotVal !== context.expectedSnapshot);
     const incompleteInput = Boolean(context && context.inputComplete === false);
-    const judged = Boolean(isCompleteEnvelope && checks && !truncated && !lengthLimited && !wrongSnapshot && !deniedRequiredScope);
+    const unread = Boolean(context?.readToken && !output.includes(context.readToken));
+    const judged = Boolean(
+      isCompleteEnvelope && checks && !truncated && !lengthLimited && !wrongSnapshot && !deniedRequiredScope && !unread,
+    );
     const appendTerminator = Boolean(isCompleteEnvelope && serverTerminated);
     const shouldBlock =
+      unread ||
       !isCompleteEnvelope ||
       !checks ||
       failedChecks ||
@@ -303,6 +313,7 @@ export function evaluateStateEnvelopeGate(
           reasons.push(`Filesystem access to required review scope was denied: ${deniedRequiredFiles.join(', ')}`);
       }
       if (coverageVal === 'PARTIAL') reasons.push('Review coverage is partial');
+      if (unread) reasons.push('The reviewer did not quote the end mark of the diff file it was to read');
       if (truncated) reasons.push('Output was truncated');
       if (lengthLimited) reasons.push('The model stopped at its output length limit');
       // Without an answer or an envelope, its field checks would only restate that absence.
