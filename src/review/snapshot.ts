@@ -130,6 +130,14 @@ async function runInSnapshot<T>(
   fn: (snapshot: ReviewSnapshot | undefined, skipped?: string) => Promise<T>,
 ): Promise<T> {
   const git = (args: string[], env?: NodeJS.ProcessEnv) => runGit(args, workspace, context, 15000, undefined, undefined, env);
+  // A listing cut at the output bound is no inventory: whatever it would miss could not be checked.
+  const list = (args: string[]) =>
+    new Promise<string>((resolve, reject) => {
+      let cut = false;
+      runGit(args, workspace, context, 15000, () => {
+        cut = true;
+      }).then(out => (cut ? reject(new Error('a Git listing exceeded its output bound')) : resolve(out)), reject);
+    });
   // Cleanup runs without the call's signal: a cancelled or expired call still removes what it made.
   const cleanupGit = (args: string[]) => runGit(args, workspace, null, 15000);
   const target = snapshotPath(workspace);
@@ -137,7 +145,7 @@ async function runInSnapshot<T>(
   let snapshot: ReviewSnapshot | undefined;
   let skipped: string | undefined;
   try {
-    const made = await materialize(info, workspace, git, target, ref);
+    const made = await materialize(info, workspace, git, list, target, ref);
     if (typeof made === 'string') skipped = made;
     else snapshot = made;
   } catch (err) {
@@ -159,6 +167,7 @@ async function materialize(
   info: GitScopeInfo,
   workspace: string,
   git: (args: string[], env?: NodeJS.ProcessEnv) => Promise<string>,
+  list: (args: string[]) => Promise<string>,
   target: string,
   ref: string,
 ): Promise<ReviewSnapshot | string> {
@@ -167,7 +176,7 @@ async function materialize(
   // Independent reads at once: each Git start costs time, on Windows most of all.
   const [where, untracked, head, targetCommit, systemAttributes, globalAttributes] = await Promise.all([
     git(['rev-parse', '--git-dir', '--show-prefix', '--git-path', 'info/attributes']),
-    info.type === 'uncommitted' ? git(['ls-files', '--others', '--exclude-standard', '-z', '--', ':(top)']) : none,
+    info.type === 'uncommitted' ? list(['ls-files', '--others', '--exclude-standard', '-z', '--', ':(top)']) : none,
     revision ? none : git(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']).catch(() => ''),
     revision ? git(['rev-parse', '--verify', `${revision}^{commit}`]) : none,
     // Where Git itself reads system and global attributes, whatever this installation configured.
@@ -208,7 +217,7 @@ async function materialize(
   }
   // A gitlink (a submodule, or a nested repository added without one) would be an empty directory
   // in the snapshot, not the reviewed content. One word per entry keeps the listing small.
-  const types = await git(['ls-tree', '-r', '--full-tree', '--format=%(objecttype)', commit]);
+  const types = await list(['ls-tree', '-r', '--full-tree', '--format=%(objecttype)', commit]);
   if (/^commit$/m.test(types)) return 'the repository has submodules or nested repositories, which a snapshot would leave empty';
   // An earlier review's tree and ref at this place are replaced, also those of a server that ended.
   await removeWorkTree(git, target);
