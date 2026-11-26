@@ -9,9 +9,10 @@
  * - **Credential & Path Masking**: Strips recognized API keys, Bearer/Basic tokens, private keys,
  *   passwords, and the local user's home directory (`~`) using `redactDiagnostic`.
  *   Redaction strictly precedes byte truncation to ensure credential prefixes cannot be exposed.
- * - **Paste Flow**: Links to the repository's bug report form (`/issues/new?template=bug_report.yml`)
- *   without report data in the URL; the report, with system architecture, Node runtime, OS version
- *   and detected CLI versions only (no readiness or quota), goes in a copy block to paste.
+ * - **Prefilled Form**: Links to the repository's bug report form (`/issues/new?template=bug_report.yml`)
+ *   with the title, "What happened" and "Environment" (architecture, Node runtime, OS version and
+ *   detected CLI versions only, no readiness or quota) filled in through the query string, so the
+ *   user only reviews and submits. A copy block to paste remains only when the report cannot fit.
  *
  * @packageDocumentation
  */
@@ -22,6 +23,8 @@ import { truncateToByteLength } from '../execution/runtime/stream.js';
 import { BRAND } from '../brand.js';
 
 export interface BugReportOptions {
+  /** A short title that states the problem; the first line of the error when absent. */
+  title?: string;
   errorMessage?: string;
   context?: string;
   doctorReport?: { backends?: Record<string, { name?: string; installed: boolean; version?: string }> } | null;
@@ -30,16 +33,22 @@ export interface BugReportOptions {
 export interface BugReportResult {
   title: string;
   body: string;
+  /** The bug report form with the title and the fields filled in. */
   issueUrl: string;
   prompt: string;
+  /** True only when the report did not fit in the link and must be pasted. */
+  pasteRequired: boolean;
 }
 
 const REPO_OWNER = BRAND.GITHUB_OWNER;
 const REPO_NAME = BRAND.GITHUB_REPO;
 export const GITHUB_NEW_ISSUE_BASE = `https://github.com/${REPO_OWNER}/${REPO_NAME}/issues/new`;
 export const GITHUB_BUG_REPORT_TEMPLATE_URL = `${GITHUB_NEW_ISSUE_BASE}?template=bug_report.yml`;
-/** Conservative ceiling for the issue link; the link carries no report data, and tests hold it below this. */
-export const MAX_ENCODED_ISSUE_URL_LENGTH = 2048;
+/**
+ * Ceiling for the prefilled form link. GitHub answers much longer issue links with an error page
+ * (about 8 KB); browsers and the operating system's URL handlers accept more.
+ */
+export const MAX_ENCODED_ISSUE_URL_LENGTH = 7000;
 const MAX_RAW_INPUT_LENGTH = 4096;
 
 /**
@@ -113,29 +122,87 @@ export function sanitizeText(text?: string | null): string {
   return truncateToByteLength(sanitized, MAX_RAW_INPUT_LENGTH);
 }
 
+/** The form's field ids in `.github/ISSUE_TEMPLATE/bug_report.yml`, which GitHub fills from the query string. */
+export const BUG_REPORT_FIELDS = { whatHappened: 'what-happened', environment: 'environment' } as const;
+
+const SHORTENED_MARKER = '\n\n[shortened to fit the form link]';
+
 /**
- * Builds a sanitized bug report, the link to the bug report form and the prompt that shows both.
+ * Builds the bug report form link with the title and the fields filled in, within `maxLength`.
+ * When the link would be too long, the "What happened" text is shortened and marked; the title
+ * and the environment are short and stay whole.
+ *
+ * @param title - Issue title.
+ * @param whatHappened - Text for the required "What happened" field.
+ * @param environment - Text for the "Environment" field.
+ * @param maxLength - Maximum length of the encoded link.
+ * @returns The prefilled form link, or the empty form link when not even the title and the environment fit.
+ */
+export function buildPrefilledIssueUrl(
+  title: string,
+  whatHappened: string,
+  environment: string,
+  maxLength = MAX_ENCODED_ISSUE_URL_LENGTH,
+): string {
+  const build = (text: string) => {
+    const query = new URLSearchParams({
+      template: 'bug_report.yml',
+      title,
+      [BUG_REPORT_FIELDS.whatHappened]: text,
+      [BUG_REPORT_FIELDS.environment]: environment,
+    });
+    // URLSearchParams writes a space as '+'; %20 reads the same everywhere.
+    return `${GITHUB_NEW_ISSUE_BASE}?${query.toString().replace(/\+/g, '%20')}`;
+  };
+  const full = build(whatHappened);
+  if (full.length <= maxLength) return full;
+  const chars = Array.from(whatHappened);
+  // The longest prefix that fits; the encoded length grows with the prefix.
+  let low = -1;
+  let high = chars.length - 1;
+  while (low < high) {
+    const mid = Math.ceil((low + high + 1) / 2);
+    if (build(chars.slice(0, mid).join('') + SHORTENED_MARKER).length <= maxLength) low = mid;
+    else high = mid - 1;
+  }
+  return low < 0 ? GITHUB_BUG_REPORT_TEMPLATE_URL : build(chars.slice(0, low).join('').trimEnd() + SHORTENED_MARKER);
+}
+
+/**
+ * Returns a code fence longer than any backtick run in the text, so the text cannot close it.
+ *
+ * @param text - Text the fence encloses.
+ * @returns The fence.
+ */
+function fenceFor(text: string): string {
+  const longest = (text.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
+  return '`'.repeat(Math.max(4, longest + 1));
+}
+
+/**
+ * Builds a sanitized bug report, the link to the bug report form with the report filled in, and
+ * the prompt that shows the link.
  *
  * Collects runtime environment parameters (Node.js, OS architecture, detected CLI versions),
- * strips sensitive code blocks and credentials, and puts the report in a copy block to paste.
+ * strips sensitive code blocks and credentials, and fills the title, "What happened" and
+ * "Environment" fields of the form through the link, so the user only reviews and submits it.
  *
- * @param options - Error message, context, and optional DoctorReport diagnostics.
- * @returns Object containing title, body, the form URL, and markdown prompt.
+ * @param options - Title, error message, context, and optional DoctorReport diagnostics.
+ * @returns Object containing title, body, the prefilled form URL, and markdown prompt.
  */
 export function generateBugReport(options: BugReportOptions): BugReportResult {
-  const { errorMessage, context, doctorReport = null } = options;
+  const { title: requestedTitle, errorMessage, context, doctorReport = null } = options;
   try {
-    const cleanError = sanitizeText(errorMessage || 'Unknown error occurred');
-    const cleanContext = sanitizeText(context || 'Execution during MCP tool call');
+    const cleanError = sanitizeText(errorMessage);
+    const cleanContext = sanitizeText(context);
+    const singleLine = (text: string) => text.replace(/[\s\u2028\u2029]+/g, ' ').trim();
 
-    const firstLine =
-      cleanError
-        .split(/[\r\n\u2028\u2029]/)[0]
-        .replace(/\s+/g, ' ')
-        .trim() || 'Unknown error';
-    const title = `[Bug]: ${safeSlice(firstLine, 110)}`;
+    const headline = (singleLine(sanitizeText(requestedTitle)) || singleLine(cleanError.split(/[\r\n\u2028\u2029]/)[0] ?? '')).replace(
+      /^\[Bug\]:\s*/i,
+      '',
+    );
+    const title = `[Bug]: ${safeSlice(headline, 110)}`;
 
-    const singleLine = (text: string) => text.replace(/\s+/g, ' ').trim();
     const backendEntries = Object.entries(doctorReport?.backends ?? {});
     const detectedClis =
       backendEntries.length > 0
@@ -148,54 +215,45 @@ export function generateBugReport(options: BugReportOptions): BugReportResult {
             .join('\n')}`
         : '- **Detected CLIs**: Not provided';
 
-    const body = `### Description & Context
-${cleanContext}
+    // The error goes first, so a report shortened to fit the link keeps it.
+    const errorFence = fenceFor(cleanError).slice(1);
+    const sections: string[] = [];
+    if (cleanError) sections.push(`Error:\n\n${errorFence}text\n${cleanError}\n${errorFence}`);
+    if (cleanContext) sections.push(cleanContext);
+    if (sections.length === 0) sections.push('Describe what you did, what you expected and what happened instead.');
+    const whatHappened = `${sections.join('\n\n')}\n\n_Prepared by the ${BRAND.NAME} issue tool with best-effort redaction. Check it for private data before submitting._`;
 
-### Error Diagnostic
-\`\`\`text
-${cleanError}
-\`\`\`
-
-### Environment Details
-- **${BRAND.NAME} MCP Version**: ${BRAND.SERVER_VERSION}
+    const environment = `- **${BRAND.NAME} MCP Version**: ${BRAND.SERVER_VERSION}
 - **Node.js**: ${process.version}
 - **OS**: ${os.type()} ${os.release()} (${os.arch()})
 ${detectedClis}
 
-For setup, sign-in or quota problems, paste the output of doctor (scope: health).
+For setup, sign-in or quota problems, add the output of doctor (scope: health).`;
 
----
-*Note: Best-effort automated redaction was applied. Please review the details above before submitting to ensure no sensitive or proprietary data is included.*
-`;
-
-    // The link opens the form; the report travels in the copy block, never in the URL.
-    const issueUrl = GITHUB_BUG_REPORT_TEMPLATE_URL;
-
-    // Calculate outer CommonMark code fence to prevent internal ``` from closing the copy block prematurely
-    const backtickMatches = body.match(/`+/g) || [];
-    const maxBackticks = backtickMatches.reduce((max, m) => Math.max(max, m.length), 0);
-    const outerFence = '`'.repeat(Math.max(4, maxBackticks + 1));
+    const body = `### What happened\n\n${whatHappened}\n\n### Environment\n\n${environment}\n`;
+    const issueUrl = buildPrefilledIssueUrl(title, whatHappened, environment);
+    const pasteRequired = issueUrl === GITHUB_BUG_REPORT_TEMPLATE_URL;
+    const fence = fenceFor(body);
 
     return {
       title,
       body,
       issueUrl,
+      pasteRequired,
       prompt:
-        `Would you like to report this issue to GitHub to help improve ${BRAND.NAME}?\n\n` +
-        `Click the link below to open the bug report template in your browser (GitHub sign-in required to submit):\n\n` +
-        `**[Submit Bug Report on GitHub](<${issueUrl}>)**\n\n` +
-        `Link URL:\n\n\`\`\`text\n${issueUrl}\n\`\`\`\n\n` +
-        `Review the sanitized report below, copy it, paste it into the "CoAgent8 issue output" field of the bug report form, complete the required fields and submit:\n\n` +
-        `${outerFence}text\n${body}\n${outerFence}`,
+        `The bug report form is filled in. Open it, check it for anything private and click Submit new issue (GitHub sign-in required):\n\n` +
+        `**[Submit Bug Report on GitHub](<${issueUrl}>)**` +
+        (pasteRequired ? `\n\nThe report does not fit in the link. Paste it into the form:\n\n${fence}text\n${body}\n${fence}` : ''),
     };
   } catch (_err) {
     return {
-      title: '[Bug]: Unhandled Error',
+      title: '[Bug]: ',
       body: 'Unable to construct sanitized diagnostic.',
-      issueUrl: GITHUB_NEW_ISSUE_BASE,
+      issueUrl: GITHUB_BUG_REPORT_TEMPLATE_URL,
+      pasteRequired: true,
       prompt:
-        `An unexpected error occurred. You can submit feedback or a bug report here:\n\n` +
-        `**[Submit Bug Report on GitHub](${GITHUB_NEW_ISSUE_BASE})**`,
+        `An unexpected error occurred. You can submit a bug report here:\n\n` +
+        `**[Submit Bug Report on GitHub](<${GITHUB_BUG_REPORT_TEMPLATE_URL}>)**`,
     };
   }
 }

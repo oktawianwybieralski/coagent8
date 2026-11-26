@@ -366,7 +366,7 @@ export function formatExecutionResult(
     footerLines.push(`Warning: ${warning}`);
   }
   if (error && (['PROCESS_ERROR', 'CLI_UNSUPPORTED', 'PROTOCOL_ERROR'] as string[]).includes(error.code)) {
-    footerLines.push(`Report this issue: ${GITHUB_BUG_REPORT_TEMPLATE_URL} (the issue tool prepares the sanitized report to paste)`);
+    footerLines.push(`Report this issue: ${GITHUB_BUG_REPORT_TEMPLATE_URL} (the issue tool fills in the form)`);
   }
   parts.push(present(footerLines.map(footerLine).join('\n')));
 

@@ -1,16 +1,16 @@
 /**
- * `coagent8 issue`: generates a sanitized bug report on the command line (`FEEDBACK-061c3`).
- * Prints the sanitized report and static form link, and opens the default browser
- * only when `--open` is explicitly provided. Never opens automatically.
+ * `coagent8 issue`: opens the bug report form with the sanitized environment filled in.
+ * Prints the form link and opens it in the default browser, unless `--no-open` or `--json`
+ * is given. It never submits the report.
  *
  * @packageDocumentation
  */
 import { spawn } from 'node:child_process';
 import { redactDiagnostic } from '../security/redaction.js';
 import { runDoctor } from './doctor.js';
-import { generateBugReport, GITHUB_BUG_REPORT_TEMPLATE_URL, type BugReportResult } from './issue.js';
+import { generateBugReport, type BugReportResult } from './issue.js';
 
-const USAGE = 'Usage: coagent8 issue [--open] [--json]';
+const USAGE = 'Usage: coagent8 issue [--no-open] [--json]';
 
 /** Bounds how long `--open` waits for the opener to report a launch failure. */
 const OBSERVATION_TIMEOUT_MS = 2000;
@@ -22,7 +22,8 @@ export interface OpenBrowserOptions {
 }
 
 /**
- * Opens a URL in the user's default browser across platforms.
+ * Opens a URL in the user's default browser across platforms. On Windows the URL goes to the
+ * shell's URL handler directly, never through `cmd.exe`, which would split it at `&` and expand `%`.
  * Waits a bounded time for the opener to exit and reports a launch error or a
  * non-zero exit code through the warning callback. The opener's output is ignored.
  *
@@ -35,7 +36,7 @@ export async function openBrowser(url: string, onWarning?: (warning: string) => 
   const spawnFn = options?.spawnFn ?? spawn;
   const [command, args] =
     process.platform === 'win32'
-      ? ['cmd.exe', ['/c', 'start', '', url]]
+      ? ['rundll32.exe', ['url.dll,FileProtocolHandler', url]]
       : process.platform === 'darwin'
         ? ['open', [url]]
         : ['xdg-open', [url]];
@@ -101,7 +102,7 @@ export async function runIssueCli(
 ): Promise<number> {
   const options: IssueCliOptions = optionsOrSignal instanceof AbortSignal ? { signal: optionsOrSignal } : (optionsOrSignal ?? {});
 
-  let open = false;
+  let open: boolean | undefined;
   let json = false;
   let stopParsing = false;
 
@@ -117,6 +118,8 @@ export async function runIssueCli(
     }
     if (arg === '--open') {
       open = true;
+    } else if (arg === '--no-open') {
+      open = false;
     } else if (arg === '--json') {
       json = true;
     } else if (arg === '--help' || arg === '-h') {
@@ -165,17 +168,17 @@ export async function runIssueCli(
         body: report.body,
         issueUrl: report.issueUrl,
         prompt: report.prompt,
-        pasteRequired: true,
+        pasteRequired: report.pasteRequired,
       };
       out.write(`${JSON.stringify(payload, null, 2)}\n`);
     } else {
       out.write(report.prompt);
     }
 
-    if (open) {
+    if (open ?? !json) {
       const browserOpener = options.openBrowser ?? openBrowser;
       try {
-        await browserOpener(GITHUB_BUG_REPORT_TEMPLATE_URL, warning => {
+        await browserOpener(report.issueUrl, warning => {
           err.write(`${warning}\n`);
         });
       } catch (openerError: unknown) {

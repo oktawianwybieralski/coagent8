@@ -185,7 +185,7 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
   const textProcessErr = resProcessErr.content[0].text;
   assert.ok(
     textProcessErr.includes(
-      'Report this issue: https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml (the issue tool prepares the sanitized report to paste)',
+      'Report this issue: https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml (the issue tool fills in the form)',
     ),
   );
   assert.ok(textProcessErr.includes('PROCESS_ERROR'));

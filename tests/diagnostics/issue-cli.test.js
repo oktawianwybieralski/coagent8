@@ -17,37 +17,43 @@ function createStream() {
   };
 }
 
-test('coagent8 issue prints sanitized report and does not open browser automatically', async () => {
+const noDoctor = async () => null;
+
+test('coagent8 issue opens the form with the environment filled in and prints its link', async () => {
   const out = createStream();
   const err = createStream();
   const opened = [];
 
   const code = await runIssueCli([], out, err, {
     openBrowser: url => opened.push(url),
+    runDoctorFn: noDoctor,
   });
 
   assert.equal(code, 0);
   assert.equal(err.output, '');
-  assert.equal(opened.length, 0, 'browser must never open automatically without --open');
-  assert.ok(out.output.includes(GITHUB_BUG_REPORT_TEMPLATE_URL), 'output must contain form link');
-  assert.ok(out.output.includes('CoAgent8 issue output'), 'output must contain paste field instructions');
-  assert.ok(out.output.includes('```'), 'output must contain fenced report block');
+  assert.equal(opened.length, 1, 'the form opens without a flag');
+  assert.ok(opened[0].startsWith(`${GITHUB_BUG_REPORT_TEMPLATE_URL}&title=`));
+  const fields = new URL(opened[0]).searchParams;
+  assert.match(fields.get('environment'), /CoAgent8 MCP Version/);
+  assert.match(fields.get('what-happened'), /^Describe what you did/);
+  assert.ok(out.output.includes(opened[0]), 'output must contain the opened link');
+  assert.ok(!out.output.includes('```'), 'nothing to copy');
 });
 
-test('coagent8 issue --open prints report and opens browser with the form link', async () => {
-  const out = createStream();
-  const err = createStream();
-  const opened = [];
-
-  const code = await runIssueCli(['--open'], out, err, {
-    openBrowser: url => opened.push(url),
-  });
-
-  assert.equal(code, 0);
-  assert.equal(err.output, '');
-  assert.equal(opened.length, 1);
-  assert.equal(opened[0], GITHUB_BUG_REPORT_TEMPLATE_URL);
-  assert.ok(out.output.includes(GITHUB_BUG_REPORT_TEMPLATE_URL));
+test('coagent8 issue --no-open and --open', async () => {
+  for (const [args, count] of [
+    [['--no-open'], 0],
+    [['--open'], 1],
+    [['--open', '--no-open'], 0],
+  ]) {
+    const opened = [];
+    const code = await runIssueCli(args, createStream(), createStream(), {
+      openBrowser: url => opened.push(url),
+      runDoctorFn: noDoctor,
+    });
+    assert.equal(code, 0);
+    assert.equal(opened.length, count, args.join(' '));
+  }
 });
 
 test('coagent8 issue --json outputs structured report without opening browser', async () => {
@@ -57,6 +63,7 @@ test('coagent8 issue --json outputs structured report without opening browser', 
 
   const code = await runIssueCli(['--json'], out, err, {
     openBrowser: url => opened.push(url),
+    runDoctorFn: noDoctor,
   });
 
   assert.equal(code, 0);
@@ -64,8 +71,8 @@ test('coagent8 issue --json outputs structured report without opening browser', 
   assert.equal(opened.length, 0);
 
   const payload = JSON.parse(out.output);
-  assert.equal(payload.issueUrl, GITHUB_BUG_REPORT_TEMPLATE_URL);
-  assert.equal(payload.pasteRequired, true);
+  assert.ok(payload.issueUrl.startsWith(`${GITHUB_BUG_REPORT_TEMPLATE_URL}&title=`));
+  assert.equal(payload.pasteRequired, false);
   assert.ok(typeof payload.title === 'string');
   assert.ok(typeof payload.body === 'string');
   assert.ok(typeof payload.prompt === 'string');
@@ -78,15 +85,13 @@ test('coagent8 issue --open --json outputs structured report and opens browser',
 
   const code = await runIssueCli(['--open', '--json'], out, err, {
     openBrowser: url => opened.push(url),
+    runDoctorFn: noDoctor,
   });
 
   assert.equal(code, 0);
   assert.equal(err.output, '');
-  assert.equal(opened.length, 1);
-  assert.equal(opened[0], GITHUB_BUG_REPORT_TEMPLATE_URL);
   const payload = JSON.parse(out.output);
-  assert.equal(payload.issueUrl, GITHUB_BUG_REPORT_TEMPLATE_URL);
-  assert.equal(payload.pasteRequired, true);
+  assert.deepEqual(opened, [payload.issueUrl]);
 });
 
 test('coagent8 issue --help and -h print usage', async () => {
@@ -102,7 +107,7 @@ test('coagent8 issue --help and -h print usage', async () => {
     assert.equal(code, 0);
     assert.equal(err.output, '');
     assert.equal(opened.length, 0);
-    assert.ok(out.output.includes('Usage: coagent8 issue [--open] [--json]'));
+    assert.ok(out.output.includes('Usage: coagent8 issue [--no-open] [--json]'));
   }
 });
 
@@ -139,12 +144,13 @@ test('coagent8 issue isolates secondary failures (browser open or doctor failure
   assert.ok(err.output.includes('Warning: failed to launch browser: browser opener crashed'));
 });
 
-test('coagent8 issue --open reports warning from opener callback on stderr', async () => {
+test('coagent8 issue reports warning from opener callback on stderr', async () => {
   const out = createStream();
   const err = createStream();
   let calledUrl = null;
 
-  const code = await runIssueCli(['--open'], out, err, {
+  const code = await runIssueCli([], out, err, {
+    runDoctorFn: noDoctor,
     openBrowser: (url, onWarning) => {
       calledUrl = url;
       onWarning?.('Warning: browser opener exited with code 1: command not found');
@@ -153,12 +159,11 @@ test('coagent8 issue --open reports warning from opener callback on stderr', asy
   });
 
   assert.equal(code, 0);
-  assert.equal(calledUrl, GITHUB_BUG_REPORT_TEMPLATE_URL);
-  assert.ok(out.output.includes(GITHUB_BUG_REPORT_TEMPLATE_URL));
+  assert.ok(out.output.includes(calledUrl));
   assert.ok(err.output.includes('Warning: browser opener exited with code 1'));
 });
 
-test('coagent8 issue --open always opens GITHUB_BUG_REPORT_TEMPLATE_URL even if report has generic URL', async () => {
+test('coagent8 issue opens the link of the report it printed', async () => {
   const out = createStream();
   const err = createStream();
   let openedUrl = null;
@@ -167,9 +172,11 @@ test('coagent8 issue --open always opens GITHUB_BUG_REPORT_TEMPLATE_URL even if 
     generateReportFn: () => ({
       title: 'custom title',
       body: 'custom body',
-      issueUrl: 'https://github.com/oktawianwybieralski/coagent8/issues/new',
-      prompt: 'custom prompt with https://github.com/oktawianwybieralski/coagent8/issues/new',
+      issueUrl: 'https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml&title=x',
+      prompt: 'custom prompt',
+      pasteRequired: false,
     }),
+    runDoctorFn: noDoctor,
     openBrowser: url => {
       openedUrl = url;
       return true;
@@ -177,7 +184,7 @@ test('coagent8 issue --open always opens GITHUB_BUG_REPORT_TEMPLATE_URL even if 
   });
 
   assert.equal(code, 0);
-  assert.equal(openedUrl, GITHUB_BUG_REPORT_TEMPLATE_URL, 'must strictly open bug report template form URL');
+  assert.equal(openedUrl, 'https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml&title=x');
 });
 
 test('coagent8 issue handles cancellation signal with exit code 130', async () => {
@@ -206,15 +213,20 @@ function fakeOpener() {
 
 test('openBrowser spawns a quiet, non-detached opener that ignores its output', async () => {
   const { child, calls, spawnFn } = fakeOpener();
-  const resultPromise = openBrowser('https://example.com', undefined, { spawnFn, timeoutMs: 1000 });
+  const url = 'https://example.com/new?a=1&b=%25PATH%25';
+  const resultPromise = openBrowser(url, undefined, { spawnFn, timeoutMs: 1000 });
   child.emit('exit', 0);
 
   assert.equal(await resultPromise, true);
   assert.equal(calls.length, 1);
   assert.ok(
-    calls[0].args.some(arg => arg === 'https://example.com'),
+    calls[0].args.some(arg => arg === url),
     'the URL is passed as one argument',
   );
+  if (process.platform === 'win32') {
+    // cmd.exe would split the URL at '&' and expand %PATH%.
+    assert.equal(calls[0].command, 'rundll32.exe');
+  }
   assert.equal(calls[0].options.detached, undefined, 'a detached child can show a console window on Windows');
   assert.equal(calls[0].options.stdio, 'ignore');
   assert.equal(calls[0].options.windowsHide, true);
