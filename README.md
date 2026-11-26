@@ -314,8 +314,11 @@ with it; partial changes stay, so check `git status` after a cancel or timeout.
 Agents can work side by side. Every asynchronous `delegate` belongs to a root and
 returns its `root_handle`; pass it to the next call to share the limits, which
 come from `rootLimits` in your configuration (`maxCalls` 64, `maxConcurrent` 8,
-`maxChildren` 16, `maxDepth` 3, `maxMinutes` 240) and which a calling agent cannot raise. At a limit
-the call fails with `ROOT_LIMIT`. `parent_task` records which task a new one follows
+`maxChildren` 16, `maxDepth` 3, `maxMinutes` 240, `graceMinutes` 60) and which a calling agent cannot raise.
+`maxMinutes` counts running time, while at least one task of the root runs; idle time between
+calls does not count. Past it, a new task is refused, but continuing a session of the root with
+`session_handle` may still run `graceMinutes` more to finish its task (0 turns this off). At a limit
+the call fails with `ROOT_LIMIT`, and the message says what to do next. A changed limit applies to new roots. `parent_task` records which task a new one follows
 from. `session` with `action: root` shows the use and the tasks; a finished agent
 does not make the work accepted. A `scope` is an agreement that the server checks at
 the start and observes at the end, not a sandbox: an agent can still reach another

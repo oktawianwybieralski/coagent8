@@ -9,13 +9,21 @@
  * no turn started: an entry of a dead process keeps its charge. A worker finishing never finishes
  * the root: only the caller accepts the work, so a root has no succeeded state.
  *
+ * The time limit counts running time (#228): the union of the tasks' intervals, from a reservation
+ * to its end, so idle time between calls does not count and tasks running side by side count once.
+ * Every write of the record notes the tasks it sees running (`seenAt`), and a running task's server
+ * notes it every minute, so a task whose server died counts up to the last time it was seen, never
+ * up to the next call. A continued session may run `graceMinutes` beyond the limit to finish its
+ * task; a new task or child may not.
+ *
  * @packageDocumentation
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ToolError } from '../contracts/index.js';
-import { DEFAULT_ROOT_LIMITS, type RootLimits } from '../contracts/execution.js';
+import { DEFAULT_ROOT_LIMITS, ROOT_LIMIT_BOUNDS, type RootLimits } from '../contracts/execution.js';
+import { getConfigFile } from '../config.js';
 import { getDataDir } from '../paths.js';
 import { atomicWrite, withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
@@ -36,6 +44,8 @@ export interface RootTask {
   /** Continues an earlier task's session, so it is no further child of its parent. */
   continuation?: boolean;
   startedAt: string;
+  /** The last time the task was seen running; its end when its server died without recording one. */
+  seenAt?: string;
   endedAt?: string;
 }
 
@@ -46,7 +56,8 @@ export interface RootRecord {
   state: 'open' | 'cancelled';
   limits: RootLimits;
   createdAt: string;
-  deadlineAt: string;
+  /** Records before #228 only: the wall-clock deadline, no longer read. */
+  deadlineAt?: string;
   calls: number;
   tasks: RootTask[];
 }
@@ -127,7 +138,6 @@ export async function createRoot(limits: Partial<RootLimits> = {}): Promise<Root
     state: 'open',
     limits: effective,
     createdAt: new Date(now).toISOString(),
-    deadlineAt: new Date(now + effective.maxMinutes * 60 * 1000).toISOString(),
     calls: 0,
     tasks: [],
   };
@@ -140,17 +150,71 @@ async function updateRoot<T>(handle: string, change: (record: RootRecord) => T):
   return withFileLock(file, async () => {
     const record = parseRoot(file);
     if (!record) throw new ToolError('SESSION_INVALID', `No root ${handle} in this data directory.`);
+    noteRunningTasks(record);
     const result = change(record);
     await atomicWrite(file, JSON.stringify(record));
     return result;
   });
 }
 
-/** Refuses a root that is cancelled or out of time. */
-function assertUsable(record: RootRecord): void {
+/** Notes every task seen running, so its time keeps counting if its server dies unseen. */
+function noteRunningTasks(record: RootRecord, now = Date.now()): void {
+  const seenAt = new Date(now).toISOString();
+  for (const task of record.tasks) if (!task.endedAt && isRootTaskActive(task)) task.seenAt = seenAt;
+}
+
+/** Minutes a continued session may run beyond `maxMinutes`; records before #228 have the default. */
+export function rootGraceMinutes(root: RootRecord): number {
+  return root.limits.graceMinutes ?? DEFAULT_ROOT_LIMITS.graceMinutes;
+}
+
+/**
+ * The running time of a root: the union of its tasks' intervals, so idle time between calls does not
+ * count and tasks running side by side count once.
+ * @param now - Reference time in epoch milliseconds.
+ * @returns Milliseconds.
+ */
+export function rootRunningMs(root: RootRecord, now = Date.now()): number {
+  const intervals = root.tasks
+    .map(task => {
+      const start = Date.parse(task.startedAt);
+      const end = task.endedAt ? Date.parse(task.endedAt) : isRootTaskActive(task) ? now : Date.parse(task.seenAt ?? task.startedAt);
+      return [start, Math.min(Math.max(start, end), now)] as const;
+    })
+    .filter(([start, end]) => Number.isFinite(start) && Number.isFinite(end) && end > start)
+    .sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let coveredTo = -Infinity;
+  for (const [start, end] of intervals) {
+    if (end <= coveredTo) continue;
+    total += end - Math.max(start, coveredTo);
+    coveredTo = end;
+  }
+  return total;
+}
+
+/**
+ * Refuses a root that is cancelled or out of running time.
+ * @param continuation - The task continues a session of this root, which may use the grace minutes.
+ * @returns The milliseconds of running time left to it.
+ */
+function assertUsable(record: RootRecord, continuation = false): number {
   if (record.state === 'cancelled') throw new ToolError('ABORTED', `Root ${record.rootHandle} was cancelled.`);
-  const remainingMs = Date.parse(record.deadlineAt) - Date.now();
-  if (!(remainingMs > 0)) throw new ToolError('ROOT_LIMIT', `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes.`);
+  const grace = rootGraceMinutes(record);
+  const remainingMs = (record.limits.maxMinutes + (continuation ? grace : 0)) * 60_000 - rootRunningMs(record);
+  if (remainingMs > 0) return remainingMs;
+  const counted = 'counted while its tasks run, not between calls';
+  const raise = `For more, raise rootLimits.maxMinutes (up to ${ROOT_LIMIT_BOUNDS.maxMinutes}) or rootLimits.graceMinutes in ${getConfigFile()}; it applies to new roots.`;
+  if (continuation || grace === 0) {
+    throw new ToolError(
+      'ROOT_LIMIT',
+      `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes of running time${grace ? ` and the ${grace} more minutes a continued session gets` : ''} (${counted}). ${raise} Or start a new task without root_handle and session_handle, restating the work.`,
+    );
+  }
+  throw new ToolError(
+    'ROOT_LIMIT',
+    `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes of running time (${counted}). To finish a task, continue its session with session_handle: a continued session gets ${grace} more minutes. ${raise} Or start a new root without root_handle.`,
+  );
 }
 
 function assertFreeSlot(record: RootRecord): void {
@@ -170,7 +234,8 @@ function charge(record: RootRecord): void {
 /**
  * Reserves one task of a root, atomically with every limit it is subject to.
  * @param request - The task, its parent, and the worker session it continues, whose place in the tree it keeps.
- * @returns The task's depth, its parent, named or inherited, and the root's deadline in epoch milliseconds.
+ * @returns The task's depth, its parent, named or inherited, and its deadline in epoch milliseconds:
+ * now plus the root's running time left to it, which bounds it since its own time counts as running.
  * @throws `ROOT_LIMIT` at a limit, `ABORTED` for a cancelled root, `SESSION_BUSY` while the same task
  * is reserved, `INPUT_LIMIT` for a parent outside the root or another than a continued session has,
  * `SESSION_INVALID` without such a root.
@@ -180,7 +245,9 @@ export function reserveRootTask(
   request: { taskHandle: string; parentTask?: string; continues?: string },
 ): Promise<{ depth: number; parentTask?: string; deadlineMs: number }> {
   return updateRoot(handle, record => {
-    assertUsable(record);
+    // A continuation is classified once, here, and its entry keeps the class for its later rounds.
+    const earlier = request.continues ? record.tasks.findLast(task => task.sessionHandle === request.continues) : undefined;
+    const remainingMs = assertUsable(record, Boolean(earlier));
     if (record.tasks.some(task => task.taskHandle === request.taskHandle && isRootTaskActive(task))) {
       throw new ToolError('SESSION_BUSY', `Task ${request.taskHandle} is already starting in this root.`);
     }
@@ -188,7 +255,6 @@ export function reserveRootTask(
     if (request.parentTask === request.taskHandle) throw new ToolError('INPUT_LIMIT', 'A task cannot be its own parent.');
     const parent = request.parentTask ? record.tasks.find(task => task.taskHandle === request.parentTask) : undefined;
     if (request.parentTask && !parent) throw new ToolError('INPUT_LIMIT', `Task ${request.parentTask.slice(0, 80)} is not in this root.`);
-    const earlier = request.continues ? record.tasks.findLast(task => task.sessionHandle === request.continues) : undefined;
     // A continuation keeps its place, so naming a shallower parent cannot buy depth.
     if (earlier && request.parentTask && request.parentTask !== earlier.parentTask) {
       throw new ToolError('INPUT_LIMIT', 'A continued session keeps its parent; omit parent_task.');
@@ -216,7 +282,7 @@ export function reserveRootTask(
       ...(earlier ? { continuation: true } : {}),
       startedAt: new Date().toISOString(),
     });
-    return { depth, ...(parentTask ? { parentTask } : {}), deadlineMs: Date.parse(record.deadlineAt) };
+    return { depth, ...(parentTask ? { parentTask } : {}), deadlineMs: Date.now() + remainingMs };
   });
 }
 
@@ -232,23 +298,30 @@ export function bindRootTask(
   writer?: { file: string; token: string },
 ): Promise<void> {
   return updateRoot(handle, record => {
-    assertUsable(record);
     const task = record.tasks.findLast(entry => entry.taskHandle === taskHandle);
     if (!task) throw new ToolError('PROTOCOL_ERROR', `Task ${taskHandle} has no reservation in root ${handle}.`);
+    assertUsable(record, Boolean(task.continuation));
     task.sessionHandle = sessionHandle;
     if (writer) task.writer = writer;
   });
 }
 
 /**
- * Charges one more backend turn of a running task, such as a fix round or a review attempt.
+ * Charges one more backend turn of a running task, such as a fix round or a review attempt; a
+ * continued session's turn may use the grace minutes.
  * @throws `ROOT_LIMIT` at a limit, `ABORTED` for a cancelled root.
  */
-export function reserveRootCall(handle: string): Promise<void> {
+export function reserveRootCall(handle: string, taskHandle?: string): Promise<void> {
   return updateRoot(handle, record => {
-    assertUsable(record);
+    const task = taskHandle ? record.tasks.findLast(entry => entry.taskHandle === taskHandle) : undefined;
+    assertUsable(record, Boolean(task?.continuation));
     charge(record);
   });
+}
+
+/** Notes a running task as seen, so its time counts if its server dies; every write of the root does the same. */
+export function touchRootTask(handle: string): Promise<void> {
+  return updateRoot(handle, () => undefined);
 }
 
 /** Marks a task ended; its charge stays. */

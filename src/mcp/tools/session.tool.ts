@@ -9,7 +9,7 @@ import { ToolError } from '../../contracts/index.js';
 import { DEFAULT_ROOT_LIMITS } from '../../contracts/execution.js';
 import { redactDiagnostic } from '../../security/redaction.js';
 import { finishedTaskText, readTask } from '../../sessions/tasks.js';
-import { isRootTaskActive, readRoot, runningTasks } from '../../sessions/roots.js';
+import { isRootTaskActive, readRoot, rootGraceMinutes, rootRunningMs, runningTasks } from '../../sessions/roots.js';
 import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {
@@ -132,6 +132,7 @@ function rootReport(handle: unknown) {
     // A reservation has no task record until its turn is about to start.
     state: readTask(task.taskHandle)?.state ?? (isRootTaskActive(task) ? 'starting' : 'not_started'),
   }));
+  const runningMinutes = rootRunningMs(root) / 60_000;
   const lines = [
     `root_handle: ${root.rootHandle}`,
     `state: ${root.state}`,
@@ -139,7 +140,7 @@ function rootReport(handle: unknown) {
     `running: ${runningTasks(root).length} of ${root.limits.maxConcurrent}`,
     `children per task: ${root.limits.maxChildren ?? DEFAULT_ROOT_LIMITS.maxChildren}`,
     `depth limit: ${root.limits.maxDepth}`,
-    `time until: ${root.deadlineAt}`,
+    `running time: ${Math.floor(runningMinutes)} of ${root.limits.maxMinutes} minutes, ${rootGraceMinutes(root)} more for a continued session (idle time between calls does not count)`,
     '',
     ...tasks.map(task => `- ${task.taskHandle}: ${task.state}${task.parentTask ? ` (parent ${task.parentTask})` : ''}`),
     '',
@@ -147,7 +148,7 @@ function rootReport(handle: unknown) {
   ];
   return {
     content: [{ type: 'text' as const, text: lines.join('\n') }],
-    structuredContent: { ...root, tasks },
+    structuredContent: { ...root, tasks, runningMinutes: Math.floor(runningMinutes), graceMinutes: rootGraceMinutes(root) },
   };
 }
 

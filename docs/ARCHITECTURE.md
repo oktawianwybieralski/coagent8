@@ -1373,10 +1373,23 @@ does not see changes outside it. A check a worker runs sees the half-finished wo
 **Root.** `delegate` without `root_handle` starts a root, in `<data>/delegations/roots/`. The limits
 are `rootLimits` of the user's configuration when the root is created: `maxCalls` 64 (first
 turns, every later backend turn of a loop and agy's recovery turn), `maxConcurrent` 8 (owner decision
-2026-11-06, with `maxCalls`), `maxChildren` 16, `maxDepth` 3 and
-`maxMinutes` 240. A calling agent cannot raise them. Every reservation runs under the record's
+2026-11-06, with `maxCalls`), `maxChildren` 16, `maxDepth` 3, `maxMinutes` 240 and
+`graceMinutes` 60. A calling agent cannot raise them. Every reservation runs under the record's
 lock, also across server processes; a task's budget is its `timeout_ms` or the default, cut to
-what is left of the root's time. At a limit a start fails with `ROOT_LIMIT` and a loop ends with
+what is left of the root's running time.
+
+`maxMinutes` counts running time (#228): the union of the tasks' intervals, from a reservation to
+its end, so idle time between calls does not count and tasks running side by side count once; the
+call limit and `maxConcurrent` bound how much work runs in parallel. Every write of the record notes
+the tasks it sees running (`seenAt`), and a running task's server notes it once a minute, so a task
+whose server died without recording its end counts up to the last time it was seen. A worker that
+outlives its server on POSIX counts while it is seen and up to its last note after that. Past
+`maxMinutes`, a new task or child is refused; a continuation of a session of the root, its rounds and
+its recovery turn may run until `maxMinutes + graceMinutes` (0 allows none), so a task stopped by the
+limit can be finished. A task running when the limit is reached stops then; finishing it takes a
+continuation. The `ROOT_LIMIT` message names running time, the grace, the configuration keys and the
+file, and that a change applies to new roots. Records written before #228 keep a `deadlineAt` that is
+no longer read and get the default grace. At a limit a start fails with `ROOT_LIMIT` and a loop ends with
 `needs_input`. A continued session keeps its root and depth even without naming it, by
 reading the root records; a parent names its root; conflicting names are refused, as is another parent for a
 continued session. Root records are kept for 7 days without a running task, past any root's time; a session continued

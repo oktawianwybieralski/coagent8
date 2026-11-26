@@ -47,6 +47,7 @@ import {
   refundRootTask,
   removeUnusedRoot,
   reserveRootCall,
+  touchRootTask,
   reserveRootTask,
 } from '../sessions/roots.js';
 import {
@@ -299,6 +300,8 @@ export function stopActiveDelegations(): Promise<unknown> {
 const ROOT_WATCH_MS = 1000;
 /** Reads of a root that may fail in a row before its worker is stopped: a root nobody can read cannot cancel it. */
 const ROOT_WATCH_FAILURES = 5;
+/** Watch ticks between notes that a running task was seen (a minute). */
+const ROOT_SEEN_TICKS = 60;
 const ROOT_SETTLE_POLL_MS = 100;
 /** Attempts to mark a task ended in its root, so a passing failure does not keep its place. */
 const ROOT_END_ATTEMPTS = 3;
@@ -502,7 +505,7 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
   // Owned by the task from the first Git read on, so cancellation and timeout_ms bound all of it.
   const timeoutMs = start.args.timeout_ms;
   const budget = createExecutionBudget({
-    // The root's time is shared: no task runs past it, whatever it asked for.
+    // The root's running time is shared: no task runs past what is left of it, whatever it asked for.
     totalBudgetMs: Math.min(
       typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_EXECUTION_TIMEOUT_MS,
       Math.max(1, reservation.deadlineMs - Date.now()),
@@ -555,7 +558,20 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     }
   };
   let watchFailures = 0;
+  let watchTicks = 0;
+  let touching = false;
   const watch = setInterval(() => {
+    // Notes the task as running once a minute, so a crash of this server stops its time near the crash.
+    if (++watchTicks % ROOT_SEEN_TICKS === 0 && !touching) {
+      touching = true;
+      touchRootTask(rootHandle)
+        .catch(err =>
+          process.stderr.write(`CoAgent8: root ${rootHandle} was not updated: ${redactDiagnostic((err as Error).message, 512)}\n`),
+        )
+        .finally(() => {
+          touching = false;
+        });
+    }
     try {
       const root = readRoot(rootHandle);
       watchFailures = root ? 0 : watchFailures + 1;
@@ -595,7 +611,7 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     start.requestSignal?.removeEventListener('abort', abortStart);
     announce();
   };
-  const beforeRound = () => reserveRootCall(rootHandle);
+  const beforeRound = () => reserveRootCall(rootHandle, taskHandle);
   const operation = executeDelegation(start.prompt, start.publicInput, start.args, start.cwd, start.scope, controller.signal, null, {
     ...start.options,
     supervise: start.supervise,

@@ -19,7 +19,17 @@ const { saveConfig, loadConfig } = require('../../../src/config.ts');
 const { stopActiveDelegations } = require('../../../src/execution/delegation.ts');
 require('../../../src/execution/controller.ts').composeExecutionCancellation();
 const { readTask, createTaskHandle, claimTaskRequest } = require('../../../src/sessions/tasks.ts');
-const { readRoot, createRoot, reserveRootTask, bindRootTask, reserveRootCall, refundRootTask } = require('../../../src/sessions/roots.ts');
+const {
+  readRoot,
+  createRoot,
+  reserveRootTask,
+  bindRootTask,
+  reserveRootCall,
+  refundRootTask,
+  rootRunningMs,
+  endRootTask,
+  touchRootTask,
+} = require('../../../src/sessions/roots.ts');
 const { acquireWriterLease, WRITERS_DIRECTORY, WRITER_RECORD_FILE } = require('../../../src/sessions/writer.ts');
 const { claimsOverlap, resolveWriteClaim, readWorkspaceRepository } = require('../../../src/workspace/changes.ts');
 const { claudeTurnSettings } = require('../../../src/backends/claude/adapter.ts');
@@ -35,6 +45,18 @@ test.after(async () => {
 const approve = { askConsent: async () => ({ approved: true, remember: false }) };
 const REQUEST = { task: 'Change a file', backend: 'codex', model: 'gpt-6.1-sol' };
 const code = expected => err => err.code === expected;
+/** A root whose ended task used all but `leftMs` of `minutes` of running time, ending a second ago. */
+const spent = (root, leftMs, minutes = root.limits.maxMinutes) => {
+  const end = Date.now() - 1000;
+  const past = {
+    taskHandle: `task_${'f'.repeat(32)}`,
+    pid: 1,
+    depth: 1,
+    startedAt: new Date(end - (minutes * 60_000 - leftMs)).toISOString(),
+    endedAt: new Date(end).toISOString(),
+  };
+  return { ...root, tasks: [past, ...root.tasks] };
+};
 
 let repos = 0;
 function fixtureRepo() {
@@ -328,9 +350,22 @@ test('a finished task has left its root by the time its final state can be read'
 });
 
 test('the configuration refuses invalid limits', async () => {
-  for (const rootLimits of [{ maxCalls: 0 }, { maxConcurrent: 65 }, { maxDepth: 1.5 }, { maxMinutes: '4' }, { other: 1 }, []]) {
+  for (const rootLimits of [
+    { maxCalls: 0 },
+    { maxConcurrent: 65 },
+    { maxDepth: 1.5 },
+    { maxMinutes: '4' },
+    { graceMinutes: -1 },
+    { graceMinutes: 241 },
+    { other: 1 },
+    [],
+  ]) {
     await assert.rejects(saveConfig({ ...loadConfig(), rootLimits }), /rootLimits/, JSON.stringify(rootLimits));
   }
+  const saved = loadConfig();
+  await saveConfig({ ...saved, rootLimits: { graceMinutes: 0 } });
+  assert.equal(loadConfig().rootLimits.graceMinutes, 0, 'a grace of 0 turns it off');
+  await saveConfig(saved);
 });
 
 test('a start outside the root contract is refused', async () => {
@@ -413,16 +448,85 @@ test("a cancellation just before the turn prevents it, and a task never outlives
   await edit({ state: 'cancelled' });
   await assert.rejects(bindRootTask(root.rootHandle, `task_${'1'.repeat(32)}`, 'syn_sess_x'), code('ABORTED'));
   await assert.rejects(reserveRootCall(root.rootHandle), code('ABORTED'));
-  await edit({ state: 'open', deadlineAt: new Date(Date.now() - 1).toISOString() });
+  await edit({ state: 'open' });
+  await atomicWrite(file, JSON.stringify(spent(readRoot(root.rootHandle), -1)));
   await assert.rejects(reserveRootTask(root.rootHandle, { taskHandle: `task_${'2'.repeat(32)}` }), code('ROOT_LIMIT'));
   await assert.rejects(reserveRootCall(root.rootHandle), code('ROOT_LIMIT'));
 
   const repo = fixtureRepo();
   const joined = await createRoot();
   const joinedFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${joined.rootHandle}.json`);
-  await atomicWrite(joinedFile, JSON.stringify({ ...joined, deadlineAt: new Date(Date.now() + 2500).toISOString() }));
+  await atomicWrite(joinedFile, JSON.stringify(spent(joined, 2500)));
   const worker = await runningWorker(repo, { scope: ['a'], root_handle: joined.rootHandle });
   assert.equal((await finished(worker.taskHandle)).state, 'timed_out');
+});
+
+test('a root counts running time, not idle time, and a continued session may finish in the grace (#228)', async () => {
+  const root = await createRoot({ maxMinutes: 10, graceMinutes: 5 });
+  const file = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${root.rootHandle}.json`);
+  const at = minutesAgo => new Date(Date.now() - minutesAgo * 60_000).toISOString();
+  const ended = (n, from, to) => ({ taskHandle: `task_${String(n).repeat(32)}`, pid: 1, depth: 1, startedAt: at(from), endedAt: at(to) });
+  // Created five hours ago; 4 + 4 minutes of work two hours apart, and two tasks side by side that count once.
+  await atomicWrite(
+    file,
+    JSON.stringify({
+      ...root,
+      createdAt: at(300),
+      tasks: [ended(4, 300, 296), { ...ended(5, 180, 176), sessionHandle: 'syn_sess_old' }, ended(6, 179, 177)],
+    }),
+  );
+  assert.equal(Math.round(rootRunningMs(readRoot(root.rootHandle)) / 60_000), 8);
+  const first = await reserveRootTask(root.rootHandle, { taskHandle: `task_${'7'.repeat(32)}` });
+  assert.ok(Math.abs(first.deadlineMs - (Date.now() + 2 * 60_000)) < 5000, 'a new task gets what is left of the limit');
+  await touchRootTask(root.rootHandle);
+  assert.ok(readRoot(root.rootHandle).tasks.at(-1).seenAt, 'a running task is noted as seen');
+  await endRootTask(root.rootHandle, `task_${'7'.repeat(32)}`);
+
+  // A server that died unseen: its task counts up to the last time it was seen, not until the next call.
+  const dead = spawnSync(process.execPath, ['-e', ''], { windowsHide: true }).pid;
+  const record = readRoot(root.rootHandle);
+  record.tasks.push({ taskHandle: `task_${'8'.repeat(32)}`, pid: dead, depth: 1, startedAt: at(100), seenAt: at(99) });
+  await atomicWrite(file, JSON.stringify(record));
+  assert.equal(Math.round(rootRunningMs(readRoot(root.rootHandle)) / 60_000), 9);
+
+  // Out of the limit: a new task is refused and told how to go on; a continuation runs in the grace.
+  const usedMinutes = rootRunningMs(readRoot(root.rootHandle)) / 60_000;
+  await atomicWrite(file, JSON.stringify(spent(readRoot(root.rootHandle), 0, 10.5 - usedMinutes)));
+  const refused = await reserveRootTask(root.rootHandle, { taskHandle: `task_${'9'.repeat(32)}` }).catch(err => err);
+  assert.equal(refused.code, 'ROOT_LIMIT');
+  assert.ok(
+    refused.message.includes('used its 10 minutes of running time (counted while its tasks run, not between calls)'),
+    refused.message,
+  );
+  assert.ok(refused.message.includes('continue its session with session_handle: a continued session gets 5 more minutes'));
+  assert.ok(refused.message.includes('raise rootLimits.maxMinutes (up to 1440) or rootLimits.graceMinutes in '));
+  assert.ok(refused.message.includes('config.json; it applies to new roots'));
+  const continued = `task_${'a'.repeat(32)}`;
+  const grace = await reserveRootTask(root.rootHandle, { taskHandle: continued, continues: 'syn_sess_old' });
+  assert.ok(grace.deadlineMs - Date.now() > 3 * 60_000 && grace.deadlineMs - Date.now() <= 5 * 60_000, 'the grace bounds it');
+  await bindRootTask(root.rootHandle, continued, 'syn_sess_old');
+  await reserveRootCall(root.rootHandle, continued);
+  await assert.rejects(reserveRootCall(root.rootHandle), code('ROOT_LIMIT'), 'another round without the task is no continuation');
+  await endRootTask(root.rootHandle, continued);
+
+  // Past the grace too: the continuation is refused and told to start over.
+  await atomicWrite(file, JSON.stringify(spent(readRoot(root.rootHandle), 0, 20)));
+  const late = await reserveRootTask(root.rootHandle, { taskHandle: `task_${'b'.repeat(32)}`, continues: 'syn_sess_old' }).catch(
+    err => err,
+  );
+  assert.equal(late.code, 'ROOT_LIMIT');
+  assert.ok(late.message.includes('used its 10 minutes of running time and the 5 more minutes a continued session gets'), late.message);
+  assert.ok(late.message.includes('start a new task without root_handle and session_handle'));
+
+  // A record from before #228 has no grace stored and a deadline nobody reads.
+  const legacy = await createRoot();
+  const legacyFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${legacy.rootHandle}.json`);
+  const { graceMinutes: _omitted, ...oldLimits } = legacy.limits;
+  await atomicWrite(legacyFile, JSON.stringify({ ...legacy, limits: oldLimits, createdAt: at(1000), deadlineAt: at(760) }));
+  await reserveRootTask(legacy.rootHandle, { taskHandle: `task_${'c'.repeat(32)}` });
+  const report = await handleSession({ action: 'root', root_handle: legacy.rootHandle });
+  assert.ok(report.content[0].text.includes('running time: 0 of 240 minutes, 60 more for a continued session'), report.content[0].text);
+  assert.equal(report.structuredContent.graceMinutes, 60);
 });
 
 test('a reservation that reached no turn is refunded; a task of a dead server stops counting but keeps its charge', async () => {
@@ -653,7 +757,7 @@ test('an overlapping start is refused before the check form, and a form counts a
 
   const root = await createRoot();
   const file = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${root.rootHandle}.json`);
-  await atomicWrite(file, JSON.stringify({ ...root, deadlineAt: new Date(Date.now() + 1500).toISOString() }));
+  await atomicWrite(file, JSON.stringify(spent(root, 1500)));
   process.env.CODEX_FIXTURE_MODE = 'interruptible';
   const started = Date.now();
   await assert.rejects(
@@ -668,7 +772,11 @@ test('an overlapping start is refused before the check form, and a form counts a
     code('TIMEOUT'),
   );
   assert.ok(Date.now() - started < 8000);
-  assert.deepEqual(readRoot(root.rootHandle).tasks, [], 'no turn started');
+  assert.deepEqual(
+    readRoot(root.rootHandle).tasks.map(task => task.taskHandle),
+    [`task_${'f'.repeat(32)}`],
+    'no turn started',
+  );
 });
 
 test('a loop whose root ran out of calls ends for the caller to decide', async () => {
