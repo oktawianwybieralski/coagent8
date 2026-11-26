@@ -5,8 +5,8 @@ description: Report a CoAgent8 defect on GitHub through the CoAgent8 issue tool,
 
 # CoAgent8 issue report
 
-1. Write the report yourself from the conversation; never ask the user to write,
-   copy or paste anything. Call `issue` with `title` (a short statement of the
+1. Write the report yourself from the conversation; do not ask the user to
+   write it. Call `issue` with `title` (a short statement of the
    problem), `error_message` (the exact error) and `context` (what led to it:
    the tool, parameters, expected and actual result, impact, without secrets or
    private code). `include_doctor` defaults to true and attaches detected CLI
@@ -15,8 +15,9 @@ description: Report a CoAgent8 defect on GitHub through the CoAgent8 issue tool,
    report form and opens it in the browser (`opened: true`). Tell the user to
    check the form for anything private and click Submit new issue. When
    `opened` is false, show the link from the prompt. When `pasteRequired` is
-   true, the report did not fit in the link: show the prompt's instruction and
-   the full report block before the user submits.
+   true, the report did not fit in the link: ask the user to paste the full
+   report block from the prompt into the form before submitting. Otherwise
+   there is nothing to copy or paste.
 3. Never submit the issue for the user.
 
 Report problems with a backend's answer itself (a wrong opinion from the other
