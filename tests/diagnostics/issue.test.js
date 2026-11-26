@@ -10,9 +10,10 @@ const {
   GITHUB_NEW_ISSUE_BASE,
   GITHUB_BUG_REPORT_TEMPLATE_URL,
   MAX_ENCODED_ISSUE_URL_LENGTH,
+  buildPrefilledIssueUrl,
 } = require('../../src/diagnostics/issue.ts');
 
-test('issue link points to bug_report.yml template and provides copyable report block', () => {
+test('the issue link fills the title and the fields of the bug report form', () => {
   const errorMessage =
     'No file-reading tools or filesystem resources are available, so I could not verify the surrounding syncPage code or authorization call site to confirm rejection precedes every side effect; shell commands were prohibited.';
   const context =
@@ -29,25 +30,16 @@ test('issue link points to bug_report.yml template and provides copyable report 
     },
   });
   const link = report.prompt.match(/\[Submit Bug Report on GitHub\]\(<([^>]+)>\)/)[1];
-  const copiedLink = report.prompt.match(/Link URL:\n\n```text\n([^\n]+)\n```/)[1];
   assert.equal(link, report.issueUrl);
-  assert.equal(copiedLink, link);
-  assert.equal(report.issueUrl, GITHUB_BUG_REPORT_TEMPLATE_URL);
-  assert.ok(report.issueUrl.includes('?template=bug_report.yml'));
-  assert.ok(!report.issueUrl.includes('title='));
-  assert.ok(!report.issueUrl.includes('body='));
-  assert.ok(!/[\\()\s]/.test(link), 'URL must not contain Markdown escapes or delimiters');
-
-  // Verify CommonMark rendering: outer code fence must be at least 4 backticks (longer than body's ```)
-  const copyBlockMatch = report.prompt.match(
-    /Review the sanitized report below, copy it, paste it into the "CoAgent8 issue output" field of the bug report form, complete the required fields and submit:\n\n(`{4,})text\n([\s\S]*?)\n\1$/,
-  );
-  assert.ok(copyBlockMatch, 'prompt must contain separate copy block enclosed in safe outer code fence');
-  assert.equal(
-    copyBlockMatch[2],
-    report.body,
-    'copy block content must strictly match the complete report body including nested code blocks and environment details',
-  );
+  assert.ok(report.issueUrl.startsWith(`${GITHUB_BUG_REPORT_TEMPLATE_URL}&title=`));
+  assert.ok(!/[\\()\s<>]/.test(link), 'URL must not contain Markdown escapes or delimiters');
+  assert.equal(report.pasteRequired, false);
+  assert.ok(!report.prompt.includes('```'), 'nothing to copy when the report fits in the link');
+  const fields = new URL(report.issueUrl).searchParams;
+  assert.equal(fields.get('title'), report.title);
+  assert.ok(report.body.includes(fields.get('what-happened')));
+  assert.ok(report.body.includes(fields.get('environment')));
+  assert.ok(fields.get('what-happened').indexOf(errorMessage) < fields.get('what-happened').indexOf(context), 'the error comes first');
 
   assert.ok(report.body.includes(context));
   assert.ok(report.body.includes(errorMessage));
@@ -61,12 +53,11 @@ test('issue link points to bug_report.yml template and provides copyable report 
   );
   assert.ok(!report.body.includes('vcodex-cli'));
   assert.ok(!report.body.includes('v1.3.2'));
-  assert.ok(report.body.includes('For setup, sign-in or quota problems, paste the output of doctor (scope: health).'));
+  assert.ok(report.body.includes('For setup, sign-in or quota problems, add the output of doctor (scope: health).'));
   assert.ok(!/[\r\n]/.test(report.title));
   assert.ok(!report.title.includes('[truncated]'));
   assert.ok(Array.from(report.title).length <= 120);
   assert.ok(!report.prompt.includes('<details>'));
-  assert.equal(report.prompt.split(report.body).length, 2, 'the report appears once, in the copy block');
 
   const emptyBackendsReport = generateBugReport({ errorMessage: 'Error', doctorReport: { backends: {} } });
   assert.ok(emptyBackendsReport.body.includes('- **Detected CLIs**: Not provided'));
@@ -92,12 +83,16 @@ test('issue link points to bug_report.yml template and provides copyable report 
   assert.ok(!unknownVersionReport.body.includes('vunknown'));
 });
 
-test('the issue URL carries no report data and stays below the length ceiling', () => {
+test('the issue URL round-trips any text and stays below the length ceiling', () => {
   const errorMessage = 'Failure (worker\'s task)! *retry* & body=injected #fragment %23 + / \\ "quoted" \u{1f680} \u0142';
   const context = 'Keep literal %26 and &#x20; and ?title=other&body=other in diagnostics.';
   const report = generateBugReport({ errorMessage, context });
-  assert.equal(report.issueUrl, GITHUB_BUG_REPORT_TEMPLATE_URL);
   assert.ok(Buffer.byteLength(report.issueUrl) <= MAX_ENCODED_ISSUE_URL_LENGTH);
+  assert.ok(!/[ #&]/.test(report.issueUrl.split('?')[1].replace(/&(title|what-happened|environment)=/g, '')), 'one query field per value');
+  const roundTrip = new URL(report.issueUrl).searchParams;
+  assert.ok(roundTrip.get('what-happened').includes(errorMessage));
+  assert.ok(roundTrip.get('what-happened').includes(context));
+  assert.equal(roundTrip.get('body'), null);
   assert.ok(report.body.includes(errorMessage));
   assert.ok(report.body.includes(context));
 
@@ -132,6 +127,33 @@ test('the issue URL carries no report data and stays below the length ceiling', 
   assert.ok(sanitizedInput.endsWith('...[truncated]'));
   const boundedReport = generateBugReport({ errorMessage: boundedInput, context: boundedInput });
   assert.ok(boundedReport.body.includes(sanitizedInput));
+  // The full report does not fit; the link keeps the start of "What happened" and the whole environment.
+  assert.ok(boundedReport.issueUrl.length <= MAX_ENCODED_ISSUE_URL_LENGTH);
+  const shortened = new URL(boundedReport.issueUrl).searchParams;
+  assert.match(shortened.get('what-happened'), /^Error:\n\n```text\n\u{1f680}/u);
+  assert.ok(shortened.get('what-happened').endsWith('[shortened to fit the form link]'));
+  assert.match(shortened.get('environment'), /CoAgent8 MCP Version/);
+  assert.equal(boundedReport.pasteRequired, true, 'a shortened link offers the full report');
+  assert.ok(boundedReport.prompt.includes('The report was shortened to fit the link'));
+  assert.ok(boundedReport.prompt.includes(boundedReport.body));
+});
+
+test('titles come from the title option, fall back to the error, and the form falls back to pasting', () => {
+  assert.equal(
+    generateBugReport({ title: 'Root limit counts idle time', errorMessage: 'Error [ROOT_LIMIT]' }).title,
+    '[Bug]: Root limit counts idle time',
+  );
+  assert.equal(generateBugReport({ title: '[Bug]: Already prefixed' }).title, '[Bug]: Already prefixed');
+  assert.equal(generateBugReport({ title: '  ', errorMessage: 'Fallback\nsecond' }).title, '[Bug]: Fallback');
+  const empty = generateBugReport({});
+  assert.equal(empty.title, '[Bug]: ');
+  assert.match(new URL(empty.issueUrl).searchParams.get('what-happened'), /^Describe what you did/);
+  assert.ok(!generateBugReport({ title: 'token sk-' + 'A'.repeat(40) }).title.includes('sk-A'), 'the title is redacted');
+
+  // Not even the title and the environment fit: the empty form and a copy block to paste.
+  assert.equal(buildPrefilledIssueUrl('t', 'w', 'e'.repeat(100), 120), GITHUB_BUG_REPORT_TEMPLATE_URL);
+  const fitted = buildPrefilledIssueUrl('t', 'w'.repeat(500), 'e', 400);
+  assert.ok(fitted.length <= 400 && fitted.length > 300, String(fitted.length));
 });
 
 test('issue reporting generates sanitized GitHub issue template URL and redacts secrets', async () => {
@@ -177,10 +199,13 @@ test('issue reporting generates sanitized GitHub issue template URL and redacts 
     },
   });
 
-  assert.equal(report.issueUrl, GITHUB_BUG_REPORT_TEMPLATE_URL);
-  assert.ok(report.prompt.includes('Would you like to report this issue to GitHub'));
-  assert.ok(report.prompt.includes(GITHUB_BUG_REPORT_TEMPLATE_URL));
-  assert.ok(report.prompt.includes('CoAgent8 issue output'));
+  assert.ok(report.issueUrl.startsWith(GITHUB_BUG_REPORT_TEMPLATE_URL));
+  assert.ok(report.prompt.includes('The bug report form is filled in'));
+  assert.ok(report.prompt.includes(report.issueUrl));
+  const secretReport = generateBugReport({ title: secretText, errorMessage: secretText, context: secretText });
+  for (const leaked of ['sk-proj12345678901234567890', 'AKIAIOSFODNN7EXAMPLE', 'superSecretToken', encodeURIComponent(os.homedir())]) {
+    assert.ok(!decodeURIComponent(secretReport.issueUrl).includes(leaked) && !secretReport.issueUrl.includes(leaked), leaked);
+  }
 });
 
 test('diagnostic and issue truncation cannot expose recognized credential prefixes', () => {

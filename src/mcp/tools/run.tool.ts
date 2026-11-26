@@ -73,6 +73,8 @@ export const runToolDefinition = {
         type: 'boolean',
         description: 'Whether to attach detected CLI versions only (no readiness or quota) for action "issue" (default: true).',
       },
+      title: { type: 'string', description: 'Issue title for action "issue".' },
+      open_browser: { type: 'boolean', description: 'Whether action "issue" opens the filled-in form (default: true).' },
       context_files: {
         type: 'array',
         items: { type: 'string' },
