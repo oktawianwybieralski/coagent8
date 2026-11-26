@@ -72,7 +72,14 @@
           "minimum": 1,
           "maximum": 1440,
           "default": 240,
-          "description": "Minutes from the root's creation to the end of its last task."
+          "description": "Minutes of running time, while at least one task of the root runs; idle time between calls does not count."
+        },
+        "graceMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 240,
+          "default": 60,
+          "description": "Minutes a continued session may run beyond maxMinutes to finish its task; 0 allows none."
         }
       }
     },

@@ -47,6 +47,8 @@ export interface RootTask {
   /** The last time the task was seen running; its end when its server died without recording one. */
   seenAt?: string;
   endedAt?: string;
+  /** Reached no turn: its call was given back, its time still counts. */
+  refunded?: boolean;
 }
 
 /** The durable record of a root. */
@@ -157,10 +159,19 @@ async function updateRoot<T>(handle: string, change: (record: RootRecord) => T):
   });
 }
 
-/** Notes every task seen running, so its time keeps counting if its server dies unseen. */
-function noteRunningTasks(record: RootRecord, now = Date.now()): void {
-  const seenAt = new Date(now).toISOString();
-  for (const task of record.tasks) if (!task.endedAt && isRootTaskActive(task)) task.seenAt = seenAt;
+/** The later of now and a recorded time, so a clock set back never shortens a recorded interval. */
+function notBefore(time: string | undefined, now = Date.now()): string {
+  const recorded = time ? Date.parse(time) : NaN;
+  return new Date(Number.isFinite(recorded) && recorded > now ? recorded : now).toISOString();
+}
+
+/**
+ * Notes every task seen running, so its time keeps counting if its server dies unseen. Every write
+ * of the record does this, so what a check counted stays counted: a running task counts up to now,
+ * and after its server dies up to this note.
+ */
+function noteRunningTasks(record: RootRecord): void {
+  for (const task of record.tasks) if (!task.endedAt && isRootTaskActive(task)) task.seenAt = notBefore(task.seenAt);
 }
 
 /** Minutes a continued session may run beyond `maxMinutes`; records before #228 have the default. */
@@ -178,8 +189,9 @@ export function rootRunningMs(root: RootRecord, now = Date.now()): number {
   const intervals = root.tasks
     .map(task => {
       const start = Date.parse(task.startedAt);
-      const end = task.endedAt ? Date.parse(task.endedAt) : isRootTaskActive(task) ? now : Date.parse(task.seenAt ?? task.startedAt);
-      return [start, Math.min(Math.max(start, end), now)] as const;
+      const seen = Date.parse(task.seenAt ?? task.startedAt);
+      const end = task.endedAt ? Date.parse(task.endedAt) : isRootTaskActive(task) ? Math.max(now, seen) : seen;
+      return [start, Math.max(start, end)] as const;
     })
     .filter(([start, end]) => Number.isFinite(start) && Number.isFinite(end) && end > start)
     .sort((a, b) => a[0] - b[0]);
@@ -264,7 +276,9 @@ export function reserveRootTask(
     if (request.parentTask && !earlier) {
       const maxChildren = record.limits.maxChildren ?? DEFAULT_ROOT_LIMITS.maxChildren;
       const children = new Set(
-        record.tasks.filter(task => task.parentTask === request.parentTask && !task.continuation).map(task => task.taskHandle),
+        record.tasks
+          .filter(task => task.parentTask === request.parentTask && !task.continuation && !task.refunded)
+          .map(task => task.taskHandle),
       );
       if (children.size >= maxChildren) {
         throw new ToolError('ROOT_LIMIT', `Task ${request.parentTask} already has ${children.size} children, the limit of root ${handle}.`);
@@ -328,16 +342,20 @@ export function touchRootTask(handle: string): Promise<void> {
 export function endRootTask(handle: string, taskHandle: string): Promise<void> {
   return updateRoot(handle, record => {
     const task = record.tasks.findLast(entry => entry.taskHandle === taskHandle && !entry.endedAt);
-    if (task) task.endedAt = new Date().toISOString();
+    if (task) task.endedAt = notBefore(task.seenAt);
   });
 }
 
-/** Removes a reservation whose turn this process knows did not start, and returns its charge. */
+/**
+ * Ends a reservation whose turn this process knows did not start and returns its charge; the time it
+ * took, such as a form left open, still counts.
+ */
 export function refundRootTask(handle: string, taskHandle: string): Promise<void> {
   return updateRoot(handle, record => {
-    const index = record.tasks.findLastIndex(entry => entry.taskHandle === taskHandle && !entry.endedAt);
-    if (index < 0) return;
-    record.tasks.splice(index, 1);
+    const task = record.tasks.findLast(entry => entry.taskHandle === taskHandle && !entry.endedAt);
+    if (!task) return;
+    task.endedAt = notBefore(task.seenAt);
+    task.refunded = true;
     record.calls = Math.max(0, record.calls - 1);
   });
 }
@@ -354,11 +372,11 @@ export function cancelRoot(handle: string): Promise<RootRecord> {
   });
 }
 
-/** Removes a root that no task ever used. */
+/** Removes a root whose tasks all reached no turn. */
 export function removeUnusedRoot(handle: string): Promise<void> {
   const file = rootFile(handle);
   return withFileLock(file, async () => {
-    if (parseRoot(file)?.tasks.length === 0) fs.rmSync(file, { force: true });
+    if (parseRoot(file)?.tasks.every(task => task.refunded)) fs.rmSync(file, { force: true });
   });
 }
 
