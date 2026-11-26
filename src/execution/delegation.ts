@@ -49,6 +49,8 @@ import {
   reserveRootCall,
   touchRootTask,
   reserveRootTask,
+  ROOT_SEEN_TICKS,
+  ROOT_WATCH_MS,
 } from '../sessions/roots.js';
 import {
   captureWorkspace,
@@ -296,12 +298,9 @@ export function stopActiveDelegations(): Promise<unknown> {
   return Promise.allSettled([...activeDelegations.keys()]);
 }
 
-/** How often a running delegation looks for a cancellation of its root by another server process. */
-const ROOT_WATCH_MS = 1000;
 /** Reads of a root that may fail in a row before its worker is stopped: a root nobody can read cannot cancel it. */
 const ROOT_WATCH_FAILURES = 5;
-/** Watch ticks between notes that a running task was seen (a minute). */
-const ROOT_SEEN_TICKS = 60;
+// ROOT_WATCH_MS and ROOT_SEEN_TICKS come from the roots, which charge a clock set back by that note interval.
 const ROOT_SETTLE_POLL_MS = 100;
 /** Attempts to mark a task ended in its root, so a passing failure does not keep its place. */
 const ROOT_END_ATTEMPTS = 3;

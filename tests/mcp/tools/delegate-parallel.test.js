@@ -606,6 +606,29 @@ test('after the clock is set back, later work counts at its real length and is r
     Date.now = realNow;
   }
 
+  // Set back before a running task's first note: another task cannot get the time it may have run.
+  shift = 0;
+  Date.now = () => realNow() + shift;
+  try {
+    const root = await createRoot({ maxMinutes: 1, graceMinutes: 0, maxConcurrent: 4, maxCalls: 10 });
+    const first = `task_${'a'.repeat(32)}`;
+    await reserveRootTask(root.rootHandle, { taskHandle: first });
+    const startedAt = Date.parse(readRoot(root.rootHandle).tasks.at(-1).startedAt);
+    shift += 50_000;
+    shift -= 3600_000;
+    const second = await reserveRootTask(root.rootHandle, { taskHandle: `task_${'b'.repeat(32)}` }).catch(err => err);
+    assert.equal(second.code, 'ROOT_LIMIT', 'the running task is charged a full note interval, the whole limit');
+    const noted = readRoot(root.rootHandle).tasks.at(-1);
+    assert.equal(Date.parse(noted.seenAt) - startedAt, 60_000, 'it is noted a note interval after the latest written time');
+    assert.ok(rootRunningMs(readRoot(root.rootHandle)) >= 60_000);
+    await endRootTask(root.rootHandle, first, 50_000);
+    const ended = readRoot(root.rootHandle).tasks.at(-1);
+    assert.ok(Date.parse(ended.endedAt) - startedAt >= 60_000, 'its measured 50 s does not lower what was counted');
+    assert.ok(rootRunningMs(readRoot(root.rootHandle)) >= 60_000);
+  } finally {
+    Date.now = realNow;
+  }
+
   // A record from before the offset, its times an hour ahead of the clock, starts the offset at 0.
   const old = await createRoot({ maxMinutes: 10 });
   const oldFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${old.rootHandle}.json`);
@@ -650,7 +673,11 @@ test('a reservation that reached no turn is refunded; a task of a dead server st
   ahead.tasks.at(-1).seenAt = later;
   await atomicWrite(file, JSON.stringify(ahead));
   await reserveRootCall(root.rootHandle).catch(() => undefined);
-  assert.equal(readRoot(root.rootHandle).tasks.at(-1).seenAt, later, 'the timeline goes on from the latest recorded time');
+  assert.equal(
+    Date.parse(readRoot(root.rootHandle).tasks.at(-1).seenAt) - Date.parse(later),
+    60_000,
+    'the timeline goes on a note interval after the latest recorded time, since a task was running',
+  );
   assert.ok(readRoot(root.rootHandle).clockOffsetMs > 9 * 60_000, 'the root keeps the offset of the clock set back');
   await endRootTask(root.rootHandle, `task_${'4'.repeat(32)}`);
   assert.ok(Date.parse(readRoot(root.rootHandle).tasks.at(-1).endedAt) >= Date.parse(later));

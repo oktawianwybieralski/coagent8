@@ -75,6 +75,12 @@ export interface RootRecord {
 const ROOT_HANDLE = /^root_[a-f0-9]{32}$/;
 /** Fits `ROOT_LIMIT_BOUNDS.maxCalls` entries with the longest paths; bounds reading a damaged file. */
 const MAX_ROOT_BYTES = 8 * 1024 * 1024;
+/** How often a running task's server reads its root, for a cancellation by another server process. */
+export const ROOT_WATCH_MS = 1000;
+/** Watch ticks between the notes a task's server writes that the task runs. */
+export const ROOT_SEEN_TICKS = 60;
+/** The longest a running task goes unnoted while its server lives (a minute). */
+const ROOT_SEEN_INTERVAL_MS = ROOT_WATCH_MS * ROOT_SEEN_TICKS;
 /** Roots without a running task older than this are removed when a new root is created. */
 const ROOT_RETENTION_MS = 7 * 24 * 3600 * 1000;
 
@@ -171,8 +177,7 @@ async function updateRoot<T>(handle: string, change: (record: RootRecord, now: n
   return withFileLock(file, async () => {
     const record = parseRoot(file);
     if (!record) throw new ToolError('SESSION_INVALID', `No root ${handle} in this data directory.`);
-    if (measured) noteMeasured(record, measured);
-    const now = advanceRootClock(record);
+    const now = advanceRootClock(record, measured);
     noteRunningTasks(record, now);
     // A refused change still records what it counted, so a crash right after cannot give that time back.
     const noted = JSON.stringify(record);
@@ -230,14 +235,26 @@ function noteMeasured(record: RootRecord, measured: RootTaskElapsed): void {
  * Raises the root's clock offset when the clock is behind a recorded time, so after a clock is set
  * back the timeline goes on from where it was instead of placing new work inside earlier intervals,
  * where the union would not count it. Runs under the record's lock, so servers agree on the offset.
+ *
+ * Every time written is the root's now, so a clock behind one was set back. Tasks running then ran an
+ * unknown time since their last note, at most a note interval, so the timeline goes on a full note
+ * interval after the latest written time and they are noted up to there: at most one interval too many
+ * per change, which fails closed. Their measured time, given later, only raises their times further.
+ * @param measured - A running task's measured time; applied after the check, so the drift of a
+ * monotonic clock against the wall clock never reads as a clock set back.
  * @returns Now on the root's timeline.
  */
-function advanceRootClock(record: RootRecord): number {
+function advanceRootClock(record: RootRecord, measured?: RootTaskElapsed): number {
   const clock = Date.now() + clockOffsetMs(record);
-  const latest = latestRecordedMs(record);
-  if (clock >= latest) return clock;
-  record.clockOffsetMs = clockOffsetMs(record) + (latest - clock);
-  return latest;
+  const written = latestRecordedMs(record);
+  const setBack = clock < written;
+  if (measured) noteMeasured(record, measured);
+  let now = Math.max(clock, latestRecordedMs(record));
+  if (setBack && record.tasks.some(task => !task.endedAt && isRootTaskActive(task))) {
+    now = Math.max(now, written + ROOT_SEEN_INTERVAL_MS);
+  }
+  if (now > clock) record.clockOffsetMs = clockOffsetMs(record) + (now - clock);
+  return now;
 }
 
 /**
