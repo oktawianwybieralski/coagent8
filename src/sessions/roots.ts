@@ -19,7 +19,8 @@
  * Times of a root are read on its own timeline: the clock plus `clockOffsetMs`, which a write raises
  * whenever the clock is behind a time the record holds. After a clock is set back the timeline goes on
  * from the latest recorded time, so new work counts at its real length; a clock set forward counts the
- * jump as running time, which fails closed.
+ * jump as running time, which fails closed. A task's own server passes its running time, measured on a
+ * monotonic clock, with every note and its end, so a clock set back while it runs loses no time.
  *
  * @packageDocumentation
  */
@@ -154,15 +155,23 @@ export async function createRoot(limits: Partial<RootLimits> = {}): Promise<Root
   return record;
 }
 
+/** A task's running time since its reservation, measured by its own server on a monotonic clock. */
+export interface RootTaskElapsed {
+  taskHandle: string;
+  elapsedMs: number;
+}
+
 /**
  * Changes a root under its lock, at one instant of its timeline.
  * @param change - Gets the record and now on the root's timeline, in epoch milliseconds.
+ * @param measured - A running task's measured time, which the timeline does not fall behind.
  */
-async function updateRoot<T>(handle: string, change: (record: RootRecord, now: number) => T): Promise<T> {
+async function updateRoot<T>(handle: string, change: (record: RootRecord, now: number) => T, measured?: RootTaskElapsed): Promise<T> {
   const file = rootFile(handle);
   return withFileLock(file, async () => {
     const record = parseRoot(file);
     if (!record) throw new ToolError('SESSION_INVALID', `No root ${handle} in this data directory.`);
+    if (measured) noteMeasured(record, measured);
     const now = advanceRootClock(record);
     noteRunningTasks(record, now);
     // A refused change still records what it counted, so a crash right after cannot give that time back.
@@ -202,6 +211,19 @@ function clockOffsetMs(record: RootRecord): number {
  */
 export function rootNow(record: RootRecord): number {
   return Math.max(Date.now() + clockOffsetMs(record), latestRecordedMs(record));
+}
+
+/**
+ * Notes a running task as seen at least its measured time after its start, so time it ran before a
+ * clock was set back counts though no note recorded it; the clock offset then rises from there.
+ */
+function noteMeasured(record: RootRecord, measured: RootTaskElapsed): void {
+  const task = record.tasks.findLast(entry => entry.taskHandle === measured.taskHandle && !entry.endedAt);
+  const start = task ? Date.parse(task.startedAt) : NaN;
+  if (!task || !Number.isFinite(start) || !Number.isFinite(measured.elapsedMs) || measured.elapsedMs <= 0) return;
+  const floor = start + measured.elapsedMs;
+  const seen = task.seenAt ? Date.parse(task.seenAt) : NaN;
+  if (!(seen >= floor)) task.seenAt = new Date(floor).toISOString();
 }
 
 /**
@@ -389,34 +411,50 @@ export function reserveRootCall(handle: string, taskHandle?: string): Promise<vo
   });
 }
 
-/** Notes a running task as seen, so its time counts if its server dies; every write of the root does the same. */
-export function touchRootTask(handle: string): Promise<void> {
-  return updateRoot(handle, () => undefined);
+/**
+ * Notes a running task as seen, so its time counts if its server dies; every write of the root does the same.
+ * @param measured - The task's running time measured by its server, which a clock set back cannot shorten.
+ */
+export function touchRootTask(handle: string, measured?: RootTaskElapsed): Promise<void> {
+  return updateRoot(handle, () => undefined, measured);
 }
 
-/** Marks a task ended; its charge stays. */
-export function endRootTask(handle: string, taskHandle: string): Promise<void> {
-  return updateRoot(handle, (record, now) => {
-    const task = record.tasks.findLast(entry => entry.taskHandle === taskHandle && !entry.endedAt);
-    if (task) task.endedAt = new Date(now).toISOString();
-  });
+/**
+ * Marks a task ended; its charge stays.
+ * @param elapsedMs - The task's running time since its reservation on its server's monotonic clock;
+ * its end is at least that long after its start.
+ */
+export function endRootTask(handle: string, taskHandle: string, elapsedMs?: number): Promise<void> {
+  return updateRoot(
+    handle,
+    (record, now) => {
+      const task = record.tasks.findLast(entry => entry.taskHandle === taskHandle && !entry.endedAt);
+      if (task) task.endedAt = new Date(now).toISOString();
+    },
+    elapsedMs === undefined ? undefined : { taskHandle, elapsedMs },
+  );
 }
 
 /**
  * Removes a reservation whose turn this process knows did not start and returns its charge; the time
  * it took, such as a form left open, stays counted in `refundedMs`, so the record does not grow.
+ * @param elapsedMs - As for {@link endRootTask}.
  */
-export function refundRootTask(handle: string, taskHandle: string): Promise<void> {
-  return updateRoot(handle, (record, now) => {
-    const index = record.tasks.findLastIndex(entry => entry.taskHandle === taskHandle && !entry.endedAt);
-    if (index < 0) return;
-    record.tasks[index]!.endedAt = new Date(now).toISOString();
-    const before = rootRunningMs(record, now);
-    record.tasks.splice(index, 1);
-    // Later tasks start after it on the root's timeline, so its share cannot be counted twice.
-    record.refundedMs = (record.refundedMs ?? 0) + Math.max(0, before - rootRunningMs(record, now));
-    record.calls = Math.max(0, record.calls - 1);
-  });
+export function refundRootTask(handle: string, taskHandle: string, elapsedMs?: number): Promise<void> {
+  return updateRoot(
+    handle,
+    (record, now) => {
+      const index = record.tasks.findLastIndex(entry => entry.taskHandle === taskHandle && !entry.endedAt);
+      if (index < 0) return;
+      record.tasks[index]!.endedAt = new Date(now).toISOString();
+      const before = rootRunningMs(record, now);
+      record.tasks.splice(index, 1);
+      // Later tasks start after it on the root's timeline, so its share cannot be counted twice.
+      record.refundedMs = (record.refundedMs ?? 0) + Math.max(0, before - rootRunningMs(record, now));
+      record.calls = Math.max(0, record.calls - 1);
+    },
+    elapsedMs === undefined ? undefined : { taskHandle, elapsedMs },
+  );
 }
 
 /**

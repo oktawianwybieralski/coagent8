@@ -575,6 +575,37 @@ test('after the clock is set back, later work counts at its real length and is r
     Date.now = realNow;
   }
 
+  // A clock set back while a task runs, before any note: its server's monotonic time still counts.
+  shift = 0;
+  Date.now = () => realNow() + shift;
+  try {
+    const root = await createRoot({ maxMinutes: 2, graceMinutes: 0, maxConcurrent: 4, maxCalls: 10 });
+    const handle = n => `task_${String(n).repeat(32)}`;
+    for (const n of [6, 7]) {
+      await reserveRootTask(root.rootHandle, { taskHandle: handle(n) });
+      shift += 60_000;
+      shift -= 3600_000;
+      await endRootTask(root.rootHandle, handle(n), 60_000);
+    }
+    const ended = readRoot(root.rootHandle).tasks.find(task => task.taskHandle === handle(6));
+    const ranMs = Date.parse(ended.endedAt) - Date.parse(ended.startedAt);
+    assert.ok(ranMs >= 60_000 && ranMs < 61_000, `the task counts its measured minute (${ranMs} ms)`);
+    const usedMs = rootRunningMs(readRoot(root.rootHandle));
+    assert.ok(usedMs >= 120_000 && usedMs < 125_000, `both measured minutes count (${usedMs} ms)`);
+    const third = await reserveRootTask(root.rootHandle, { taskHandle: handle(8) }).catch(err => err);
+    assert.equal(third.code, 'ROOT_LIMIT', 'a third task is refused at maxMinutes plus grace');
+    // A touch with the measured time notes it as well.
+    const touched = await createRoot({ maxMinutes: 10, graceMinutes: 0 });
+    await reserveRootTask(touched.rootHandle, { taskHandle: handle(9) });
+    const startedAt = Date.parse(readRoot(touched.rootHandle).tasks.at(-1).startedAt);
+    shift += 50_000;
+    shift -= 3600_000;
+    await touchRootTask(touched.rootHandle, { taskHandle: handle(9), elapsedMs: 50_000 });
+    assert.ok(Date.parse(readRoot(touched.rootHandle).tasks.at(-1).seenAt) - startedAt >= 50_000);
+  } finally {
+    Date.now = realNow;
+  }
+
   // A record from before the offset, its times an hour ahead of the clock, starts the offset at 0.
   const old = await createRoot({ maxMinutes: 10 });
   const oldFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${old.rootHandle}.json`);

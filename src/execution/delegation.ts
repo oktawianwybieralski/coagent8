@@ -479,10 +479,13 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     await giveUpNewRoot();
     throw err;
   }
+  // Measured here, monotonically, so a clock set back while the task runs cannot shorten its time in the root.
+  const reservedAt = performance.now();
+  const elapsedMs = () => Math.max(0, performance.now() - reservedAt);
   /** Returns the charge of a start that never reached a turn; a failure here must not hide its reason. */
   const refund = async () => {
     try {
-      await refundRootTask(rootHandle, taskHandle);
+      await refundRootTask(rootHandle, taskHandle, elapsedMs());
       await giveUpNewRoot();
     } catch (err) {
       process.stderr.write(`CoAgent8: root ${rootHandle} was not updated: ${redactDiagnostic((err as Error).message, 512)}\n`);
@@ -546,7 +549,7 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     // A lock held by another reservation can time out once; a root that stays unwritable refuses every reservation anyway.
     for (let attempt = 1; ; attempt++) {
       try {
-        await endRootTask(rootHandle, taskHandle);
+        await endRootTask(rootHandle, taskHandle, elapsedMs());
         return;
       } catch (err) {
         if (attempt >= ROOT_END_ATTEMPTS) {
@@ -564,7 +567,7 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     // Notes the task as running once a minute, so a crash of this server stops its time near the crash.
     if (++watchTicks % ROOT_SEEN_TICKS === 0 && !touching) {
       touching = true;
-      touchRootTask(rootHandle)
+      touchRootTask(rootHandle, { taskHandle, elapsedMs: elapsedMs() })
         .catch(err =>
           process.stderr.write(`CoAgent8: root ${rootHandle} was not updated: ${redactDiagnostic((err as Error).message, 512)}\n`),
         )
