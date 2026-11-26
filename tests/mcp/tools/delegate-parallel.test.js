@@ -530,14 +530,14 @@ test('a root counts running time, not idle time, and a continued session may fin
 });
 
 test('a reservation that reached no turn is refunded; a task of a dead server stops counting but keeps its charge', async () => {
-  const root = await createRoot({ maxConcurrent: 1, maxCalls: 3 });
+  const root = await createRoot({ maxConcurrent: 1, maxCalls: 10 });
   const handle = `task_${'3'.repeat(32)}`;
   await reserveRootTask(root.rootHandle, { taskHandle: handle });
   await assert.rejects(reserveRootTask(root.rootHandle, { taskHandle: handle }), code('SESSION_BUSY'), 'the same task, reserved twice');
   await refundRootTask(root.rootHandle, handle);
   assert.equal(readRoot(root.rootHandle).calls, 0);
-  const refunded = readRoot(root.rootHandle).tasks[0];
-  assert.ok(refunded.refunded && refunded.endedAt, 'the call is given back, the time it took still counts');
+  assert.deepEqual(readRoot(root.rootHandle).tasks, [], 'a refund does not grow the record');
+  assert.ok(readRoot(root.rootHandle).refundedMs >= 0, 'the time it took still counts');
 
   await reserveRootTask(root.rootHandle, { taskHandle: handle });
   const file = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${root.rootHandle}.json`);
@@ -560,6 +560,25 @@ test('a reservation that reached no turn is refunded; a task of a dead server st
   assert.equal(readRoot(root.rootHandle).tasks.at(-1).seenAt, later);
   await endRootTask(root.rootHandle, `task_${'4'.repeat(32)}`);
   assert.equal(readRoot(root.rootHandle).tasks.at(-1).endedAt, later);
+  // A new task then starts after it on the root's timeline, not inside it where it would not count.
+  const next = `task_${'5'.repeat(32)}`;
+  await reserveRootTask(root.rootHandle, { taskHandle: next });
+  assert.ok(Date.parse(readRoot(root.rootHandle).tasks.at(-1).startedAt) >= Date.parse(later));
+
+  // A refused change still records what it counted for the running task.
+  const before = readRoot(root.rootHandle).tasks.at(-1).seenAt;
+  await atomicWrite(file, JSON.stringify(spent(readRoot(root.rootHandle), -60_000)));
+  await delay(20);
+  await assert.rejects(reserveRootTask(root.rootHandle, { taskHandle: `task_${'6'.repeat(32)}` }), code('ROOT_LIMIT'));
+  assert.notEqual(readRoot(root.rootHandle).tasks.at(-1).seenAt, before);
+
+  // A refund keeps the time only it covered.
+  const alone = await createRoot();
+  await reserveRootTask(alone.rootHandle, { taskHandle: next });
+  await delay(30);
+  await refundRootTask(alone.rootHandle, next);
+  assert.ok(readRoot(alone.rootHandle).refundedMs >= 20, String(readRoot(alone.rootHandle).refundedMs));
+  assert.ok(rootRunningMs(readRoot(alone.rootHandle)) >= 20);
 });
 
 test('a loop still refuses a scope that escapes, and a cancelled root closes an open form', async () => {
@@ -587,10 +606,7 @@ test('a loop still refuses a scope that escapes, and a cancelled root closes an 
   await opened;
   await handleCancelSession({ root_handle: root.rootHandle });
   await refused;
-  assert.ok(
-    readRoot(root.rootHandle).tasks.every(task => task.refunded),
-    'no turn started, so the charge is back',
-  );
+  assert.deepEqual(readRoot(root.rootHandle).tasks, [], 'no turn started, so the charge is back');
   assert.equal(readRoot(root.rootHandle).calls, 0);
   assert.equal(fs.existsSync(path.join(repo, '.git', WRITER_RECORD_FILE)), false, 'and the writer is free');
 });
@@ -793,9 +809,7 @@ test('an overlapping start is refused before the check form, and a form counts a
   );
   assert.ok(Date.now() - started < 8000);
   assert.deepEqual(
-    readRoot(root.rootHandle)
-      .tasks.filter(task => !task.refunded)
-      .map(task => task.taskHandle),
+    readRoot(root.rootHandle).tasks.map(task => task.taskHandle),
     [`task_${'f'.repeat(32)}`],
     'no turn started',
   );

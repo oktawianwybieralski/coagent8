@@ -1382,7 +1382,7 @@ what is left of the root's running time.
 its end, so idle time between calls does not count and tasks running side by side count once; the
 call limit and `maxConcurrent` bound how much work runs in parallel. Every write of the record notes
 the tasks it sees running (`seenAt`), and a running task's server notes it once a minute, so a task
-whose server died without recording its end counts up to the last time it was seen; what a write counted stays counted, and a clock set back does not shorten a recorded interval. A reservation that reached no turn gives its call back but keeps its time, such as a form left open. A worker that
+whose server died without recording its end counts up to the last time it was seen; what a write counted stays counted, a refused reservation included. A clock set back does not shorten a recorded interval, and a new task then starts after the recorded ones on the root's timeline; time a task runs while the clock is still behind is not counted. A reservation that reached no turn gives its call back and leaves the record, but the time only it covered, such as a form left open, stays in `refundedMs`. A worker that
 outlives its server on POSIX counts while it is seen and up to its last note after that. Past
 `maxMinutes`, a new task or child is refused; a continuation of a session of the root, its rounds and
 its recovery turn may run until `maxMinutes + graceMinutes` (0 allows none), so a task stopped by the

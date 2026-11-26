@@ -47,8 +47,6 @@ export interface RootTask {
   /** The last time the task was seen running; its end when its server died without recording one. */
   seenAt?: string;
   endedAt?: string;
-  /** Reached no turn: its call was given back, its time still counts. */
-  refunded?: boolean;
 }
 
 /** The durable record of a root. */
@@ -60,6 +58,8 @@ export interface RootRecord {
   createdAt: string;
   /** Records before #228 only: the wall-clock deadline, no longer read. */
   deadlineAt?: string;
+  /** Running time of removed reservations that reached no turn, beyond what other tasks covered. */
+  refundedMs?: number;
   calls: number;
   tasks: RootTask[];
 }
@@ -153,7 +153,15 @@ async function updateRoot<T>(handle: string, change: (record: RootRecord) => T):
     const record = parseRoot(file);
     if (!record) throw new ToolError('SESSION_INVALID', `No root ${handle} in this data directory.`);
     noteRunningTasks(record);
-    const result = change(record);
+    // A refused change still records what it counted, so a crash right after cannot give that time back.
+    const noted = JSON.stringify(record);
+    let result: T;
+    try {
+      result = change(record);
+    } catch (err) {
+      await atomicWrite(file, noted);
+      throw err;
+    }
     await atomicWrite(file, JSON.stringify(record));
     return result;
   });
@@ -163,6 +171,21 @@ async function updateRoot<T>(handle: string, change: (record: RootRecord) => T):
 function notBefore(time: string | undefined, now = Date.now()): string {
   const recorded = time ? Date.parse(time) : NaN;
   return new Date(Number.isFinite(recorded) && recorded > now ? recorded : now).toISOString();
+}
+
+/**
+ * Now on the root's timeline: never before a time it recorded, so after a clock is set back a new
+ * task starts after the earlier ones instead of inside them, where the union would not count it.
+ */
+function rootNow(record: RootRecord): string {
+  let latest = Date.now();
+  for (const task of record.tasks) {
+    for (const time of [task.startedAt, task.seenAt, task.endedAt]) {
+      const parsed = time ? Date.parse(time) : NaN;
+      if (Number.isFinite(parsed) && parsed > latest) latest = parsed;
+    }
+  }
+  return new Date(latest).toISOString();
 }
 
 /**
@@ -195,7 +218,7 @@ export function rootRunningMs(root: RootRecord, now = Date.now()): number {
     })
     .filter(([start, end]) => Number.isFinite(start) && Number.isFinite(end) && end > start)
     .sort((a, b) => a[0] - b[0]);
-  let total = 0;
+  let total = root.refundedMs ?? 0;
   let coveredTo = -Infinity;
   for (const [start, end] of intervals) {
     if (end <= coveredTo) continue;
@@ -276,9 +299,7 @@ export function reserveRootTask(
     if (request.parentTask && !earlier) {
       const maxChildren = record.limits.maxChildren ?? DEFAULT_ROOT_LIMITS.maxChildren;
       const children = new Set(
-        record.tasks
-          .filter(task => task.parentTask === request.parentTask && !task.continuation && !task.refunded)
-          .map(task => task.taskHandle),
+        record.tasks.filter(task => task.parentTask === request.parentTask && !task.continuation).map(task => task.taskHandle),
       );
       if (children.size >= maxChildren) {
         throw new ToolError('ROOT_LIMIT', `Task ${request.parentTask} already has ${children.size} children, the limit of root ${handle}.`);
@@ -294,7 +315,7 @@ export function reserveRootTask(
       ...(parentTask ? { parentTask } : {}),
       depth,
       ...(earlier ? { continuation: true } : {}),
-      startedAt: new Date().toISOString(),
+      startedAt: rootNow(record),
     });
     return { depth, ...(parentTask ? { parentTask } : {}), deadlineMs: Date.now() + remainingMs };
   });
@@ -347,15 +368,18 @@ export function endRootTask(handle: string, taskHandle: string): Promise<void> {
 }
 
 /**
- * Ends a reservation whose turn this process knows did not start and returns its charge; the time it
- * took, such as a form left open, still counts.
+ * Removes a reservation whose turn this process knows did not start and returns its charge; the time
+ * it took, such as a form left open, stays counted in `refundedMs`, so the record does not grow.
  */
 export function refundRootTask(handle: string, taskHandle: string): Promise<void> {
   return updateRoot(handle, record => {
-    const task = record.tasks.findLast(entry => entry.taskHandle === taskHandle && !entry.endedAt);
-    if (!task) return;
-    task.endedAt = notBefore(task.seenAt);
-    task.refunded = true;
+    const index = record.tasks.findLastIndex(entry => entry.taskHandle === taskHandle && !entry.endedAt);
+    if (index < 0) return;
+    record.tasks[index]!.endedAt = notBefore(record.tasks[index]!.seenAt);
+    const before = rootRunningMs(record);
+    record.tasks.splice(index, 1);
+    // Later tasks start after it on the root's timeline, so its share cannot be counted twice.
+    record.refundedMs = (record.refundedMs ?? 0) + Math.max(0, before - rootRunningMs(record));
     record.calls = Math.max(0, record.calls - 1);
   });
 }
@@ -372,11 +396,11 @@ export function cancelRoot(handle: string): Promise<RootRecord> {
   });
 }
 
-/** Removes a root whose tasks all reached no turn. */
+/** Removes a root that no task used; the time of refunded reservations goes with it. */
 export function removeUnusedRoot(handle: string): Promise<void> {
   const file = rootFile(handle);
   return withFileLock(file, async () => {
-    if (parseRoot(file)?.tasks.every(task => task.refunded)) fs.rmSync(file, { force: true });
+    if (parseRoot(file)?.tasks.length === 0) fs.rmSync(file, { force: true });
   });
 }
 
