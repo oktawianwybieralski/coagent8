@@ -1382,13 +1382,14 @@ what is left of the root's running time.
 its end, so idle time between calls does not count and tasks running side by side count once; the
 call limit and `maxConcurrent` bound how much work runs in parallel. Every write of the record notes
 the tasks it sees running (`seenAt`), and a running task's server notes it once a minute, so a task
-whose server died without recording its end counts up to the last time it was seen; what a write counted stays counted, a refused reservation included. A clock set back does not shorten a recorded interval, and a new task then starts after the recorded ones on the root's timeline; time a task runs while the clock is still behind is not counted. A reservation that reached no turn gives its call back and leaves the record, but the time only it covered, such as a form left open, stays in `refundedMs`. A worker that
+whose server died without recording its end counts up to the last time it was seen; what a write counted stays counted, a refused reservation included. Times of a root are read on its own timeline: the clock plus the record's `clockOffsetMs` (absent in older records, meaning 0). Every write, under the record's lock, raises the offset when the clock is behind the latest time the record holds, so after a clock is set back the timeline goes on from there: a recorded interval is not shortened, a new task starts after the recorded ones, and new work counts at its real length. A clock set forward counts the jump as running time, which fails closed. A task's deadline is what is left of the running time, measured on its server's clock. A reservation that reached no turn gives its call back and leaves the record, but the time only it covered, such as a form left open, stays in `refundedMs`. A worker that
 outlives its server on POSIX counts while it is seen and up to its last note after that. Past
 `maxMinutes`, a new task or child is refused; a continuation of a session of the root, its rounds and
 its recovery turn may run until `maxMinutes + graceMinutes` (0 allows none), so a task stopped by the
 limit can be finished. A task running when the limit is reached stops then; finishing it takes a
-continuation. The `ROOT_LIMIT` message names running time, the grace, the configuration keys and the
-file, and that a change applies to new roots. Records written before #228 keep a `deadlineAt` that is
+continuation. The `ROOT_LIMIT` message names running time, the grace (also a grace of 0), the
+configuration keys and the file, and that a change applies to new roots; it advises continuing a
+session only while the grace is left. Records written before #228 keep a `deadlineAt` that is
 no longer read and get the default grace. At a limit a start fails with `ROOT_LIMIT` and a loop ends with
 `needs_input`. A continued session keeps its root and depth even without naming it, by
 reading the root records; a parent names its root; conflicting names are refused, as is another parent for a

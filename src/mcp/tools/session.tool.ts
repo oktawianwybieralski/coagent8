@@ -9,7 +9,7 @@ import { ToolError } from '../../contracts/index.js';
 import { DEFAULT_ROOT_LIMITS } from '../../contracts/execution.js';
 import { redactDiagnostic } from '../../security/redaction.js';
 import { finishedTaskText, readTask } from '../../sessions/tasks.js';
-import { isRootTaskActive, readRoot, rootGraceMinutes, rootRunningMs, runningTasks } from '../../sessions/roots.js';
+import { isRootTaskActive, readRoot, rootGraceMinutes, rootNow, rootRunningMs, runningTasks } from '../../sessions/roots.js';
 import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {
@@ -132,7 +132,8 @@ function rootReport(handle: unknown) {
     // A reservation has no task record until its turn is about to start.
     state: readTask(task.taskHandle)?.state ?? (isRootTaskActive(task) ? 'starting' : 'not_started'),
   }));
-  const runningMinutes = rootRunningMs(root) / 60_000;
+  // On the root's timeline, so a clock set back does not shorten the report.
+  const runningMinutes = rootRunningMs(root, rootNow(root)) / 60_000;
   const lines = [
     `root_handle: ${root.rootHandle}`,
     `state: ${root.state}`,

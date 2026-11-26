@@ -528,6 +528,16 @@ test('a root counts running time, not idle time, and a continued session may fin
   assert.ok(none.message.includes('rootLimits.graceMinutes is 0, so a continued session gets no more minutes'), none.message);
   assert.ok(none.message.includes('start a new task without root_handle and session_handle'), none.message);
 
+  // Past the grace too: a new task is not told to continue a session, which would be refused as well.
+  const used = await createRoot({ maxMinutes: 10, graceMinutes: 5 });
+  const usedFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${used.rootHandle}.json`);
+  await atomicWrite(usedFile, JSON.stringify(spent(used, 0, 16)));
+  const over = await reserveRootTask(used.rootHandle, { taskHandle: `task_${'e'.repeat(32)}` }).catch(err => err);
+  assert.equal(over.code, 'ROOT_LIMIT');
+  assert.ok(over.message.includes('used its 10 minutes of running time and the 5 more minutes a continued session gets'), over.message);
+  assert.ok(!over.message.includes('continue its session with session_handle'), over.message);
+  assert.ok(over.message.includes('start a new task without root_handle and session_handle'), over.message);
+
   // A record from before #228 has no grace stored and a deadline nobody reads.
   const legacy = await createRoot();
   const legacyFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${legacy.rootHandle}.json`);
@@ -537,6 +547,48 @@ test('a root counts running time, not idle time, and a continued session may fin
   const report = await handleSession({ action: 'root', root_handle: legacy.rootHandle });
   assert.ok(report.content[0].text.includes('running time: 0 of 240 minutes, 60 more for a continued session'), report.content[0].text);
   assert.equal(report.structuredContent.graceMinutes, 60);
+});
+
+test('after the clock is set back, later work counts at its real length and is refused at maxMinutes plus grace (#228)', async () => {
+  const realNow = Date.now;
+  let shift = 0;
+  Date.now = () => realNow() + shift;
+  try {
+    const root = await createRoot({ maxMinutes: 2, graceMinutes: 0, maxConcurrent: 4, maxCalls: 10 });
+    const handle = n => `task_${String(n).repeat(32)}`;
+    // One minute of work, then the clock is set back an hour.
+    await reserveRootTask(root.rootHandle, { taskHandle: handle(1) });
+    shift += 60_000;
+    await endRootTask(root.rootHandle, handle(1));
+    shift -= 3600_000;
+    const second = await reserveRootTask(root.rootHandle, { taskHandle: handle(2) });
+    assert.ok(Math.abs(second.deadlineMs - (Date.now() + 60_000)) < 5000, 'the second task gets the minute left, on this clock');
+    assert.ok(readRoot(root.rootHandle).clockOffsetMs >= 3600_000 - 60_000, 'the root keeps the offset');
+    shift += 60_000;
+    await endRootTask(root.rootHandle, handle(2));
+    const usedMs = rootRunningMs(readRoot(root.rootHandle));
+    assert.ok(usedMs >= 120_000 && usedMs < 125_000, `the minute after the clock was set back counts (${usedMs} ms)`);
+    const third = await reserveRootTask(root.rootHandle, { taskHandle: handle(3) }).catch(err => err);
+    assert.equal(third.code, 'ROOT_LIMIT', 'a third minute is refused');
+    assert.ok(third.message.includes('rootLimits.graceMinutes is 0'), third.message);
+  } finally {
+    Date.now = realNow;
+  }
+
+  // A record from before the offset, its times an hour ahead of the clock, starts the offset at 0.
+  const old = await createRoot({ maxMinutes: 10 });
+  const oldFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${old.rootHandle}.json`);
+  const ahead = minutes => new Date(Date.now() + minutes * 60_000).toISOString();
+  const past = { taskHandle: `task_${'4'.repeat(32)}`, pid: 1, depth: 1, startedAt: ahead(59), endedAt: ahead(60) };
+  const { clockOffsetMs: _none, ...oldRecord } = { ...old, tasks: [past] };
+  await atomicWrite(oldFile, JSON.stringify(oldRecord));
+  assert.equal(readRoot(old.rootHandle).clockOffsetMs, undefined);
+  assert.ok(Math.abs(rootRunningMs(readRoot(old.rootHandle)) - 60_000) < 1000, 'an old record counts as before');
+  const next = await reserveRootTask(old.rootHandle, { taskHandle: `task_${'5'.repeat(32)}` });
+  assert.ok(Math.abs(next.deadlineMs - (Date.now() + 9 * 60_000)) < 5000);
+  const record = readRoot(old.rootHandle);
+  assert.ok(record.clockOffsetMs > 59 * 60_000, 'the first write sets the offset');
+  assert.equal(record.tasks.at(-1).startedAt, past.endedAt, 'the new task starts where the record ends');
 });
 
 test('a reservation that reached no turn is refunded; a task of a dead server stops counting but keeps its charge', async () => {
@@ -567,9 +619,10 @@ test('a reservation that reached no turn is refunded; a task of a dead server st
   ahead.tasks.at(-1).seenAt = later;
   await atomicWrite(file, JSON.stringify(ahead));
   await reserveRootCall(root.rootHandle).catch(() => undefined);
-  assert.equal(readRoot(root.rootHandle).tasks.at(-1).seenAt, later);
+  assert.equal(readRoot(root.rootHandle).tasks.at(-1).seenAt, later, 'the timeline goes on from the latest recorded time');
+  assert.ok(readRoot(root.rootHandle).clockOffsetMs > 9 * 60_000, 'the root keeps the offset of the clock set back');
   await endRootTask(root.rootHandle, `task_${'4'.repeat(32)}`);
-  assert.equal(readRoot(root.rootHandle).tasks.at(-1).endedAt, later);
+  assert.ok(Date.parse(readRoot(root.rootHandle).tasks.at(-1).endedAt) >= Date.parse(later));
   // A new task then starts after it on the root's timeline, not inside it where it would not count.
   const next = `task_${'5'.repeat(32)}`;
   await reserveRootTask(root.rootHandle, { taskHandle: next });

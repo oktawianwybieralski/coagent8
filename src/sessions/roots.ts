@@ -16,6 +16,11 @@
  * up to the next call. A continued session may run `graceMinutes` beyond the limit to finish its
  * task; a new task or child may not.
  *
+ * Times of a root are read on its own timeline: the clock plus `clockOffsetMs`, which a write raises
+ * whenever the clock is behind a time the record holds. After a clock is set back the timeline goes on
+ * from the latest recorded time, so new work counts at its real length; a clock set forward counts the
+ * jump as running time, which fails closed.
+ *
  * @packageDocumentation
  */
 import crypto from 'node:crypto';
@@ -60,6 +65,8 @@ export interface RootRecord {
   deadlineAt?: string;
   /** Running time of removed reservations that reached no turn, beyond what other tasks covered. */
   refundedMs?: number;
+  /** Added to the clock for the root's timeline after a clock was set back; absent before, meaning 0. */
+  clockOffsetMs?: number;
   calls: number;
   tasks: RootTask[];
 }
@@ -147,17 +154,22 @@ export async function createRoot(limits: Partial<RootLimits> = {}): Promise<Root
   return record;
 }
 
-async function updateRoot<T>(handle: string, change: (record: RootRecord) => T): Promise<T> {
+/**
+ * Changes a root under its lock, at one instant of its timeline.
+ * @param change - Gets the record and now on the root's timeline, in epoch milliseconds.
+ */
+async function updateRoot<T>(handle: string, change: (record: RootRecord, now: number) => T): Promise<T> {
   const file = rootFile(handle);
   return withFileLock(file, async () => {
     const record = parseRoot(file);
     if (!record) throw new ToolError('SESSION_INVALID', `No root ${handle} in this data directory.`);
-    noteRunningTasks(record);
+    const now = advanceRootClock(record);
+    noteRunningTasks(record, now);
     // A refused change still records what it counted, so a crash right after cannot give that time back.
     const noted = JSON.stringify(record);
     let result: T;
     try {
-      result = change(record);
+      result = change(record, now);
     } catch (err) {
       await atomicWrite(file, noted);
       throw err;
@@ -167,34 +179,53 @@ async function updateRoot<T>(handle: string, change: (record: RootRecord) => T):
   });
 }
 
-/** The later of now and a recorded time, so a clock set back never shortens a recorded interval. */
-function notBefore(time: string | undefined, now = Date.now()): string {
-  const recorded = time ? Date.parse(time) : NaN;
-  return new Date(Number.isFinite(recorded) && recorded > now ? recorded : now).toISOString();
-}
-
-/**
- * Now on the root's timeline: never before a time it recorded, so after a clock is set back a new
- * task starts after the earlier ones instead of inside them, where the union would not count it.
- */
-function rootNow(record: RootRecord): string {
-  let latest = Date.now();
+/** The latest time a root records, in epoch milliseconds; -Infinity without one. */
+function latestRecordedMs(record: RootRecord): number {
+  let latest = -Infinity;
   for (const task of record.tasks) {
     for (const time of [task.startedAt, task.seenAt, task.endedAt]) {
       const parsed = time ? Date.parse(time) : NaN;
       if (Number.isFinite(parsed) && parsed > latest) latest = parsed;
     }
   }
-  return new Date(latest).toISOString();
+  return latest;
+}
+
+function clockOffsetMs(record: RootRecord): number {
+  const offset = record.clockOffsetMs;
+  return typeof offset === 'number' && Number.isFinite(offset) && offset > 0 ? offset : 0;
+}
+
+/**
+ * Now on a root's timeline, in epoch milliseconds: the clock plus the root's offset, and never before
+ * a time the record holds, also when it is read without the lock.
+ */
+export function rootNow(record: RootRecord): number {
+  return Math.max(Date.now() + clockOffsetMs(record), latestRecordedMs(record));
+}
+
+/**
+ * Raises the root's clock offset when the clock is behind a recorded time, so after a clock is set
+ * back the timeline goes on from where it was instead of placing new work inside earlier intervals,
+ * where the union would not count it. Runs under the record's lock, so servers agree on the offset.
+ * @returns Now on the root's timeline.
+ */
+function advanceRootClock(record: RootRecord): number {
+  const clock = Date.now() + clockOffsetMs(record);
+  const latest = latestRecordedMs(record);
+  if (clock >= latest) return clock;
+  record.clockOffsetMs = clockOffsetMs(record) + (latest - clock);
+  return latest;
 }
 
 /**
  * Notes every task seen running, so its time keeps counting if its server dies unseen. Every write
  * of the record does this, so what a check counted stays counted: a running task counts up to now,
  * and after its server dies up to this note.
+ * @param now - Now on the root's timeline, never before a recorded time.
  */
-function noteRunningTasks(record: RootRecord): void {
-  for (const task of record.tasks) if (!task.endedAt && isRootTaskActive(task)) task.seenAt = notBefore(task.seenAt);
+function noteRunningTasks(record: RootRecord, now: number): void {
+  for (const task of record.tasks) if (!task.endedAt && isRootTaskActive(task)) task.seenAt = new Date(now).toISOString();
 }
 
 /** Minutes a continued session may run beyond `maxMinutes`; records before #228 have the default. */
@@ -205,10 +236,10 @@ export function rootGraceMinutes(root: RootRecord): number {
 /**
  * The running time of a root: the union of its tasks' intervals, so idle time between calls does not
  * count and tasks running side by side count once.
- * @param now - Reference time in epoch milliseconds.
+ * @param now - Reference time on the root's timeline, in epoch milliseconds; by default its now.
  * @returns Milliseconds.
  */
-export function rootRunningMs(root: RootRecord, now = Date.now()): number {
+export function rootRunningMs(root: RootRecord, now = rootNow(root)): number {
   const intervals = root.tasks
     .map(task => {
       const start = Date.parse(task.startedAt);
@@ -230,17 +261,20 @@ export function rootRunningMs(root: RootRecord, now = Date.now()): number {
 
 /**
  * Refuses a root that is cancelled or out of running time.
+ * @param now - Now on the root's timeline.
  * @param continuation - The task continues a session of this root, which may use the grace minutes.
  * @returns The milliseconds of running time left to it.
  */
-function assertUsable(record: RootRecord, continuation = false): number {
+function assertUsable(record: RootRecord, now: number, continuation = false): number {
   if (record.state === 'cancelled') throw new ToolError('ABORTED', `Root ${record.rootHandle} was cancelled.`);
   const grace = rootGraceMinutes(record);
-  const remainingMs = (record.limits.maxMinutes + (continuation ? grace : 0)) * 60_000 - rootRunningMs(record);
+  const usedMs = rootRunningMs(record, now);
+  const remainingMs = (record.limits.maxMinutes + (continuation ? grace : 0)) * 60_000 - usedMs;
   if (remainingMs > 0) return remainingMs;
   const counted = 'counted while its tasks run, not between calls';
   const raise = `For more, raise rootLimits.maxMinutes (up to ${ROOT_LIMIT_BOUNDS.maxMinutes}) or rootLimits.graceMinutes in ${getConfigFile()}; it applies to new roots.`;
-  if (continuation || grace === 0) {
+  // Past the grace too, a continuation would be refused as well, so the advice to continue is left out.
+  if (continuation || grace === 0 || usedMs >= (record.limits.maxMinutes + grace) * 60_000) {
     throw new ToolError(
       'ROOT_LIMIT',
       `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes of running time${grace ? ` and the ${grace} more minutes a continued session gets` : ''} (${counted})${grace ? '' : '; rootLimits.graceMinutes is 0, so a continued session gets no more minutes'}. ${raise} Or start a new task without root_handle and session_handle, restating the work.`,
@@ -279,10 +313,10 @@ export function reserveRootTask(
   handle: string,
   request: { taskHandle: string; parentTask?: string; continues?: string },
 ): Promise<{ depth: number; parentTask?: string; deadlineMs: number }> {
-  return updateRoot(handle, record => {
+  return updateRoot(handle, (record, now) => {
     // A continuation is classified once, here, and its entry keeps the class for its later rounds.
     const earlier = request.continues ? record.tasks.findLast(task => task.sessionHandle === request.continues) : undefined;
-    const remainingMs = assertUsable(record, Boolean(earlier));
+    const remainingMs = assertUsable(record, now, Boolean(earlier));
     if (record.tasks.some(task => task.taskHandle === request.taskHandle && isRootTaskActive(task))) {
       throw new ToolError('SESSION_BUSY', `Task ${request.taskHandle} is already starting in this root.`);
     }
@@ -315,8 +349,9 @@ export function reserveRootTask(
       ...(parentTask ? { parentTask } : {}),
       depth,
       ...(earlier ? { continuation: true } : {}),
-      startedAt: rootNow(record),
+      startedAt: new Date(now).toISOString(),
     });
+    // What is left is a length, so the deadline is on this process's clock, which its caller compares with.
     return { depth, ...(parentTask ? { parentTask } : {}), deadlineMs: Date.now() + remainingMs };
   });
 }
@@ -332,10 +367,10 @@ export function bindRootTask(
   sessionHandle: string,
   writer?: { file: string; token: string },
 ): Promise<void> {
-  return updateRoot(handle, record => {
+  return updateRoot(handle, (record, now) => {
     const task = record.tasks.findLast(entry => entry.taskHandle === taskHandle);
     if (!task) throw new ToolError('PROTOCOL_ERROR', `Task ${taskHandle} has no reservation in root ${handle}.`);
-    assertUsable(record, Boolean(task.continuation));
+    assertUsable(record, now, Boolean(task.continuation));
     task.sessionHandle = sessionHandle;
     if (writer) task.writer = writer;
   });
@@ -347,9 +382,9 @@ export function bindRootTask(
  * @throws `ROOT_LIMIT` at a limit, `ABORTED` for a cancelled root.
  */
 export function reserveRootCall(handle: string, taskHandle?: string): Promise<void> {
-  return updateRoot(handle, record => {
+  return updateRoot(handle, (record, now) => {
     const task = taskHandle ? record.tasks.findLast(entry => entry.taskHandle === taskHandle) : undefined;
-    assertUsable(record, Boolean(task?.continuation));
+    assertUsable(record, now, Boolean(task?.continuation));
     charge(record);
   });
 }
@@ -361,9 +396,9 @@ export function touchRootTask(handle: string): Promise<void> {
 
 /** Marks a task ended; its charge stays. */
 export function endRootTask(handle: string, taskHandle: string): Promise<void> {
-  return updateRoot(handle, record => {
+  return updateRoot(handle, (record, now) => {
     const task = record.tasks.findLast(entry => entry.taskHandle === taskHandle && !entry.endedAt);
-    if (task) task.endedAt = notBefore(task.seenAt);
+    if (task) task.endedAt = new Date(now).toISOString();
   });
 }
 
@@ -372,14 +407,14 @@ export function endRootTask(handle: string, taskHandle: string): Promise<void> {
  * it took, such as a form left open, stays counted in `refundedMs`, so the record does not grow.
  */
 export function refundRootTask(handle: string, taskHandle: string): Promise<void> {
-  return updateRoot(handle, record => {
+  return updateRoot(handle, (record, now) => {
     const index = record.tasks.findLastIndex(entry => entry.taskHandle === taskHandle && !entry.endedAt);
     if (index < 0) return;
-    record.tasks[index]!.endedAt = notBefore(record.tasks[index]!.seenAt);
-    const before = rootRunningMs(record);
+    record.tasks[index]!.endedAt = new Date(now).toISOString();
+    const before = rootRunningMs(record, now);
     record.tasks.splice(index, 1);
     // Later tasks start after it on the root's timeline, so its share cannot be counted twice.
-    record.refundedMs = (record.refundedMs ?? 0) + Math.max(0, before - rootRunningMs(record));
+    record.refundedMs = (record.refundedMs ?? 0) + Math.max(0, before - rootRunningMs(record, now));
     record.calls = Math.max(0, record.calls - 1);
   });
 }
