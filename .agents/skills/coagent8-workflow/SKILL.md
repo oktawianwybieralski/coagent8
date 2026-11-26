@@ -18,7 +18,6 @@ For a user's price limit pass output_price_below (USD per million output tokens,
 strict) and omit model to let the server choose; see the README's
 [model selection guidance](../../../README.md#choosing-a-model-under-a-price-limit).
 On PRICE_LIMIT report the reason; never silently replace an explicit model.
-Current execution is read-only.
 
 Let the server obtain model consent from the user. On unsupported/unanswered
 elicitation explain the model and reason. Do not set approval yourself or edit
@@ -34,9 +33,18 @@ design. Read only the sections needed for the task. Optional docs/.local/
 investigations are historical reference, never another plan.
 
 The owner chose full agent orchestration on 2026-10-08. Roles and provider/model
-choices are independent; writing, bounded delegation and client skills require
-the roadmap's verified profiles/task contract. Do not remove current sandbox or
-nested-turn enforcement as a shortcut.
+choices are independent. Every role runs on the host after the user's consent
+([rule 11](../../rules/11-security-and-sandboxes.md)); do not remove consent,
+claims or nested-turn enforcement as a shortcut.
+
+You are the coordinator ([`project.md`](../../project.md#agent-roles)): per
+issue, `consult` codex on the plan of a non-trivial change, write a
+self-contained task spec, `delegate` it to agy (claude in a critical area) with
+`scope`, `checks` and `mode: async`, read the whole diff against the scope,
+send confirmed findings back to the delegate's `session_handle`, run the long
+suites yourself, get the required reviews READY on the head, judge the change
+yourself, then commit, push, open the PR and merge it under the standing
+go-aheads.
 
 Follow [core invariants](../../rules/core/00-core-invariants.md),
 [security](../../rules/11-security-and-sandboxes.md),
