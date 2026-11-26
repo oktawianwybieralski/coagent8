@@ -518,6 +518,16 @@ test('a root counts running time, not idle time, and a continued session may fin
   assert.ok(late.message.includes('used its 10 minutes of running time and the 5 more minutes a continued session gets'), late.message);
   assert.ok(late.message.includes('start a new task without root_handle and session_handle'));
 
+  // Without a grace: the refusal names graceMinutes 0, so a continuation would get no more minutes.
+  const graceless = await createRoot({ maxMinutes: 10, graceMinutes: 0 });
+  const gracelessFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${graceless.rootHandle}.json`);
+  await atomicWrite(gracelessFile, JSON.stringify(spent(graceless, -1)));
+  const none = await reserveRootTask(graceless.rootHandle, { taskHandle: `task_${'d'.repeat(32)}` }).catch(err => err);
+  assert.equal(none.code, 'ROOT_LIMIT');
+  assert.ok(none.message.includes('used its 10 minutes of running time (counted while its tasks run, not between calls)'), none.message);
+  assert.ok(none.message.includes('rootLimits.graceMinutes is 0, so a continued session gets no more minutes'), none.message);
+  assert.ok(none.message.includes('start a new task without root_handle and session_handle'), none.message);
+
   // A record from before #228 has no grace stored and a deadline nobody reads.
   const legacy = await createRoot();
   const legacyFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${legacy.rootHandle}.json`);

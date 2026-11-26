@@ -243,7 +243,7 @@ function assertUsable(record: RootRecord, continuation = false): number {
   if (continuation || grace === 0) {
     throw new ToolError(
       'ROOT_LIMIT',
-      `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes of running time${grace ? ` and the ${grace} more minutes a continued session gets` : ''} (${counted}). ${raise} Or start a new task without root_handle and session_handle, restating the work.`,
+      `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes of running time${grace ? ` and the ${grace} more minutes a continued session gets` : ''} (${counted})${grace ? '' : '; rootLimits.graceMinutes is 0, so a continued session gets no more minutes'}. ${raise} Or start a new task without root_handle and session_handle, restating the work.`,
     );
   }
   throw new ToolError(
