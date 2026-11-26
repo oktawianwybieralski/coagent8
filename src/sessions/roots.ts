@@ -248,6 +248,10 @@ function advanceRootClock(record: RootRecord, measured?: RootTaskElapsed): numbe
   const clock = Date.now() + clockOffsetMs(record);
   const written = latestRecordedMs(record);
   const setBack = clock < written;
+  // Applied whether or not the check saw a change: a clock set back by less than the time since the
+  // last write passes the check, and only the measured time keeps what the task ran. A measured time
+  // ahead of the clock, by drift or a set-back clock, raises the offset below by as much, so the next
+  // write does not find the clock behind it and charges no note interval.
   if (measured) noteMeasured(record, measured);
   let now = Math.max(clock, latestRecordedMs(record));
   if (setBack && record.tasks.some(task => !task.endedAt && isRootTaskActive(task))) {

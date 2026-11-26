@@ -606,6 +606,40 @@ test('after the clock is set back, later work counts at its real length and is r
     Date.now = realNow;
   }
 
+  // A measured time a little ahead of the wall clock, without a clock change, charges no note interval.
+  {
+    const root = await createRoot({ maxMinutes: 10, graceMinutes: 0, maxConcurrent: 4, maxCalls: 10 });
+    const task = `task_${'c'.repeat(32)}`;
+    await reserveRootTask(root.rootHandle, { taskHandle: task });
+    const startedAt = Date.parse(readRoot(root.rootHandle).tasks.at(-1).startedAt);
+    const ahead = () => Date.now() - startedAt + 5;
+    await touchRootTask(root.rootHandle, { taskHandle: task, elapsedMs: ahead() });
+    await reserveRootCall(root.rootHandle);
+    await touchRootTask(root.rootHandle);
+    await endRootTask(root.rootHandle, task, ahead());
+    await reserveRootCall(root.rootHandle);
+    const record = readRoot(root.rootHandle);
+    assert.ok(rootRunningMs(record) < 5000, `no note interval is charged (${rootRunningMs(record)} ms)`);
+    assert.ok((record.clockOffsetMs ?? 0) < 1000, `the offset rises only by what the measured time was ahead (${record.clockOffsetMs})`);
+  }
+
+  // Set back by less than the time since the last write, which no check sees: the measured time still counts.
+  shift = 0;
+  Date.now = () => realNow() + shift;
+  try {
+    const root = await createRoot({ maxMinutes: 10, graceMinutes: 0, maxConcurrent: 4, maxCalls: 10 });
+    const task = `task_${'d'.repeat(32)}`;
+    await reserveRootTask(root.rootHandle, { taskHandle: task });
+    const startedAt = Date.parse(readRoot(root.rootHandle).tasks.at(-1).startedAt);
+    shift += 50_000;
+    shift -= 30_000;
+    await endRootTask(root.rootHandle, task, 50_000);
+    const ranMs = Date.parse(readRoot(root.rootHandle).tasks.at(-1).endedAt) - startedAt;
+    assert.ok(ranMs >= 50_000 && ranMs < 51_000, `the measured 50 s count, not the 20 s the clock shows (${ranMs} ms)`);
+  } finally {
+    Date.now = realNow;
+  }
+
   // Set back before a running task's first note: another task cannot get the time it may have run.
   shift = 0;
   Date.now = () => realNow() + shift;
