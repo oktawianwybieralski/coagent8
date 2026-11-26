@@ -232,8 +232,13 @@ For setup, sign-in or quota problems, add the output of doctor (scope: health).`
 
     const body = `### What happened\n\n${whatHappened}\n\n### Environment\n\n${environment}\n`;
     const issueUrl = buildPrefilledIssueUrl(title, whatHappened, environment);
-    const pasteRequired = issueUrl === GITHUB_BUG_REPORT_TEMPLATE_URL;
+    const empty = issueUrl === GITHUB_BUG_REPORT_TEMPLATE_URL;
+    const shortened = !empty && new URL(issueUrl).searchParams.get(BUG_REPORT_FIELDS.whatHappened) !== whatHappened;
+    const pasteRequired = empty || shortened;
     const fence = fenceFor(body);
+    const pasteNote = empty
+      ? 'The report does not fit in the link. Paste it into the form:'
+      : 'The report was shortened to fit the link. Replace the form text with the full report:';
 
     return {
       title,
@@ -243,7 +248,7 @@ For setup, sign-in or quota problems, add the output of doctor (scope: health).`
       prompt:
         `The bug report form is filled in. Open it, check it for anything private and click Submit new issue (GitHub sign-in required):\n\n` +
         `**[Submit Bug Report on GitHub](<${issueUrl}>)**` +
-        (pasteRequired ? `\n\nThe report does not fit in the link. Paste it into the form:\n\n${fence}text\n${body}\n${fence}` : ''),
+        (pasteRequired ? `\n\n${pasteNote}\n\n${fence}text\n${body}\n${fence}` : ''),
     };
   } catch (_err) {
     return {

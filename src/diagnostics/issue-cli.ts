@@ -10,7 +10,7 @@ import { redactDiagnostic } from '../security/redaction.js';
 import { runDoctor } from './doctor.js';
 import { generateBugReport, type BugReportResult } from './issue.js';
 
-const USAGE = 'Usage: coagent8 issue [--no-open] [--json]';
+const USAGE = 'Usage: coagent8 issue [--title <text>] [--no-open] [--json] [what happened...]';
 
 /** Bounds how long `--open` waits for the opener to report a launch failure. */
 const OBSERVATION_TIMEOUT_MS = 2000;
@@ -104,13 +104,15 @@ export async function runIssueCli(
 
   let open: boolean | undefined;
   let json = false;
+  let title: string | undefined;
+  const description: string[] = [];
   let stopParsing = false;
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!;
-    if (stopParsing) {
-      err.write(`Unknown argument '${redactDiagnostic(arg, 64)}'. ${USAGE}\n`);
-      return 2;
+    if (stopParsing || !arg.startsWith('-')) {
+      description.push(arg);
+      continue;
     }
     if (arg === '--') {
       stopParsing = true;
@@ -120,6 +122,12 @@ export async function runIssueCli(
       open = true;
     } else if (arg === '--no-open') {
       open = false;
+    } else if (arg === '--title') {
+      if (index + 1 >= args.length) {
+        err.write(`--title needs a value. ${USAGE}\n`);
+        return 2;
+      }
+      title = args[++index];
     } else if (arg === '--json') {
       json = true;
     } else if (arg === '--help' || arg === '-h') {
@@ -160,7 +168,11 @@ export async function runIssueCli(
     }
 
     const generator = options.generateReportFn ?? generateBugReport;
-    const report: BugReportResult = generator({ doctorReport });
+    const report: BugReportResult = generator({
+      title,
+      context: description.length > 0 ? description.join(' ') : undefined,
+      doctorReport,
+    });
 
     if (json) {
       const payload = {

@@ -217,3 +217,21 @@ test('run gateway dispatches action: "issue" to handleIssue cleanly', async () =
   assert.equal(result.structuredContent.prompt, result.content[0].text);
   assert.equal(result.structuredContent.opened, false);
 });
+
+test('tools/call run with action "issue" accepts title and open_browser', async () => {
+  const { createServer } = require('../../../src/mcp/server.ts');
+  const callHandler = createServer()._requestHandlers.get('tools/call');
+  const res = await callHandler(
+    {
+      method: 'tools/call',
+      params: {
+        name: 'run',
+        arguments: { action: 'issue', title: 'Gateway title', error_message: 'boom', include_doctor: false, open_browser: false },
+      },
+    },
+    { signal: null },
+  );
+  assert.equal(res.isError, undefined, res.content?.[0]?.text);
+  assert.equal(res.structuredContent.title, '[Bug]: Gateway title');
+  assert.equal(res.structuredContent.opened, false);
+});

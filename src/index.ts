@@ -98,7 +98,7 @@ export function formatRootHelp(): string {
     '  session history <handle> [--cursor <cursor>] [--limit <limit>] [--json]',
     '                                   Inspect paginated session turn history',
     '  wait <task_handle> [--data-dir <dir>] [--timeout-ms <ms>]  Wait for a delegation and print its result',
-    '  issue [--no-open] [--json]       Open the GitHub bug report form with the environment filled in',
+    '  issue [--title <t>] [text...]    Open the GitHub bug report form filled in with the text and environment',
     '  setup [--clients=...]            Register CoAgent8 with native CLI hosts',
     '  repair [--clients=...]           Restore missing or corrupted host registrations',
     '  status [--clients=...]           Check CLI readiness across supported hosts',

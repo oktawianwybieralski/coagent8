@@ -107,7 +107,7 @@ test('coagent8 issue --help and -h print usage', async () => {
     assert.equal(code, 0);
     assert.equal(err.output, '');
     assert.equal(opened.length, 0);
-    assert.ok(out.output.includes('Usage: coagent8 issue [--no-open] [--json]'));
+    assert.ok(out.output.includes('Usage: coagent8 issue [--title <text>] [--no-open] [--json] [what happened...]'));
   }
 });
 
@@ -275,4 +275,24 @@ test('openBrowser reports a synchronous spawn failure', async () => {
   assert.equal(result, false);
   assert.equal(warnings.length, 1);
   assert.ok(warnings[0].includes('failed to launch browser: spawn EPERM'));
+});
+
+test('coagent8 issue fills the title and "What happened" from its arguments', async () => {
+  const opened = [];
+  const out = createStream();
+  const err = createStream();
+  const code = await runIssueCli(['--title', 'Root limit counts idle time', 'delegate', 'refused', '--no-open', '--', '--json'], out, err, {
+    openBrowser: url => opened.push(url),
+    runDoctorFn: noDoctor,
+  });
+  assert.equal(code, 0);
+  assert.equal(err.output, '');
+  assert.equal(opened.length, 0);
+  const fields = new URL(out.output.match(/\(<([^>]+)>\)/)[1]).searchParams;
+  assert.equal(fields.get('title'), '[Bug]: Root limit counts idle time');
+  assert.match(fields.get('what-happened'), /^delegate refused --json/);
+
+  const missing = createStream();
+  assert.equal(await runIssueCli(['--title'], createStream(), missing, { openBrowser: () => true }), 2);
+  assert.match(missing.output, /--title needs a value/);
 });

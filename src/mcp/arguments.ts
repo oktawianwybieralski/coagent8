@@ -23,6 +23,8 @@ export interface ToolArguments extends ExecutionRequest {
   file_paths?: string[];
   context_files?: string[];
   include_doctor?: boolean;
+  title?: string;
+  open_browser?: boolean;
   delete_history?: boolean;
   cursor?: string;
   limit?: number;

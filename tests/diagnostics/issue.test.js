@@ -133,7 +133,9 @@ test('the issue URL round-trips any text and stays below the length ceiling', ()
   assert.match(shortened.get('what-happened'), /^Error:\n\n```text\n\u{1f680}/u);
   assert.ok(shortened.get('what-happened').endsWith('[shortened to fit the form link]'));
   assert.match(shortened.get('environment'), /CoAgent8 MCP Version/);
-  assert.equal(boundedReport.pasteRequired, false);
+  assert.equal(boundedReport.pasteRequired, true, 'a shortened link offers the full report');
+  assert.ok(boundedReport.prompt.includes('The report was shortened to fit the link'));
+  assert.ok(boundedReport.prompt.includes(boundedReport.body));
 });
 
 test('titles come from the title option, fall back to the error, and the form falls back to pasting', () => {
