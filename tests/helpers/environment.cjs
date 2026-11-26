@@ -40,7 +40,9 @@ function createTestEnvironment(base = process.env) {
   }
   const env = {};
   for (const [key, value] of Object.entries(base)) {
-    if (key.toLowerCase() !== 'path') env[key] = value;
+    // A suite started by an agent of the CoAgent8 server inherits its coagent8_CONFIG, which points at
+    // the user's real config.json: every CoAgent8 path override is dropped, or a test rewrites it (#232).
+    if (key.toLowerCase() !== 'path' && !/^coagent8_/i.test(key)) env[key] = value;
   }
   const git = findOnPath('git', base);
   env.PATH = [...new Set([path.dirname(process.execPath), ...(git ? [git] : []), ...systemPath(base)])].join(path.delimiter);
