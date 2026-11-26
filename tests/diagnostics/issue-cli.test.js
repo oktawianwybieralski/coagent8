@@ -296,3 +296,15 @@ test('coagent8 issue fills the title and "What happened" from its arguments', as
   assert.equal(await runIssueCli(['--title'], createStream(), missing, { openBrowser: () => true }), 2);
   assert.match(missing.output, /--title needs a value/);
 });
+
+test('coagent8 issue derives the title from the text and refuses an option as the title', async () => {
+  const out = createStream();
+  assert.equal(await runIssueCli(['--no-open', 'delegate', 'hangs'], out, createStream(), { runDoctorFn: noDoctor }), 0);
+  assert.equal(new URL(out.output.match(/\(<([^>]+)>\)/)[1]).searchParams.get('title'), '[Bug]: delegate hangs');
+
+  const opened = [];
+  const err = createStream();
+  assert.equal(await runIssueCli(['--title', '--no-open'], createStream(), err, { openBrowser: url => opened.push(url) }), 2);
+  assert.equal(opened.length, 0);
+  assert.match(err.output, /--title needs a value/);
+});

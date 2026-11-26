@@ -123,7 +123,7 @@ export async function runIssueCli(
     } else if (arg === '--no-open') {
       open = false;
     } else if (arg === '--title') {
-      if (index + 1 >= args.length) {
+      if (index + 1 >= args.length || args[index + 1]!.startsWith('-')) {
         err.write(`--title needs a value. ${USAGE}\n`);
         return 2;
       }

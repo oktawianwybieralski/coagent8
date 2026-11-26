@@ -14,7 +14,9 @@ description: Report a CoAgent8 defect on GitHub through the CoAgent8 issue tool,
 2. The server removes secrets, diffs and code blocks, fills in the GitHub bug
    report form and opens it in the browser (`opened: true`). Tell the user to
    check the form for anything private and click Submit new issue. When
-   `opened` is false, show the link from the prompt.
+   `opened` is false, show the link from the prompt. When `pasteRequired` is
+   true, the report did not fit in the link: show the prompt's instruction and
+   the full report block before the user submits.
 3. Never submit the issue for the user.
 
 Report problems with a backend's answer itself (a wrong opinion from the other

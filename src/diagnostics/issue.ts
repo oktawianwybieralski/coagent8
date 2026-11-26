@@ -197,10 +197,11 @@ export function generateBugReport(options: BugReportOptions): BugReportResult {
     const cleanContext = sanitizeText(context);
     const singleLine = (text: string) => text.replace(/[\s\u2028\u2029]+/g, ' ').trim();
 
-    const headline = (singleLine(sanitizeText(requestedTitle)) || singleLine(cleanError.split(/[\r\n\u2028\u2029]/)[0] ?? '')).replace(
-      /^\[Bug\]:\s*/i,
-      '',
-    );
+    const headline = (
+      singleLine(sanitizeText(requestedTitle)) ||
+      singleLine(cleanError.split(/[\r\n\u2028\u2029]/)[0] ?? '') ||
+      singleLine(cleanContext.split(/[\r\n]/)[0] ?? '')
+    ).replace(/^\[Bug\]:\s*/i, '');
     const title = `[Bug]: ${safeSlice(headline, 110)}`;
 
     const backendEntries = Object.entries(doctorReport?.backends ?? {});
