@@ -785,4 +785,20 @@ test('#231 #233 #245: Claude waits for background notification turns, sums usage
     assert.match(streamingTimedOut.output, /^\[Partial progress: .*\]\n\nStreaming partial report$/);
     assert.equal(streamingTimedOut.continuationAvailable, true);
     assert.equal(activeProcesses.size, 0);
+    // (g) A resumed turn timed out during an earlier task's notification turn leaks no notification text.
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'resume-notification-interruptible';
+    const preEvents = [];
+    const preTimedOut = await executeClaude('x', {
+      cwd: dir,
+      model: MODEL,
+      nativeSessionId: session,
+      timeoutMs: 250,
+      onEvent: e => preEvents.push(e),
+    });
+    assert.equal(preTimedOut.status, 'timed_out');
+    assert.equal(preTimedOut.error?.code, 'TIMEOUT');
+    assert.equal(preTimedOut.output, '');
+    assert.equal(preTimedOut.continuationAvailable, false);
+    assert.ok(!preEvents.some(e => e.type === 'assistant_message' || e.type === 'assistant_delta'));
+    assert.equal(activeProcesses.size, 0);
   }));

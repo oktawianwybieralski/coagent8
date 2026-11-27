@@ -84,6 +84,7 @@ const recordings = {
   'background-task': ['success-partial', 0],
   'notification-interruptible': ['success-partial', 0],
   'resume-notification': ['success-partial', 0],
+  'resume-notification-interruptible': ['success-partial', 0],
   'second-result': ['success-partial', 0],
 };
 const [file, exitCode] = recordings[scenario] || [];
@@ -234,6 +235,21 @@ function answer() {
     // notification turn runs before the resumed turn's own init and answer.
     if (scenario === 'resume-notification' && event.subtype === 'init')
       out.push(...notificationTurn({ ...TASK, run_id: 'run-0' }, 'The earlier background command sleep 25 finished.', 0).slice(3));
+    if (scenario === 'resume-notification-interruptible') {
+      if (event.subtype !== 'init') continue;
+      const pre = notificationTurn({ ...TASK, run_id: 'run-0' }, 'Earlier notification still running...', 0).slice(3, 5);
+      out.push(
+        ...pre,
+        { type: 'stream_event', session_id: sessionId, event: { type: 'message_start', message: { id: 'msg_pre_stream' } } },
+        {
+          type: 'stream_event',
+          session_id: sessionId,
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Earlier streaming...' } },
+        },
+      );
+      activeNotificationOrigin = { kind: 'task-notification', producer: 'session-task', runId: 'run-0' };
+      break;
+    }
     if (scenario === 'unknown-events' && event.type === 'result') {
       out.push(
         { type: 'future_event_type', payload: 1 },
@@ -268,7 +284,12 @@ function answer() {
   }
   // A CLI that dies without a terminal result: exit without waiting for stdin.
   if (scenario === 'no-result') process.exit(exitCode);
-  if (scenario === 'interruptible' || scenario === 'ignore-interrupt' || scenario === 'streaming-interruptible') {
+  if (
+    scenario === 'interruptible' ||
+    scenario === 'ignore-interrupt' ||
+    scenario === 'streaming-interruptible' ||
+    scenario === 'resume-notification-interruptible'
+  ) {
     // The turn keeps running until an interrupt arrives (2.1.289 output shapes, recorded live).
     interruptible = setInterval(() => {}, 1000);
     if (env.CLAUDE_FIXTURE_READY) {

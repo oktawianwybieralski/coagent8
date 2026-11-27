@@ -392,7 +392,11 @@ test('Claude collector skips a notification result of an earlier task before the
     resumed: true,
     onEvent: e => seen.push(e),
   });
-  for (const event of skipped) collector.line(JSON.stringify(event));
+  for (const event of skipped.slice(0, -1)) collector.line(JSON.stringify(event));
+  assert.equal(collector.snapshot().hasAssistantMessage, false, 'unclassified pre-answer output stays out of hasAssistantMessage');
+  assert.equal(collector.partialProgress(), '', 'unclassified pre-answer output stays out of partialProgress');
+  assert.ok(!seen.some(e => e.type === 'assistant_message' || e.type === 'assistant_delta'), 'no unclassified pre-answer text emitted');
+  collector.line(JSON.stringify(skipped.at(-1)));
   assert.equal(collector.snapshot().hasAssistantMessage, false, 'dropped skipped turn does not mark session resumable');
   assert.equal(collector.partialProgress(), '', 'dropped skipped turn leaves no partial progress');
   assert.ok(!seen.some(e => e.type === 'assistant_message' || e.type === 'assistant_delta'), 'no skipped text emitted');
@@ -480,4 +484,33 @@ test('Claude collector drops usage when any counted result omits it and bounds c
   assert.equal(bounded.snapshot.truncated, true);
   assert.equal(bounded.snapshot.error?.code, 'BUFFER_LIMIT');
   assert.ok(Buffer.byteLength(bounded.snapshot.output) <= 50);
+
+  // Pre-answer buffer ignores empty text events and bounds the buffered event count.
+  const { MAX_PENDING_ASSISTANT_EVENTS } = require('../../../src/backends/claude/collector.ts');
+  const bufferedEvents = [];
+  const boundedBuffer = createClaudeStreamCollector({
+    expectedSessionId: SESSION,
+    allowedTools: TOOLS,
+    resumed: true,
+    onEvent: e => bufferedEvents.push(e),
+  });
+  boundedBuffer.line(JSON.stringify(events[0]));
+  boundedBuffer.line(JSON.stringify({ type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_flood' } } }));
+  for (let i = 0; i < 50; i++) {
+    boundedBuffer.line(
+      JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '' } } }),
+    );
+    boundedBuffer.line(JSON.stringify({ type: 'assistant', message: { id: `msg_empty_${i}`, content: [{ type: 'text', text: '' }] } }));
+  }
+  for (let i = 0; i < MAX_PENDING_ASSISTANT_EVENTS + 100; i++) {
+    boundedBuffer.line(
+      JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'x' } } }),
+    );
+  }
+  boundedBuffer.line(JSON.stringify({ ...events.at(-1), result: 'Done' }));
+  const deltas = bufferedEvents.filter(e => e.type === 'assistant_delta');
+  assert.ok(!deltas.some(e => e.text === ''), 'empty deltas are ignored');
+  assert.ok(!bufferedEvents.some(e => e.type === 'assistant_message' && e.text === ''), 'empty assistant messages are ignored');
+  assert.equal(deltas.length, MAX_PENDING_ASSISTANT_EVENTS, 'buffered events are capped');
+  assert.equal(boundedBuffer.snapshot().output, 'Done');
 });

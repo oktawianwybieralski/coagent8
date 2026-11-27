@@ -43,6 +43,8 @@ const KNOWN_SYSTEM_SUBTYPES = new Set([
 const MAX_TASK_TEXT = 160;
 /** Upper bound of the background tasks tracked at once, so a runaway list cannot grow memory. */
 const MAX_TASKS = 64;
+/** Upper bound of pre-answer assistant events buffered on `--resume` before `result` classifies the turn. */
+export const MAX_PENDING_ASSISTANT_EVENTS = 4096;
 /** Marks the latest assistant text returned when a turn ended without its answer (#231). */
 export const PARTIAL_PROGRESS_NOTICE = '[Partial progress: the turn ended before its final answer; this is the latest assistant message.]';
 
@@ -170,11 +172,36 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   let streamingMessageId: string | null = null;
   let streamingText = '';
   let streamingTruncated = false;
-  // On `--resume`, buffer pre-answer assistant progress until `result` proves it is not an earlier task notification.
-  const pendingMessageIds = new Set<string>();
+  // On `--resume`, buffer pre-answer assistant progress separately until `result` proves it is not an earlier task notification.
+  let pendingReducer: StreamReducer | null = null;
+  let pendingLatestMessageId: string | null = null;
+  let pendingStreamingMessageId: string | null = null;
+  let pendingStreamingText = '';
+  let pendingStreamingTruncated = false;
   const pendingAssistantEvents: AdapterEvent[] = [];
   let pendingEventBytes = 0;
   const bufferingPreAnswer = () => Boolean(options.resumed) && !terminal;
+  const ensurePendingReducer = () =>
+    (pendingReducer ??= new StreamReducer({
+      maxTotalBytes: reducer.maxTotalBytes,
+      maxMessageBytes: reducer.maxMessageBytes,
+      maxMessages: reducer.maxMessages,
+    }));
+  const clearPendingBuffer = () => {
+    pendingReducer = null;
+    pendingLatestMessageId = null;
+    pendingStreamingMessageId = null;
+    pendingStreamingText = '';
+    pendingStreamingTruncated = false;
+    pendingAssistantEvents.length = 0;
+    pendingEventBytes = 0;
+  };
+  const bufferAssistantEvent = (event: AdapterEvent, byteCap: number, bytes: number) => {
+    if (pendingAssistantEvents.length >= MAX_PENDING_ASSISTANT_EVENTS) return;
+    if (pendingEventBytes + bytes > byteCap) return;
+    pendingEventBytes += bytes;
+    pendingAssistantEvents.push(event);
+  };
   // Background tasks still running: task ID to description.
   const tasks = new Map<string, string>();
   // Finished tasks after the prompt result whose notification turn result has not arrived yet.
@@ -326,27 +353,39 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       const block = record(value);
       if (!block) fail('PROTOCOL_ERROR', 'Invalid Claude Code content block.');
       if (block.type === 'text' && typeof block.text === 'string') {
+        if (bufferingPreAnswer()) {
+          if (id === pendingStreamingMessageId) {
+            pendingStreamingMessageId = null;
+            pendingStreamingText = '';
+            pendingStreamingTruncated = false;
+          }
+          if (!publicText || block.text.length === 0) continue;
+          const target = ensurePendingReducer();
+          if (!target.getMessageMap().has(id) && target.getMessageMap().size >= target.maxMessages)
+            throw new BufferLimitError('Too many Claude Code public messages.');
+          target.upsertMessage(id, (target.getMessageMap().get(id) ?? '') + block.text);
+          pendingLatestMessageId = id;
+          const msgText = target.getMessageMap().get(id) ?? '';
+          if (msgText.length > 0)
+            bufferAssistantEvent(
+              { type: 'assistant_message', messageId: id, text: msgText },
+              reducer.maxTotalBytes * 2,
+              Buffer.byteLength(msgText),
+            );
+          continue;
+        }
         if (id === streamingMessageId) {
           streamingMessageId = null;
           streamingText = '';
           streamingTruncated = false;
         }
-        if (!publicText) continue;
+        if (!publicText || block.text.length === 0) continue;
         if (!reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages)
           throw new BufferLimitError('Too many Claude Code public messages.');
         reducer.upsertMessage(id, (reducer.getMessageMap().get(id) ?? '') + block.text);
         latestMessageId = id;
         const msgText = reducer.getMessageMap().get(id) ?? '';
-        if (bufferingPreAnswer()) {
-          pendingMessageIds.add(id);
-          const bytes = Buffer.byteLength(msgText);
-          if (pendingEventBytes + bytes <= reducer.maxTotalBytes * 2) {
-            pendingEventBytes += bytes;
-            pendingAssistantEvents.push({ type: 'assistant_message', messageId: id, text: msgText });
-          }
-        } else {
-          emit({ type: 'assistant_message', messageId: id, text: msgText });
-        }
+        emit({ type: 'assistant_message', messageId: id, text: msgText });
       } else if (block.type === 'tool_use') {
         if (!validEventIdentifier(block.id) || !validEventIdentifier(block.name)) fail('PROTOCOL_ERROR', 'Invalid Claude Code tool call.');
         if (tools.has(block.id as string)) continue;
@@ -374,26 +413,42 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       const message = record(inner.message);
       if (message && validEventIdentifier(message.id)) {
         currentMessageId = message.id as string;
-        streamingMessageId = currentMessageId;
-        streamingText = '';
-        streamingTruncated = false;
+        if (bufferingPreAnswer()) {
+          pendingStreamingMessageId = currentMessageId;
+          pendingStreamingText = '';
+          pendingStreamingTruncated = false;
+        } else {
+          streamingMessageId = currentMessageId;
+          streamingText = '';
+          streamingTruncated = false;
+        }
       }
     } else if (inner.type === 'content_block_start' && record(inner.content_block)?.type === 'thinking') {
       emit({ type: 'status', message: 'Analyzing context...' });
     } else if (inner.type === 'content_block_delta') {
       const delta = record(inner.delta);
-      if (delta?.type !== 'text_delta' || typeof delta.text !== 'string' || !currentMessageId) return;
+      if (delta?.type !== 'text_delta' || typeof delta.text !== 'string' || delta.text.length === 0 || !currentMessageId) return;
       // Deltas stop at the public budget; the bounded assistant message still replaces the draft.
       streamedBytes += Buffer.byteLength(delta.text);
       if (bufferingPreAnswer()) {
-        const bytes = Buffer.byteLength(delta.text);
-        if (pendingEventBytes + bytes <= reducer.maxTotalBytes) {
-          pendingEventBytes += bytes;
-          pendingAssistantEvents.push({ type: 'assistant_delta', messageId: currentMessageId, text: delta.text });
+        bufferAssistantEvent(
+          { type: 'assistant_delta', messageId: currentMessageId, text: delta.text },
+          reducer.maxTotalBytes,
+          Buffer.byteLength(delta.text),
+        );
+        if (pendingStreamingMessageId !== currentMessageId) {
+          pendingStreamingMessageId = currentMessageId;
+          pendingStreamingText = '';
+          pendingStreamingTruncated = false;
         }
-      } else if (streamedBytes <= reducer.maxTotalBytes) {
-        emit({ type: 'assistant_delta', messageId: currentMessageId, text: delta.text });
+        if (!pendingStreamingTruncated) {
+          const next = truncateToByteLength(pendingStreamingText + delta.text, reducer.maxTotalBytes);
+          if (next !== pendingStreamingText + delta.text) pendingStreamingTruncated = true;
+          pendingStreamingText = next;
+        }
+        return;
       }
+      if (streamedBytes <= reducer.maxTotalBytes) emit({ type: 'assistant_delta', messageId: currentMessageId, text: delta.text });
       if (streamingMessageId !== currentMessageId) {
         streamingMessageId = currentMessageId;
         streamingText = '';
@@ -414,17 +469,12 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     }
     const runId = origin && typeof origin.runId === 'string' ? origin.runId : null;
     if (origin && !terminal) {
-      // Before the prompt turn's answer it belongs to a task of an earlier turn (#233): drop any
-      // buffered assistant progress from that skipped turn so it is never published or resumable.
-      if (pendingMessageIds.size > 0) reducer.removeMessages(pendingMessageIds);
-      pendingMessageIds.clear();
-      pendingAssistantEvents.length = 0;
-      pendingEventBytes = 0;
-      latestMessageId = null;
-      streamingMessageId = null;
-      streamingText = '';
-      streamingTruncated = false;
+      // Before the prompt turn's answer it belongs to a task of an earlier turn (#233): drop all
+      // buffered assistant progress and error state from that skipped turn.
+      clearPendingBuffer();
       streamedBytes = 0;
+      category = null;
+      rateLimitResetsAt = null;
       const summary = (runId && summaries.get(runId)) || taskText(event.result) || runId || 'unnamed task';
       emit({ type: 'warning', message: redactDiagnostic(`Skipped notification result from an earlier background task: ${summary}`, 512) });
       return;
@@ -433,12 +483,19 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     if (typeof event.session_id === 'string' && event.session_id.toLowerCase() !== options.expectedSessionId.toLowerCase()) {
       fail('PROTOCOL_ERROR', 'Claude Code result reported an unexpected session ID.');
     }
-    if (!origin && pendingAssistantEvents.length > 0) {
+    if (!origin) {
+      if (pendingReducer) {
+        for (const [id, text] of pendingReducer.getMessageMap()) reducer.upsertMessage(id, text);
+        if (pendingLatestMessageId !== null) latestMessageId = pendingLatestMessageId;
+      }
+      if (pendingStreamingText) {
+        streamingMessageId = pendingStreamingMessageId;
+        streamingText = pendingStreamingText;
+        streamingTruncated = pendingStreamingTruncated;
+      }
       for (const buffered of pendingAssistantEvents) emit(buffered);
     }
-    pendingMessageIds.clear();
-    pendingAssistantEvents.length = 0;
-    pendingEventBytes = 0;
+    clearPendingBuffer();
     terminal = true;
     const isError = event.is_error === true || (typeof event.subtype === 'string' && event.subtype !== 'success');
     if (!isError && sessionId === null) {
