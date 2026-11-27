@@ -929,8 +929,8 @@ export function parseAgyMcpList(stdout: string): string[] {
 
 /**
  * Names of every server in an `agy mcp list` table, a disabled one included: a turn can enable it.
- * @returns The names; undefined unless the output is agy's empty message (`No MCP servers
- * configured.`) or a table under a `NAME ... STATUS` header (agy 1.3.1 to 1.5.18).
+ * @returns The names; undefined unless the output is agy's empty message
+ * (`No MCP servers configured.`) or a table under a `NAME ... STATUS` header (agy 1.3.1 to 1.5.18).
  */
 export function configuredAgyMcpServers(stdout: string): string[] | undefined {
   const lines = stdout
