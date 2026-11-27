@@ -53,15 +53,27 @@ judgement rather than typing code.
 - Reviewer: CoAgent8 `review` with backend `codex` (see "Reviewers"), and
   CoAgent8 `consult` with backend `codex` on the plan of a non-trivial issue.
 
-Critical areas: the boundaries of [rule 11](rules/11-security-and-sandboxes.md)
-(host execution and its consent, `delegate` sessions and claims, model cost
-governance and consent, secret redaction), process teardown and the Windows job
-helper ([rule 15](rules/15-cross-platform.md)), and the release and publication
-tooling ([rule 12](rules/12-release-workflow.md)). A change that touches one of
-them is implemented by CoAgent8 `delegate` with backend `claude`, a session
-independent of the coordinator's, and its every reviewed head gets, besides the
-`codex` review, a CoAgent8 `review` with backend `claude` in a session that did
-not write it.
+Owner decisions 2026-11-27: `agy` implements nearly every change; it is cheap
+enough to run several tasks, and with a well-described task it does good work.
+Only a change to a boundary where a mistake directly exposes the user is
+implemented by CoAgent8 `delegate` with backend `claude`: the consent to run
+on the host and the model consent and cost governance
+([rule 11](rules/11-security-and-sandboxes.md)), secret redaction, the
+isolation of turns from the user's own tools and MCP servers (#224), and the
+publication tooling that holds registry credentials
+([rule 12](rules/12-release-workflow.md)). Process teardown, root limits,
+reviews, sessions, setup and the VS Code extension are ordinary work for
+`agy`. Every change gets the `codex` review and the coordinator's own check of
+the diff after it; the coordinator may add a CoAgent8 `review` with backend
+`claude` when the risk calls for it. Native runs of the claude CLI are done by
+the coordinator, since an agy turn sees CoAgent8's agy profile as
+`USERPROFILE` on Windows (#224).
+
+Parallel work (owner decision 2026-11-27): each task gets its own git worktree
+in `../coagent8-worktrees/<type>-<short-name>` from `origin/develop`, and its
+delegate runs there (`workspace_path`); the main checkout stays the owner's.
+The coordinator removes the worktree and its branch once the PR is merged and
+`develop` is green.
 
 The task spec is self-contained: the issue, its `Acceptance criteria` and dated
 decisions quoted; the branch and base commit; the allowed paths (`scope`) and
@@ -69,15 +81,14 @@ what is out of scope, with "stop and report" when the task needs more; the
 pattern to follow and the rules that apply; the exact check commands
 (`checks`); and what to return: changed paths, assumptions, each check as PASS,
 FAIL or NOT_RUN with its reason, and a PR body draft. One delegate session per
-workspace at a time; the coordinator runs the long suites itself.
+worktree at a time; the coordinator runs the long suites itself.
 
 The coordinator reads the whole diff and the list of changed and untracked
 files against the scope; the implementer's summary is an index, not proof. A
 confirmed review finding goes back to the implementer's session
 (`session_handle`) quoted with its severity and location. The coordinator does
 the work itself, or narrows the task first, when it updates dependencies or the
-implementer fails twice on the same task; in a critical area it only narrows
-the task and delegates it to `claude` again. After the review is READY, the
+implementer fails twice on the same task. After the review is READY, the
 coordinator still judges the change itself: it solves the issue, follows the
 pattern and the rules, is not overbuilt, and its tests prove the acceptance
 criteria. A READY review alone never merges a change.
@@ -85,10 +96,9 @@ criteria. A READY review alone never merges a change.
 ## Reviewers
 
 - Required: CoAgent8 `review` with backend `codex` on every reviewed head
-  (owner instruction 2026-11-26). The `agy` review is no longer required, since
-  `agy` now implements the change (Agent roles).
-- Also required on a change in a critical area: CoAgent8 `review` with backend
-  `claude`, in parallel with `codex` (Agent roles).
+  (owner instructions 2026-11-26 and 2026-11-27), followed by the coordinator's
+  own check of the change (Agent roles). The `agy` review is no longer
+  required, since `agy` now implements the change.
 - P2 deferral: allowed with the owner's dated decision.
 
 Owner decision 2026-11-21 (#208, #211): reviewers run on the host without a
