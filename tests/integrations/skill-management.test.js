@@ -510,7 +510,48 @@ test('manageSkills expectedSelection refuses stale selections and flags outdated
   const nextCatalog = path.join(p.home, 'next-catalog-foreign');
   fs.cpSync(catalog, nextCatalog, { recursive: true });
   fs.appendFileSync(path.join(nextCatalog, names[0], 'SKILL.md'), '\nForeign catalog revision.\n');
+  fs.appendFileSync(path.join(nextCatalog, names[1], 'SKILL.md'), '\nForeign catalog revision.\n');
   const updatedCatalog = await manageSkills({ ...p.options, skillsSource: nextCatalog });
   assert.equal(updatedCatalog.skills.find(item => item.name === names[0]).state, 'conflict');
   assert.equal(updatedCatalog.skills.find(item => item.name === names[0]).updateAvailable, true);
+
+  // Moving an owned skill as a foreign directory into the other root still marks updateAvailable when catalog changes.
+  fs.rmSync(path.dirname(file(p.home, 'agy', names[1])), { recursive: true, force: true });
+  const movedForeignDir = path.dirname(file(p.home, 'agy', names[1], true));
+  fs.mkdirSync(movedForeignDir, { recursive: true });
+  fs.writeFileSync(path.join(movedForeignDir, 'extra.txt'), 'moved foreign');
+  const movedCatalog = await manageSkills({ ...p.options, skillsSource: nextCatalog });
+  assert.equal(movedCatalog.skills.find(item => item.name === names[1]).state, 'conflict');
+  assert.equal(movedCatalog.skills.find(item => item.name === names[1]).updateAvailable, true);
+
+  // Passing a foreign root in overwrite preserves it by name and root without failing other packages.
+  fs.rmSync(movedForeignDir, { recursive: true, force: true });
+  const beforeForce = await manageSkills({ ...p.options, skillsSource: nextCatalog });
+  const obs0 = beforeForce.observations.find(item => item.name === names[0]);
+  const obs1 = beforeForce.observations.find(item => item.name === names[1]);
+  const forceWithForeignPreview = await manageSkills({
+    ...p.options,
+    skillsSource: nextCatalog,
+    selection: beforeForce.selection,
+    overwrite: [obs0, obs1],
+  });
+  const forceWithForeignApplied = await manageSkills({
+    ...p.options,
+    skillsSource: nextCatalog,
+    selection: beforeForce.selection,
+    overwrite: [obs0, obs1],
+    apply: forceWithForeignPreview.token,
+  });
+  assert.equal(fs.existsSync(path.join(skillRoot('agy', p.home), names[0], 'extra.txt')), true);
+  assert.deepEqual(
+    fs.readFileSync(file(p.home, 'agy', names[1], true), 'utf8'),
+    fs.readFileSync(path.join(nextCatalog, names[1], 'SKILL.md'), 'utf8'),
+  );
+  assert.deepEqual(forceWithForeignApplied.preserved, [
+    {
+      name: names[0],
+      location: 'enabled',
+      message: 'Has other files or non-regular entries; remove or fix by hand to reinstall.',
+    },
+  ]);
 });

@@ -1222,34 +1222,48 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
     return copies;
   }
-  /** Lists each preserved copy by package name and root (`enabled` or `disabled`). */
-  function preservedCopiesOf(result: SkillManagementResult, names?: Set<string>): PreservedSkill[] {
-    const copies: PreservedSkill[] = [];
+  type AnnotatedPreservedSkill = PreservedSkill & { foreign?: boolean };
+  /** Lists each preserved copy by package name and root (`enabled` or `disabled`), marking foreign directories. */
+  function preservedCopiesOf(result: SkillManagementResult, names?: Set<string>): AnnotatedPreservedSkill[] {
+    const copies: AnnotatedPreservedSkill[] = [];
     const seen = new Set<string>();
-    const add = (entry: PreservedSkill) => {
+    const isForeign = (name: string, location: 'enabled' | 'disabled') => {
+      const obs = result.observations.find(entry => entry.name === name);
+      return obs ? obs[location] === 'foreign' : false;
+    };
+    const add = (entry: AnnotatedPreservedSkill) => {
       if (names && !names.has(entry.name)) return;
       const key = `${entry.name}:${entry.location}`;
       if (seen.has(key)) return;
       seen.add(key);
-      copies.push(entry);
+      copies.push({ ...entry, ...(entry.foreign || isForeign(entry.name, entry.location) ? { foreign: true } : {}) });
     };
     for (const entry of result.preserved ?? []) add(entry);
     for (const item of result.skills) {
       if (item.state !== 'conflict') continue;
       const obs = result.observations.find(entry => entry.name === item.name);
       if (obs) {
-        if (obs.enabled !== 'absent') add({ name: item.name, location: 'enabled', message: item.message });
-        if (obs.disabled !== 'absent') add({ name: item.name, location: 'disabled', message: item.message });
+        if (obs.enabled !== 'absent')
+          add({ name: item.name, location: 'enabled', message: item.message, foreign: obs.enabled === 'foreign' });
+        if (obs.disabled !== 'absent')
+          add({ name: item.name, location: 'disabled', message: item.message, foreign: obs.disabled === 'foreign' });
       } else {
         add({ name: item.name, location: 'enabled', message: item.message });
       }
     }
     return copies;
   }
-  const formatPreservedCopies = (entries: PreservedSkill[]) => entries.map(entry => `${entry.name} (${entry.location})`).join(', ');
+  const formatPreservedCopies = (entries: AnnotatedPreservedSkill[]) =>
+    entries
+      .map(entry =>
+        entry.foreign
+          ? `${entry.name} (${entry.location}) has other files or a link; remove or fix by hand to reinstall`
+          : `${entry.name} (${entry.location})`,
+      )
+      .join(', ');
   interface BulkSkillOutcome {
     succeeded: { client: SetupClient; count: number; result: SkillManagementResult }[];
-    preserved: { client: SetupClient; copies: PreservedSkill[] }[];
+    preserved: { client: SetupClient; copies: AnnotatedPreservedSkill[] }[];
     failed: { client: SetupClient; error: string }[];
     skipped: SkillManagementResult[];
   }
@@ -1332,10 +1346,19 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
     announceBulkSkillsResult('update', outcome);
   }
-  /** Rewrites every installed CoAgent8 package across clients after modal confirmation bound to each conflict root. */
+  /** Rewrites every installed non-foreign CoAgent8 package across clients after modal confirmation for edited copies. */
   async function reinstallAllSkills(expectedSelections?: Partial<Record<SetupClient, SkillManagementResult['selection']>>): Promise<void> {
     const outcome: BulkSkillOutcome = { succeeded: [], preserved: [], failed: [], skipped: [] };
-    const targets: { client: SetupClient; status: SkillManagementResult; conflictCopies: PreservedSkill[] }[] = [];
+    const targets: {
+      client: SetupClient;
+      status: SkillManagementResult;
+      overwriteNames: string[];
+      conflictCopies: AnnotatedPreservedSkill[];
+    }[] = [];
+    const hasForeignRoot = (status: SkillManagementResult, name: string) => {
+      const obs = status.observations.find(item => item.name === name);
+      return obs ? obs.enabled === 'foreign' || obs.disabled === 'foreign' : false;
+    };
     for (const client of SETUP_CLIENTS) {
       const skillOptions = skillOptionsFor(client);
       try {
@@ -1348,15 +1371,16 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         ) {
           throw new Error('Skill selection changed; run it again.');
         }
-        if (!current.selection.installed.length) {
+        const overwriteNames = current.selection.installed.filter(name => !hasForeignRoot(current, name));
+        if (!overwriteNames.length) {
           outcome.skipped.push(current);
           const copies = preservedCopiesOf(current);
           if (copies.length) outcome.preserved.push({ client, copies });
           continue;
         }
-        const selectedSet = new Set(current.selection.installed);
-        const conflictCopies = preservedCopiesOf(current, selectedSet);
-        targets.push({ client, status: current, conflictCopies });
+        const overwriteSet = new Set(overwriteNames);
+        const conflictCopies = preservedCopiesOf(current, overwriteSet);
+        targets.push({ client, status: current, overwriteNames, conflictCopies });
       } catch (error) {
         outcome.failed.push({
           client,
@@ -1379,7 +1403,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
     for (const entry of targets) {
       const skillOptions = skillOptionsFor(entry.client);
-      const overwrite: SkillOverwrite[] = entry.status.selection.installed.map(name => {
+      const overwrite: SkillOverwrite[] = entry.overwriteNames.map(name => {
         const obs = entry.status.observations.find(item => item.name === name);
         if (!obs) throw new Error(`Missing observation for ${name}.`);
         return obs;
@@ -1420,7 +1444,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
           }
           throw applyError;
         }
-        outcome.succeeded.push({ client: entry.client, count: entry.status.selection.installed.length, result });
+        outcome.succeeded.push({ client: entry.client, count: overwrite.length, result });
         const remainingCopies = preservedCopiesOf(result);
         if (remainingCopies.length) outcome.preserved.push({ client: entry.client, copies: remainingCopies });
       } catch (error) {
@@ -2261,7 +2285,9 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     for (const { client } of healthy) newlyOffered[client] = fingerprint;
     await startTracked(() => updateSetupState(storage, { skillsOffered: newlyOffered }));
     if (isDeactivating) return;
-    const preservedSummary = preserved.map(entry => `${LABELS[entry.client]} (${formatPreservedCopies(entry.copies)})`).join('; ');
+    const preservedSummary = preserved
+      .map(entry => `${LABELS[entry.client]} (${entry.copies.map(copy => `${copy.name} (${copy.location})`).join(', ')})`)
+      .join('; ');
     if (updatable.length) {
       const message = preserved.length
         ? `Newer CoAgent8 skills are available for ${labels(updatable)}. Left alone: ${preservedSummary}.`

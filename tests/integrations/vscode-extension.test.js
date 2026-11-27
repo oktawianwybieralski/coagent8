@@ -2671,9 +2671,68 @@ test('Manage Skills Update all and Reinstall all update across clients and requi
   // Restore coagent8-review for the partial-failure test below.
   fs.writeFileSync(reviewFile, fs.readFileSync(path.join(catalogV2, 'coagent8-review', 'SKILL.md'), 'utf8'));
 
-  // A client failure during Reinstall all is named in Failed without claiming success for that client.
+  // Foreign copies are excluded from overwrite and modal, never block other clients, and instruct manual cleanup.
   const foreignDir = path.join(skillRoot('codex', home), 'coagent8-session', 'extra.txt');
   fs.writeFileSync(foreignDir, 'foreign');
+  const foreignOnly = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: setupState,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(refresh) Reinstall all' }],
+  });
+  assert.match(foreignOnly.warnings.at(-1), /Reinstalled CoAgent8 skills for Claude Code CLI \(2\), Antigravity CLI \(1\)\./);
+  assert.match(
+    foreignOnly.warnings.at(-1),
+    /Codex CLI \(coagent8-session \(enabled\) has other files or a link; remove or fix by hand to reinstall\)/,
+  );
+  assert.ok(
+    !/Overwrite packages changed outside CoAgent8/.test(foreignOnly.warnings.join('\n')),
+    'no modal shown for foreign-only conflicts',
+  );
+  assert.ok(!/Reinstalled CoAgent8 skills for[^.]*Codex CLI/.test(foreignOnly.warnings.at(-1)));
+
+  // When a client has both a healthy package and a foreign package, Reinstall all reinstalls the healthy one and names the foreign one.
+  {
+    const env = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      CODEX_HOME: path.join(home, '.codex'),
+      coagent8_CONFIG: path.join(home, '.coagent8/config.json'),
+    };
+    delete env.CODEX_CONFIG_PATH;
+    delete env.CLAUDE_CONFIG_DIR;
+    delete env.GEMINI_CLI_HOME;
+    const opts = { client: 'codex', home, env, skillsSource: catalogV2 };
+    const cur = await manageSkills(opts);
+    const sel = skillSelectionForAction(cur.selection, ['coagent8-review'], 'install');
+    const prev = await manageSkills({ ...opts, selection: sel });
+    await manageSkills({ ...opts, selection: sel, apply: prev.token });
+  }
+  const mixedForeign = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: setupState,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(refresh) Reinstall all' }],
+  });
+  assert.match(
+    mixedForeign.warnings.at(-1),
+    /Reinstalled CoAgent8 skills for Codex CLI \(1\), Claude Code CLI \(2\), Antigravity CLI \(1\)\./,
+  );
+  assert.match(
+    mixedForeign.warnings.at(-1),
+    /Codex CLI \(coagent8-session \(enabled\) has other files or a link; remove or fix by hand to reinstall\)/,
+  );
+
+  // A client failure during Reinstall all is named in Failed without claiming success for that client.
+  const outsideCodex = path.join(root, 'outside-codex');
+  fs.mkdirSync(outsideCodex, { recursive: true });
+  fs.rmSync(skillRoot('codex', home), { recursive: true, force: true });
+  fs.symlinkSync(outsideCodex, skillRoot('codex', home), process.platform === 'win32' ? 'junction' : 'dir');
   const partialFailure = await runExtension({
     home,
     skillProfile: true,
@@ -2681,7 +2740,6 @@ test('Manage Skills Update all and Reinstall all update across clients and requi
     storedState: setupState,
     command: 'coagent8.manageSkills',
     steps: [{ label: '$(refresh) Reinstall all' }],
-    action: 'Overwrite and Reinstall',
   });
   assert.match(partialFailure.warnings.at(-1), /Reinstalled CoAgent8 skills for Claude Code CLI \(2\), Antigravity CLI \(1\)\./);
   assert.match(partialFailure.warnings.at(-1), /Failed for Codex CLI \(/);
@@ -2913,6 +2971,28 @@ test('bulk actions refuse intervening selection changes and notice/Manage Skills
   );
   assert.deepEqual(noticeV2.notifications[0].actions, ['Manage Skills']);
 
+  // A foreign copy moved to the other root (enabled ownership moved into disabled root) is also detected and named with its location.
+  fs.rmSync(path.join(skillRoot('claude', home), 'coagent8-review'), { recursive: true, force: true });
+  const movedClaudeDisabled = path.join(disabledSkillRoot('claude', home), 'coagent8-review');
+  fs.mkdirSync(movedClaudeDisabled, { recursive: true });
+  fs.writeFileSync(path.join(movedClaudeDisabled, 'extra.txt'), 'moved foreign');
+  const movedNotice = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    activationOnly: true,
+    awaitState: true,
+    awaitNotifications: 1,
+  });
+  assert.match(movedNotice.notifications[0].message, /Claude Code CLI \(coagent8-review \(disabled\)\)/);
+  fs.rmSync(movedClaudeDisabled, { recursive: true, force: true });
+  fs.mkdirSync(path.join(skillRoot('claude', home), 'coagent8-review'), { recursive: true });
+  fs.writeFileSync(
+    path.join(skillRoot('claude', home), 'coagent8-review', 'SKILL.md'),
+    fs.readFileSync(path.join(catalogV1, 'coagent8-review', 'SKILL.md'), 'utf8'),
+  );
+  fs.writeFileSync(path.join(skillRoot('claude', home), 'coagent8-review', 'extra.txt'), 'foreign active');
+
   // Single-client Manage Skills action also names the preserved foreign copy with its location.
   const singleClient = await runExtension({
     home,
@@ -2922,7 +3002,10 @@ test('bulk actions refuse intervening selection changes and notice/Manage Skills
     command: 'coagent8.manageSkills',
     steps: [{ client: 'claude' }, { action: 'install' }, { names: ['coagent8-issue'] }],
   });
-  assert.match(singleClient.warnings.at(-1), /Left alone because changed outside CoAgent8: coagent8-review \(enabled\)\./);
+  assert.match(
+    singleClient.warnings.at(-1),
+    /Left alone because changed outside CoAgent8: coagent8-review \(enabled\) has other files or a link; remove or fix by hand to reinstall\./,
+  );
 
   // Set up clean outdated codex + claude with an edited conflict and test Reinstall all refusing an intervening selection change.
   fs.rmSync(path.join(skillRoot('claude', home), 'coagent8-review', 'extra.txt'));

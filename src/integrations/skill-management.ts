@@ -140,9 +140,9 @@ function inventory(
     const desired = !selection.installed.includes(item.name) ? 'absent' : selection.disabled.includes(item.name) ? 'disabled' : 'enabled';
     const savedActive = saved.skills[client]?.[item.name];
     const savedDisabled = saved.disabledSkills?.[client]?.[item.name];
-    const foreignOutdated =
-      (active.state === 'foreign' && savedActive !== undefined && savedActive !== item.digest) ||
-      (disabled.state === 'foreign' && savedDisabled !== undefined && savedDisabled !== item.digest);
+    const recordedOutdated =
+      (savedActive !== undefined && savedActive !== item.digest) || (savedDisabled !== undefined && savedDisabled !== item.digest);
+    const foreignOutdated = (active.state === 'foreign' || disabled.state === 'foreign') && recordedOutdated;
     return {
       name: item.name,
       state,
@@ -240,12 +240,15 @@ function reconcileSkillsDetailed(
       if (force) {
         const root = isDisabled ? disabledSkillRoot(client, home) : skillRoot(client, home);
         const seen = observeSkill(path.join(root, item.name));
-        // Preserve any root whose observed state differs from the confirmed preview observation.
-        if (observeRootState(seen) !== expectedRoot) {
+        // Foreign roots and roots whose observed state differs from confirmation are never passed to the transaction.
+        if (seen.state === 'foreign' || expectedRoot === 'foreign' || observeRootState(seen) !== expectedRoot) {
           statuses.push({
             name: item.name,
             action: 'preserved',
-            message: 'Changed after confirmation; preserved.',
+            message:
+              seen.state === 'foreign' || expectedRoot === 'foreign'
+                ? 'Has other files or non-regular entries; remove or fix by hand to reinstall.'
+                : 'Changed after confirmation; preserved.',
             ...(isDisabled ? { location: 'disabled' as const } : {}),
           });
           continue;
@@ -290,12 +293,15 @@ function reconcileSkillsDetailed(
       if (expected) {
         const seen = observeSkill(path.join(root, target.name));
         const expectedRoot = target.disabled ? expected.disabled : expected.enabled;
-        // Re-verify immediately before each write or removal so a concurrent edit is preserved, never overwritten.
-        if (observeRootState(seen) !== expectedRoot) {
+        // Re-verify immediately before each write or removal so a concurrent edit or foreign copy is preserved.
+        if (seen.state === 'foreign' || expectedRoot === 'foreign' || observeRootState(seen) !== expectedRoot) {
           statuses.push({
             name: target.name,
             action: 'preserved',
-            message: 'Changed after confirmation; preserved.',
+            message:
+              seen.state === 'foreign' || expectedRoot === 'foreign'
+                ? 'Has other files or non-regular entries; remove or fix by hand to reinstall.'
+                : 'Changed after confirmation; preserved.',
             ...(target.disabled ? { location: 'disabled' as const } : {}),
           });
           continue;
