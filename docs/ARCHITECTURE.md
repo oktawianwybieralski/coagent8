@@ -538,9 +538,10 @@ every CoAgent8 path variable (`coagent8_CONFIG`, `coagent8_DIR`, `coagent8_QUOTA
 per-process disposable directory under `os.tmpdir()` (created lazily on the first turn
 and removed best-effort on exit; stale directories older than a day are pruned only for
 dead PIDs) while keeping backend profile variables (`USERPROFILE`, `CLAUDE_CONFIG_DIR`,
-`CODEX_HOME`) intact (`src/execution/nested-turn.ts`, #248), so commands or tests run
-inside a turn cannot mutate the user's files (outside a turn, tests run through
-`tests/run.cjs`); nested CoAgent8 refuses execution before probes. Codex verifies
+`CODEX_HOME`) intact (`src/execution/nested-turn.ts`, #248), so CoAgent8 code that a
+command or test inside a turn runs uses those disposable paths instead of the user's
+CoAgent8 configuration and data (turns still run on the host with the user's other
+files; outside a turn, tests run through `tests/run.cjs`); nested CoAgent8 refuses execution before probes. Codex verifies
 isolation; agy's inherited-tool limitation was accepted by
 the owner on 2026-10-08 and is named by doctor. It is not permission to claim
 isolation or remove the recursion guard. User hooks/plugins in Claude need further
