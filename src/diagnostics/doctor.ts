@@ -17,7 +17,7 @@ import { truncateToByteLength } from '../execution/runtime/stream.js';
 import { combineSignals } from '../storage/lock.js';
 import { BRAND } from '../brand.js';
 import { getAgyProfileDir, getRuntimePath } from '../paths.js';
-import { describeAgyProfileContents, usesAgyProfile } from '../backends/agy/adapter.js';
+import { agyProfileExists, describeAgyProfileContents, usesAgyProfile } from '../backends/agy/adapter.js';
 import {
   DEFAULT_DIAGNOSTIC_TIMEOUT_MS,
   type TimingObserver,
@@ -130,10 +130,11 @@ export interface DoctorReport {
    * Windows only, agy installed: the state of CoAgent8's own agy profile as checked from
    * `checkedFrom`, this process's directory (#224). `verified`: no MCP servers or plugins there;
    * `refused`: it contains some, and agy turns do not start; `unverified`: agy could not list
-   * them. Workspace-scoped agy configuration can differ, so every agy turn checks again in its own
-   * directory before it starts.
+   * them; `not_created`: the profile does not exist yet, doctor neither creates it nor starts agy
+   * against it, and the first agy turn creates and verifies it. Workspace-scoped agy
+   * configuration can differ, so every agy turn checks again in its own directory before it starts.
    */
-  agyProfile?: { path: string; checkedFrom: string; state: 'verified' | 'refused' | 'unverified' };
+  agyProfile?: { path: string; checkedFrom: string; state: 'verified' | 'refused' | 'unverified' | 'not_created' };
   /** Optional call-level execution trace measuring diagnostic phases. */
   trace?: ExecutionTrace;
 }
@@ -243,6 +244,8 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     let catalogs: (ModelCatalog | undefined)[];
     let inherited: (InheritedTools | undefined)[];
     let prices: Awaited<ReturnType<typeof readPrices>>;
+    // Read before the adapter: a read-only doctor never creates CoAgent8's agy profile (#224).
+    const agyProfileExisted = usesAgyProfile() && agyProfileExists();
     try {
       const [c, cats, inh] = await Promise.all([
         inspectQuotas(true, probes, {
@@ -284,7 +287,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
             path: agyProfilePath,
             // The adapter reads the profile in this process's directory; a turn checks its own.
             checkedFrom: redactDiagnostic(process.cwd()),
-            state: !inherited[agyIndex] ? 'unverified' : inheritedTools.agy ? 'refused' : 'verified',
+            state: !inherited[agyIndex] ? 'unverified' : inheritedTools.agy ? 'refused' : agyProfileExisted ? 'verified' : 'not_created',
           }
         : undefined;
 
@@ -620,7 +623,9 @@ function turnReach(id: ProviderId, report: DoctorReport): string {
     ? `commands and network on the host, no MCP servers or plugins of yours (CoAgent8 agy profile, none as checked from ${checkedFrom}; ${recheck})`
     : state === 'refused'
       ? `turns refused: CoAgent8 agy profile has MCP servers or plugins as checked from ${checkedFrom}`
-      : `CoAgent8 agy profile not verified from ${checkedFrom}; ${recheck}`;
+      : state === 'not_created'
+        ? 'CoAgent8 agy profile not created yet; the first agy turn creates and verifies it'
+        : `CoAgent8 agy profile not verified from ${checkedFrom}; ${recheck}`;
 }
 
 function formatQuota(quota: DoctorQuota | undefined): string {

@@ -326,6 +326,7 @@ test('doctor names the MCP servers and plugins agy turns inherit on macOS and Li
 
 test('doctor reports the verified CoAgent8 agy profile on Windows (#224)', async () => {
   const { getAgyProfileDir } = require('../../src/paths.ts');
+  fs.mkdirSync(getAgyProfileDir(), { recursive: true });
   const { report, summary } = await doctorWithAgyTools('win32', async () => ({ mcpServers: [], plugins: [] }));
   // The state as checked from this process's directory; a turn checks its own again.
   assert.deepEqual(report.agyProfile, { path: getAgyProfileDir(), checkedFrom: process.cwd(), state: 'verified' });
@@ -361,6 +362,41 @@ test('doctor reports a CoAgent8 agy profile with MCP servers or plugins as refus
       ),
     ),
   );
+});
+
+test('a read-only doctor on a fresh data directory creates no CoAgent8 agy profile and starts no agy against it (#224)', async () => {
+  const { getAgyProfileDir } = require('../../src/paths.ts');
+  const { formatDoctorSummary } = require('../../src/diagnostics/doctor.ts');
+  const previous = process.env.coagent8_DIR;
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-doctor-fresh-'));
+  const log = path.join(dataDir, 'launches.jsonl');
+  process.env.coagent8_DIR = dataDir;
+  process.env.coagent8_FIXTURE_LAUNCH_LOG = log;
+  try {
+    // The complete doctor path with the agy fixture: probe, quota, catalog and inherited tools.
+    const report = await runDoctor({ backend: 'agy' });
+    assert.equal(fs.existsSync(getAgyProfileDir()), false, 'no profile directory');
+    const launches = fs.existsSync(log)
+      ? fs
+          .readFileSync(log, 'utf8')
+          .trim()
+          .split('\n')
+          .map(line => JSON.parse(line))
+      : [];
+    assert.ok(launches.length > 0, 'doctor ran the agy fixture');
+    assert.ok(
+      launches.every(launch => launch.userProfile !== getAgyProfileDir()),
+      JSON.stringify(launches.map(launch => launch.args)),
+    );
+    if (process.platform === 'win32' && report.probes?.agy?.installed !== false) {
+      assert.equal(report.agyProfile?.state, 'not_created', JSON.stringify(report.agyProfile));
+      assert.match(formatDoctorSummary(report), /CoAgent8 agy profile not created yet; the first agy turn creates and verifies it/);
+    }
+  } finally {
+    process.env.coagent8_DIR = previous;
+    delete process.env.coagent8_FIXTURE_LAUNCH_LOG;
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
 });
 
 test('doctor reports an unwritable quota cache as a recommendation instead of failing (CUR-004)', async t => {
@@ -907,11 +943,15 @@ test('AX-005b: a completed agy turn turns an unverified sign-in into ready, with
     assert.deepEqual(after.ready_backends, ['agy']);
     assert.equal(after.readiness.agy.lastSuccess.model, 'gemini-3.8-flash');
     const summary = formatDoctorSummary(after);
-    // On Windows the fixture's empty agy profile is verified through its `mcp list` and `plugin list` (#224).
+    // On Windows the fixture's empty agy profile is verified through its `mcp list` and `plugin list`;
+    // a profile no turn created yet is reported as such (#224).
+    const { getAgyProfileDir } = require('../../src/paths.ts');
     const reach =
-      process.platform === 'win32'
-        ? 'commands and network on the host, no MCP servers or plugins of yours \\(CoAgent8 agy profile, none as checked from .*; every turn checks again in its own directory\\)'
-        : 'commands, network and its own MCP servers on the host in a turn';
+      process.platform === 'win32' && !fs.existsSync(getAgyProfileDir())
+        ? 'CoAgent8 agy profile not created yet; the first agy turn creates and verifies it'
+        : process.platform === 'win32'
+          ? 'commands and network on the host, no MCP servers or plugins of yours \\(CoAgent8 agy profile, none as checked from .*; every turn checks again in its own directory\\)'
+          : 'commands, network and its own MCP servers on the host in a turn';
     assert.match(
       summary,
       new RegExp(

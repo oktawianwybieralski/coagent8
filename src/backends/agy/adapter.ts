@@ -159,28 +159,40 @@ export function resolveModelAndEffort(model?: string, reasoningEffort?: string):
 }
 
 /**
- * Environment of every agy launch that can run a model turn or reads what a turn loads (turns,
- * recovery, resume, `/usage`, `models`, `mcp list`, `plugin list`), with agy's auto-updater disabled.
+ * Environment of every agy launch that runs a turn or reads what a turn loads (turns, recovery,
+ * resume, and the `mcp list` and `plugin list` of the profile check), with agy's auto-updater disabled.
  * @remarks agy 1.3.1 starts a background updater on its first launch after 15 minutes. On
  * Windows that updater starts another agy with a new console window, which takes the keyboard
  * focus for about half a second (WINDOWS-001, measured 2026-10-07). agy honours only `true`.
  * On Windows `USERPROFILE` is CoAgent8's own agy profile ({@link usesAgyProfile}); `HOME`
  * stays, because git and bash read it and agy does not (agy 1.5.18, 2026-11-27, #224).
- * Setup's version, help and sign-in checks (`cli-readiness.ts`) and {@link probe}'s `--version` do not use it: they start no
- * model turn and read nothing a turn loads, so they keep the user's own environment and a
- * read-only status creates no profile.
+ * It creates nothing: only a turn creates the profile ({@link ensureAgyProfile}). Setup's checks,
+ * {@link probe}'s `--version`, `agy models` and `/usage` read no turn tools and use
+ * {@link userAgyEnvironment}, so a read-only setup status or doctor creates no profile.
  * @param platform - The platform whose rules apply; the running one by default.
  * @returns A copy of this process's environment for one agy launch.
- * @throws When the profile directory cannot be created; a turn checks that first and refuses.
  */
 export function agyEnvironment(platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' };
   if (!usesAgyProfile(platform)) return env;
-  const profile = ensureAgyProfile();
+  const profile = getAgyProfileDir();
   // Windows environment names ignore case: a second spelling would leave two values for the child.
   for (const key of Object.keys(env)) if (key.toUpperCase() === 'USERPROFILE') delete env[key];
   env.USERPROFILE = profile;
   return env;
+}
+
+/**
+ * Environment of agy launches that run no turn and read no turn tools (`--version`, `models`,
+ * `/usage`, and `mcp list` outside Windows): the user's own, with agy's auto-updater disabled.
+ */
+function userAgyEnvironment(): NodeJS.ProcessEnv {
+  return { ...process.env, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' };
+}
+
+/** Whether CoAgent8's agy profile exists yet; before the first turn on Windows it does not. */
+export function agyProfileExists(): boolean {
+  return fs.existsSync(getAgyProfileDir());
 }
 
 /**
@@ -195,13 +207,19 @@ export function usesAgyProfile(platform: NodeJS.Platform = process.platform): bo
 }
 
 /**
- * Creates CoAgent8's agy profile in the data directory and returns its path.
+ * Creates CoAgent8's agy profile in the data directory, on the turn path only, before the profile
+ * check that precedes a turn.
+ * @returns Its path, or why it could not be created.
  * @remarks It has the data directory's permissions, like CoAgent8's sessions there: `mode` limits
  * it to the user on POSIX and sets no ACL on Windows.
  */
-function ensureAgyProfile(): string {
+function ensureAgyProfile(): string | { failure: string } {
   const dir = getAgyProfileDir();
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch (err) {
+    return { failure: `the profile directory could not be created: ${redactDiagnostic((err as Error).message, 256)}` };
+  }
   return dir;
 }
 
@@ -256,12 +274,7 @@ async function readAgyProfileContents(
   abortSignal: AbortSignal | undefined,
   cwd?: string,
 ): Promise<{ contents: AgyProfileContents } | { failure: string; aborted?: boolean; timedOut?: boolean }> {
-  let env: NodeJS.ProcessEnv;
-  try {
-    env = agyEnvironment();
-  } catch (err) {
-    return { failure: `the profile directory could not be created: ${redactDiagnostic((err as Error).message, 256)}` };
-  }
+  const env = agyEnvironment();
   const run = (args: string[]) =>
     runCommand(resolved.command, [...resolved.argsPrefix, ...args], {
       timeoutMs,
@@ -402,7 +415,7 @@ export async function probe(context?: BackendReadContext): Promise<AdapterProbeR
     abortSignal: effectiveAbortSignal(context),
     // The user's own environment, as setup's checks: `--version` runs no turn and reads nothing a
     // turn loads, so a read-only doctor creates no agy profile (#224). The updater stays off.
-    env: { ...process.env, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' },
+    env: userAgyEnvironment(),
   });
   checkPostRun(res, context, 'Gemini probe');
   if (res.exitCode === 0) {
@@ -472,7 +485,8 @@ export async function inspectQuota(probe?: AdapterProbeResult, context?: Backend
   const usageRes = await runCommand(resolved.command, [...resolved.argsPrefix, '--sandbox', '--output-format', 'json', '-p', '/usage'], {
     timeoutMs: boundReadTimeout(context, DEFAULT_PROBE_TIMEOUT_MS),
     abortSignal: effectiveAbortSignal(context),
-    env: agyEnvironment(),
+    // The quota is the account's; `/usage` loads no turn tools and creates no profile (#224).
+    env: userAgyEnvironment(),
   });
   checkPostRun(usageRes, context, 'Gemini quota read');
   if (usageRes.status !== 'completed' || usageRes.exitCode !== 0 || !usageRes.stdout) return undefined;
@@ -553,6 +567,15 @@ export async function execute(
       message:
         'This agy session was started in your own agy profile, before CoAgent8 ran agy with its own profile, so agy cannot resume it. Start a new session (without session_handle).',
       retryable: false,
+    });
+  }
+  // The turn path is the only one that creates the profile, right before it is verified.
+  const created = usesAgyProfile() ? ensureAgyProfile() : undefined;
+  if (typeof created === 'object') {
+    return failed({
+      code: 'POLICY_DENIED',
+      message: `CoAgent8 could not verify that its agy profile ${getAgyProfileDir()} has no MCP servers or plugins (${created.failure}), so the turn did not start.`,
+      retryable: true,
     });
   }
   const refusal = usesAgyProfile()
@@ -788,6 +811,8 @@ export async function execute(
   if (!error && (!s.terminal || (!s.nativeSessionId && !expectedSessionId))) {
     error = { code: 'PROTOCOL_ERROR', message: 'Gemini omitted its terminal result or init metadata.', retryable: false };
   }
+  // A more specific failure of the first turn stays when its recovery found no time (below).
+  const firstTurnError = error;
   // A headless denial ends agy's turn before the model answers; an empty success is no answer.
   if (!error && s.sandboxDenied && !s.output.trim()) {
     error = {
@@ -801,12 +826,15 @@ export async function execute(
     };
   }
   // The first turn ended without an answer and the profile check took the rest of its time.
+  const recoveryTimeoutNote = "the turn's time ran out while CoAgent8 verified its agy profile, so no automatic recovery turn started.";
   if (timedOutBeforeRecovery && !sessionMismatch) {
-    error = {
-      code: 'TIMEOUT',
-      message: `agy ended the turn without an answer after headless mode ${deniedSummary(s.deniedActions)}, and the turn's time ran out while CoAgent8 verified its agy profile, so no automatic recovery turn started.`,
-      retryable: true,
-    };
+    error = firstTurnError
+      ? { ...firstTurnError, message: `${firstTurnError.message} Also, ${recoveryTimeoutNote}` }
+      : {
+          code: 'TIMEOUT',
+          message: `agy ended the turn without an answer after headless mode ${deniedSummary(s.deniedActions)}, and ${recoveryTimeoutNote}`,
+          retryable: true,
+        };
   }
   const effectiveSessionId =
     sessionMismatch || error?.code === 'SESSION_INVALID' || error?.code === 'PROTOCOL_ERROR'
@@ -816,7 +844,7 @@ export async function execute(
   if (effectiveSessionId && UUID.test(effectiveSessionId) && usesAgyProfile()) recordProfileConversation(effectiveSessionId);
 
   const status =
-    !sessionMismatch && timedOutBeforeRecovery
+    !sessionMismatch && timedOutBeforeRecovery && !firstTurnError
       ? 'timed_out'
       : !sessionMismatch && (processResult.status === 'cancelled' || processResult.status === 'timed_out')
         ? processResult.status
@@ -881,7 +909,8 @@ export async function listModels(_probe?: AdapterProbeResult, context?: BackendR
   const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'models'], {
     timeoutMs: boundReadTimeout(context, DEFAULT_MODEL_LIST_TIMEOUT_MS),
     abortSignal: effectiveAbortSignal(context),
-    env: agyEnvironment(),
+    // The catalog is the account's; `agy models` loads no turn tools and creates no profile (#224).
+    env: userAgyEnvironment(),
   });
   checkPostRun(res, context, 'Gemini model list');
   if (res.status !== 'completed' || res.exitCode !== 0 || !res.stdout) return undefined;
@@ -976,7 +1005,8 @@ export function listAgyPlugins(configDir = path.join(agyConfigDir(), 'config'), 
  * model call; doctor names them (CUR-002).
  * @returns The inherited tools, or undefined when agy cannot be run or read.
  * @remarks On Windows this is the check that gates every turn ({@link usesAgyProfile}):
- * anything listed there refuses agy turns. Elsewhere they are the user's own servers and
+ * anything listed there refuses agy turns. A profile that does not exist yet has nothing
+ * configured and is not created here ({@link agyProfileExists}). Elsewhere they are the user's own servers and
  * plugins, which turns offer and CoAgent8 cannot disable.
  */
 export async function inheritedTools(context?: BackendReadContext): Promise<InheritedTools | undefined> {
@@ -988,6 +1018,9 @@ export async function inheritedTools(context?: BackendReadContext): Promise<Inhe
     return undefined;
   }
   if (usesAgyProfile()) {
+    // Not created yet: nothing is configured there, and a read must not create it or start agy
+    // against it; the first turn creates and verifies it (#224). Doctor reports that state.
+    if (!agyProfileExists()) return { mcpServers: [], plugins: [] };
     // In this process's directory: a turn's own directory is checked again before it starts.
     const read = await readAgyProfileContents(
       resolved,
@@ -1002,7 +1035,7 @@ export async function inheritedTools(context?: BackendReadContext): Promise<Inhe
   const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'mcp', 'list'], {
     timeoutMs: boundReadTimeout(context, DEFAULT_MODEL_LIST_TIMEOUT_MS),
     abortSignal: effectiveAbortSignal(context),
-    env: agyEnvironment(),
+    env: userAgyEnvironment(),
   });
   checkPostRun(res, context, 'Gemini inherited tools read');
   if (res.status !== 'completed' || res.exitCode !== 0) return undefined;

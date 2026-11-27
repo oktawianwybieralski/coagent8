@@ -759,11 +759,17 @@ test('every agy launch disables its auto-updater, whose console window takes the
   process.env.AGY_CLI_DISABLE_AUTO_UPDATE = '1';
   process.env.coagent8_FIXTURE_LAUNCH_LOG = log;
   const windows = process.platform === 'win32';
+  // A fresh data directory: the reads below must not create CoAgent8's agy profile (#224).
+  process.env.coagent8_DIR = fs.mkdtempSync(path.join(tempDir, 'launches-'));
   try {
     const probed = await probeGemini();
     await inspectGeminiQuota(probed);
     assert.ok(await listModels());
     assert.ok(await inheritedAgyTools());
+    if (windows) {
+      assert.equal(fs.existsSync(getAgyProfileDir()), false, 'probe, quota, catalog and tools read create no profile');
+      assert.deepEqual(await inheritedAgyTools(), { mcpServers: [], plugins: [] }, 'a profile not created yet has nothing');
+    }
     const result = await executeGemini('question', { model: MODEL, cwd: tempDir, onEvent: () => {} });
     assert.equal(result.status, 'completed', JSON.stringify(result.error));
     const resumed = await executeGemini('again', { model: MODEL, cwd: tempDir, nativeSessionId: result.nativeSessionId });
@@ -773,23 +779,25 @@ test('every agy launch disables its auto-updater, whose console window takes the
       .trim()
       .split('\n')
       .map(line => JSON.parse(line));
-    // The inherited tools read lists MCP servers (and plugins on Windows); on Windows every turn,
-    // the resumed one included, verifies the profile first.
+    // Outside Windows the inherited tools read lists MCP servers. On Windows it starts no agy
+    // while the profile does not exist; every turn, the resumed one included, verifies it first.
     assert.equal(
       launches.length,
-      windows ? 11 : 6,
-      `probe, quota read, catalog, inherited tools, ${windows ? 'profile check, turn, profile check and resume' : 'turn and resume'}`,
+      windows ? 9 : 6,
+      `probe, quota read, catalog, ${windows ? 'profile check, turn, profile check and resume' : 'inherited tools, turn and resume'}`,
     );
     for (const launch of launches) {
       assert.equal(launch.autoUpdate, 'true', JSON.stringify(launch.args));
-      // #224: every agy call that runs a turn or reads what a turn loads sees CoAgent8's profile on
-      // Windows; the `--version` probe runs no turn and keeps the user's. HOME, which git and bash read, stays.
-      const own = !windows || launch.args.includes('--version');
+      // #224: turns and the profile check see CoAgent8's profile on Windows; `--version`, `/usage`
+      // and `models` load no turn tools and keep the user's. HOME, which git and bash read, stays.
+      const profiled = launch.args.includes('--dangerously-skip-permissions') || isCheck(launch.args);
+      const own = !windows || !profiled;
       assert.equal(launch.userProfile, own ? (process.env.USERPROFILE ?? null) : getAgyProfileDir(), JSON.stringify(launch.args));
       assert.equal(launch.home, process.env.HOME ?? null, JSON.stringify(launch.args));
     }
     assert.equal(process.env.AGY_CLI_DISABLE_AUTO_UPDATE, '1', 'the server environment is not changed');
   } finally {
+    process.env.coagent8_DIR = tempDir;
     delete process.env.coagent8_FIXTURE_LAUNCH_LOG;
     if (inherited === undefined) delete process.env.AGY_CLI_DISABLE_AUTO_UPDATE;
     else process.env.AGY_CLI_DISABLE_AUTO_UPDATE = inherited;
@@ -863,7 +871,7 @@ test('agy profile (#224): the Windows environment carries the profile as USERPRO
     assert.equal(Object.keys(windows).filter(key => key.toUpperCase() === 'USERPROFILE').length, 1);
     assert.equal(windows.HOME, process.env.HOME, 'git and bash keep their home');
     assert.equal(windows.AGY_CLI_DISABLE_AUTO_UPDATE, 'true');
-    assert.ok(fs.statSync(getAgyProfileDir()).isDirectory(), 'the profile is created on use');
+    assert.equal(fs.existsSync(getAgyProfileDir()), false, 'only the turn path creates the profile');
     assert.equal(agyConfigDir('win32'), path.join(getAgyProfileDir(), '.gemini'));
 
     for (const platform of ['linux', 'darwin']) {
