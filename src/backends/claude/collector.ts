@@ -176,6 +176,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   let pendingReducer: StreamReducer | null = null;
   let pendingLatestMessageId: string | null = null;
   const pendingStreamed = new Map<string, string>();
+  const pendingStreamTruncatedIds = new Set<string>();
   let pendingStreamedBytes = 0;
   let pendingStreamingMessageId: string | null = null;
   let pendingStreamingTruncated = false;
@@ -190,6 +191,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     pendingReducer = null;
     pendingLatestMessageId = null;
     pendingStreamed.clear();
+    pendingStreamTruncatedIds.clear();
     pendingStreamedBytes = 0;
     pendingStreamingMessageId = null;
     pendingStreamingTruncated = false;
@@ -206,6 +208,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   let answerText = '';
   let answerBytes = 0;
   let answerTruncated = false;
+  let bufferedMessagesTruncated = false;
   let latestResultMessage: string | null = null;
   let streamedBytes = 0;
   let category: string | null = null;
@@ -347,6 +350,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       if (block.type === 'text' && typeof block.text === 'string') {
         if (bufferingPreAnswer()) {
           const streamed = pendingStreamed.get(id);
+          pendingStreamTruncatedIds.delete(id);
           if (streamed !== undefined) {
             pendingStreamed.delete(id);
             pendingStreamedBytes -= Buffer.byteLength(streamed);
@@ -430,10 +434,14 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
           const remaining = reducer.maxTotalBytes - (pendingStreamedBytes - prevBytes);
           if (remaining <= 0) {
             pendingStreamingTruncated = true;
+            pendingStreamTruncatedIds.add(currentMessageId);
             return;
           }
           const next = truncateToByteLength(prev + delta.text, remaining);
-          if (next !== prev + delta.text) pendingStreamingTruncated = true;
+          if (next !== prev + delta.text) {
+            pendingStreamingTruncated = true;
+            pendingStreamTruncatedIds.add(currentMessageId);
+          }
           pendingStreamed.set(currentMessageId, next);
           pendingStreamedBytes = pendingStreamedBytes - prevBytes + Buffer.byteLength(next);
         }
@@ -476,6 +484,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     }
     if (!origin) {
       if (pendingReducer) {
+        if (pendingReducer.isTruncated()) bufferedMessagesTruncated = true;
         for (const [id, text] of pendingReducer.getMessageMap()) {
           if (!reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages) {
             throw new BufferLimitError('Too many Claude Code public messages.');
@@ -487,6 +496,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       }
       for (const [id, text] of pendingStreamed) {
         if (pendingReducer?.getMessageMap().has(id) || !text) continue;
+        if (pendingStreamTruncatedIds.has(id)) bufferedMessagesTruncated = true;
         emit({ type: 'assistant_delta', messageId: id, text });
         if (id === pendingStreamingMessageId) {
           streamingMessageId = id;
@@ -573,7 +583,8 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   }
   function snapshot() {
     const output = answerText;
-    const truncated = answerTruncated || reducer.isTruncated();
+    const pendingTruncated = Boolean(pendingReducer?.isTruncated()) || pendingStreamTruncatedIds.size > 0;
+    const truncated = answerTruncated || reducer.isTruncated() || bufferedMessagesTruncated || pendingTruncated;
     const error: ExecutionError | undefined = resultFields?.isError
       ? classifyClaudeFailure({
           category,

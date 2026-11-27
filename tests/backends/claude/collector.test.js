@@ -528,4 +528,21 @@ test('Claude collector drops usage when any counted result omits it and bounds c
   );
   assert.equal(bufferedEvents.filter(e => e.type === 'assistant_delta').length, 0);
   assert.equal(boundedBuffer.snapshot().output, 'Done');
+
+  // Resumed turn carries pending reducer truncation into snapshot.truncated (both before and after prompt result).
+  const resumedTruncated = createClaudeStreamCollector({
+    expectedSessionId: SESSION,
+    allowedTools: TOOLS,
+    resumed: true,
+    maxTotalMessageBytes: 100,
+  });
+  resumedTruncated.line(JSON.stringify(events[0]));
+  resumedTruncated.line(
+    JSON.stringify({ type: 'assistant', message: { id: 'msg_big', content: [{ type: 'text', text: 'Z'.repeat(150) }] } }),
+  );
+  assert.equal(resumedTruncated.snapshot().truncated, true, 'unclassified pending truncation is reported');
+  assert.ok(Buffer.byteLength(resumedTruncated.partialProgress()) <= 100);
+  resumedTruncated.line(JSON.stringify({ ...events.at(-1), result: 'OK' }));
+  assert.equal(resumedTruncated.snapshot().truncated, true, 'pending truncation survives flush on prompt result');
+  assert.equal(resumedTruncated.snapshot().error?.code, 'BUFFER_LIMIT');
 });
