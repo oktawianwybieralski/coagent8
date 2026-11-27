@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { manageSkills, skillSelectionForAction } = require('../../src/integrations/skill-management.ts');
+const { manageSkills, reconcileSkills, skillSelectionForAction } = require('../../src/integrations/skill-management.ts');
 const { skillRoot, disabledSkillRoot, readSkillCatalog } = require('../../src/integrations/skills.ts');
 const { recoverSkillTransaction, transactSkills } = require('../../src/integrations/skill-transaction.ts');
 const { readSelection, serializeSelection } = require('../../src/integrations/setup-storage.ts');
@@ -360,7 +360,7 @@ test('a redirected ownership directory is rejected before any setup or cleanup l
   assert.deepEqual(fs.readdirSync(outside), [], 'no lease, journal, state or runtime is written through the junction');
 });
 
-test('manageSkills overwrite is bound to the preview token and overwrites only confirmed conflicts', async t => {
+test('manageSkills overwrite is bound to the preview token and per-root observations', async t => {
   const p = profile(t);
   await apply(p.options, 'install', [names[0], names[1]]);
   await apply(p.options, 'disable', [names[1]]);
@@ -372,33 +372,39 @@ test('manageSkills overwrite is bound to the preview token and overwrites only c
   const current = await manageSkills(p.options);
   assert.equal(current.skills.find(item => item.name === names[0]).state, 'conflict');
   assert.equal(current.skills.find(item => item.name === names[1]).state, 'conflict');
+  const obs0 = current.observations.find(item => item.name === names[0]);
+  const obs1 = current.observations.find(item => item.name === names[1]);
+  assert.notEqual(obs0.enabled, 'absent');
+  assert.equal(obs0.disabled, 'absent');
+  assert.equal(obs1.enabled, 'absent');
+  assert.notEqual(obs1.disabled, 'absent');
 
   // Token binds overwrite: preview without overwrite cannot apply with overwrite, and vice versa.
   const previewWithout = await manageSkills({ ...p.options, selection: current.selection });
   await assert.rejects(
-    manageSkills({ ...p.options, selection: current.selection, overwrite: [names[0]], apply: previewWithout.token }),
+    manageSkills({ ...p.options, selection: current.selection, overwrite: [obs0], apply: previewWithout.token }),
     /preview changed/,
   );
-  const previewOne = await manageSkills({ ...p.options, selection: current.selection, overwrite: [names[0]] });
+  const previewOne = await manageSkills({ ...p.options, selection: current.selection, overwrite: [obs0] });
   await assert.rejects(manageSkills({ ...p.options, selection: current.selection, apply: previewOne.token }), /preview changed/);
   await assert.rejects(
-    manageSkills({ ...p.options, selection: current.selection, overwrite: [names[1]], apply: previewOne.token }),
+    manageSkills({ ...p.options, selection: current.selection, overwrite: [obs1], apply: previewOne.token }),
     /preview changed/,
   );
 
   // Refusal still applies to conflicting packages not in overwrite when changing desired state.
   const disableUnconfirmed = skillSelectionForAction(current.selection, [names[0]], 'disable');
-  const previewUnconfirmed = await manageSkills({ ...p.options, selection: disableUnconfirmed, overwrite: [names[1]] });
+  const previewUnconfirmed = await manageSkills({ ...p.options, selection: disableUnconfirmed, overwrite: [obs1] });
   await assert.rejects(
-    manageSkills({ ...p.options, selection: disableUnconfirmed, overwrite: [names[1]], apply: previewUnconfirmed.token }),
+    manageSkills({ ...p.options, selection: disableUnconfirmed, overwrite: [obs1], apply: previewUnconfirmed.token }),
     /Conflicting/,
   );
 
-  // Overwriting only names[0] restores names[0] and leaves names[1] untouched.
+  // Overwriting only obs0 restores names[0] and leaves names[1] untouched.
   const appliedOne = await manageSkills({
     ...p.options,
     selection: current.selection,
-    overwrite: [names[0]],
+    overwrite: [obs0],
     apply: previewOne.token,
   });
   assert.equal(appliedOne.applied, true);
@@ -407,20 +413,67 @@ test('manageSkills overwrite is bound to the preview token and overwrites only c
   assert.equal(appliedOne.skills.find(item => item.name === names[0]).state, 'enabled');
   assert.equal(appliedOne.skills.find(item => item.name === names[1]).state, 'conflict');
 
-  // Overwriting the disabled conflict restores it in the disabled location without enabling it.
-  const previewDisabled = await manageSkills({ ...p.options, selection: current.selection, overwrite: [names[1]] });
-  const appliedDisabled = await manageSkills({
+  // A root modified after the confirmed observation (including a file appearing in the other root) is preserved, not overwritten or removed.
+  fs.mkdirSync(path.dirname(file(p.home, 'agy', names[1])), { recursive: true });
+  fs.writeFileSync(file(p.home, 'agy', names[1]), 'newly appearing active copy');
+  const stalePreview = await manageSkills({ ...p.options, selection: current.selection, overwrite: [obs1] });
+  const staleApplied = await manageSkills({
     ...p.options,
     selection: current.selection,
-    overwrite: [names[1]],
-    apply: previewDisabled.token,
+    overwrite: [obs1],
+    apply: stalePreview.token,
   });
+  assert.equal(fs.readFileSync(file(p.home, 'agy', names[1]), 'utf8'), 'newly appearing active copy');
   assert.equal(fs.readFileSync(file(p.home, 'agy', names[1], true), 'utf8'), catalogDisabled);
-  assert.equal(fs.existsSync(file(p.home, 'agy', names[1])), false);
-  assert.equal(appliedDisabled.skills.find(item => item.name === names[1]).state, 'disabled');
+  assert.deepEqual(staleApplied.preserved, [{ name: names[1], location: 'enabled', message: 'Changed after confirmation; preserved.' }]);
 
+  // Direct reconcileSkills with stale digest preserves the edited root without overwriting it.
+  fs.rmSync(path.dirname(file(p.home, 'agy', names[1])), { recursive: true, force: true });
+  fs.writeFileSync(file(p.home, 'agy', names[1], true), 'post-token edit');
+  const saved = readSelection(p.state);
+  const directStatuses = reconcileSkills('agy', p.home, readSkillCatalog(catalog), saved, current.selection, undefined, undefined, [obs1]);
+  assert.equal(fs.readFileSync(file(p.home, 'agy', names[1], true), 'utf8'), 'post-token edit');
+  assert.equal(directStatuses.find(item => item.name === names[1]).action, 'preserved');
+
+  // Invalid overwrite payloads are rejected.
   await assert.rejects(
-    manageSkills({ ...p.options, selection: current.selection, overwrite: ['unknown-skill'] }),
+    manageSkills({
+      ...p.options,
+      selection: current.selection,
+      overwrite: [{ name: 'unknown-skill', enabled: 'absent', disabled: 'absent' }],
+    }),
     /Invalid skill overwrite/,
   );
+  await assert.rejects(
+    manageSkills({ ...p.options, selection: current.selection, overwrite: [{ name: names[0], enabled: 'invalid', disabled: 'absent' }] }),
+    /Invalid skill overwrite/,
+  );
+});
+
+test('manageSkills exposes removable dropped catalog packages and reports edited dropped copies', async t => {
+  const p = profile(t);
+  await apply(p.options, 'install', [names[0], names[1]]);
+  const reduced = path.join(p.home, 'reduced-catalog');
+  fs.mkdirSync(reduced);
+  fs.cpSync(path.join(catalog, names[0]), path.join(reduced, names[0]), { recursive: true });
+
+  const status = await manageSkills({ ...p.options, skillsSource: reduced });
+  assert.deepEqual(status.removable, [names[1]]);
+
+  fs.writeFileSync(file(p.home, 'agy', names[1]), 'user edited dropped skill');
+  const editedStatus = await manageSkills({ ...p.options, skillsSource: reduced });
+  assert.deepEqual(editedStatus.removable, []);
+  assert.deepEqual(editedStatus.preserved, [
+    { name: names[1], location: 'enabled', message: 'Dropped catalog package was edited; preserved.' },
+  ]);
+
+  const preview = await manageSkills({ ...p.options, skillsSource: reduced, selection: editedStatus.selection });
+  const applied = await manageSkills({
+    ...p.options,
+    skillsSource: reduced,
+    selection: editedStatus.selection,
+    apply: preview.token,
+  });
+  assert.equal(fs.readFileSync(file(p.home, 'agy', names[1]), 'utf8'), 'user edited dropped skill');
+  assert.deepEqual(applied.preserved, [{ name: names[1], location: 'enabled', message: 'Dropped catalog package was edited; preserved.' }]);
 });

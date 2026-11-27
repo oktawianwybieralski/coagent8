@@ -52,7 +52,9 @@ import {
   manageSkills,
   skillSelectionForAction,
   type ManagedSkill,
+  type PreservedSkill,
   type SkillManagementResult,
+  type SkillOverwrite,
 } from '../../../src/integrations/skill-management.js';
 import { readSkillCatalog } from '../../../src/integrations/skills.js';
 import {
@@ -1122,7 +1124,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
   }
   /** A client's packages in one line, such as `5 enabled - 1 disabled - 1 update available`. */
-  function skillSummary(skills: ManagedSkill[]): string {
+  function skillSummary(skills: ManagedSkill[], removableCount = 0): string {
     const count = (state: ManagedSkill['state']) => skills.filter(item => item.state === state).length;
     const updates = skills.filter(item => item.updateAvailable).length;
     return [
@@ -1130,6 +1132,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       count('disabled') ? `${count('disabled')} disabled` : '',
       count('absent') ? `${count('absent')} not installed` : '',
       updates ? `${updates} update${updates > 1 ? 's' : ''} available` : '',
+      removableCount ? `${removableCount} removed from catalog` : '',
       count('conflict') ? `${count('conflict')} changed outside CoAgent8` : '',
     ]
       .filter(Boolean)
@@ -1176,9 +1179,52 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     const entries = catalog.map(pkg => [pkg.name, pkg.digest]).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
     return createHash('sha256').update(JSON.stringify(entries)).digest('hex');
   }
+  type ClientSkillInspection = { client: SetupClient; result: SkillManagementResult } | { client: SetupClient; error: string };
+  async function inspectAllClientSkills(): Promise<ClientSkillInspection[]> {
+    return Promise.all(
+      SETUP_CLIENTS.map(async (client): Promise<ClientSkillInspection> => {
+        try {
+          const result = await startTracked(() => manageSkills(skillOptionsFor(client)));
+          return { client, result };
+        } catch (error) {
+          return {
+            client,
+            error: redactDiagnostic(error instanceof Error ? error.message : 'Skill inspection failed.'),
+          };
+        }
+      }),
+    );
+  }
+  const updateCountOf = (result: SkillManagementResult): number =>
+    result.skills.filter(item => item.state !== 'conflict' && item.updateAvailable).length + result.removable.length;
+  /** Lists each preserved copy by package name and root (`enabled` or `disabled`). */
+  function preservedCopiesOf(result: SkillManagementResult, names?: Set<string>): PreservedSkill[] {
+    const copies: PreservedSkill[] = [];
+    const seen = new Set<string>();
+    const add = (entry: PreservedSkill) => {
+      if (names && !names.has(entry.name)) return;
+      const key = `${entry.name}:${entry.location}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      copies.push(entry);
+    };
+    for (const entry of result.preserved ?? []) add(entry);
+    for (const item of result.skills) {
+      if (item.state !== 'conflict') continue;
+      const obs = result.observations.find(entry => entry.name === item.name);
+      if (obs) {
+        if (obs.enabled !== 'absent') add({ name: item.name, location: 'enabled', message: item.message });
+        if (obs.disabled !== 'absent') add({ name: item.name, location: 'disabled', message: item.message });
+      } else {
+        add({ name: item.name, location: 'enabled', message: item.message });
+      }
+    }
+    return copies;
+  }
+  const formatPreservedCopies = (entries: PreservedSkill[]) => entries.map(entry => `${entry.name} (${entry.location})`).join(', ');
   interface BulkSkillOutcome {
     succeeded: { client: SetupClient; count: number; result: SkillManagementResult }[];
-    preserved: { client: SetupClient; names: string[] }[];
+    preserved: { client: SetupClient; copies: PreservedSkill[] }[];
     failed: { client: SetupClient; error: string }[];
     skipped: SkillManagementResult[];
   }
@@ -1200,7 +1246,9 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
     if (outcome.preserved.length) {
       parts.push(
-        `Left alone because changed outside CoAgent8: ${outcome.preserved.map(entry => `${LABELS[entry.client]} (${entry.names.join(', ')})`).join('; ')}.`,
+        `Left alone because changed outside CoAgent8: ${outcome.preserved
+          .map(entry => `${LABELS[entry.client]} (${formatPreservedCopies(entry.copies)})`)
+          .join('; ')}.`,
       );
     }
     if (outcome.failed.length) {
@@ -1220,25 +1268,25 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       if (!isDeactivating && choice === 'Show Details') showDetails(details);
     });
   }
-  /** Applies each client's current skill selection unchanged to refresh outdated non-conflict packages. */
+  /** Applies each client's current skill selection unchanged to refresh outdated non-conflict packages and catalog removals. */
   async function updateAllSkills(): Promise<void> {
     const outcome: BulkSkillOutcome = { succeeded: [], preserved: [], failed: [], skipped: [] };
     for (const client of SETUP_CLIENTS) {
       const skillOptions = skillOptionsFor(client);
       try {
         const current = await startTracked(() => manageSkills(skillOptions));
-        const outdatedCount = current.skills.filter(item => item.state !== 'conflict' && item.updateAvailable).length;
-        if (!current.selection.installed.length || !outdatedCount) {
+        const outdatedCount = updateCountOf(current);
+        if (!outdatedCount) {
           outcome.skipped.push(current);
-          const conflicts = current.skills.filter(item => item.state === 'conflict').map(item => item.name);
-          if (conflicts.length) outcome.preserved.push({ client, names: conflicts });
+          const copies = preservedCopiesOf(current);
+          if (copies.length) outcome.preserved.push({ client, copies });
           continue;
         }
         const preview = await startTracked(() => manageSkills({ ...skillOptions, selection: current.selection }));
         const result = await startTracked(() => manageSkills({ ...skillOptions, selection: current.selection, apply: preview.token }));
         outcome.succeeded.push({ client, count: outdatedCount, result });
-        const conflicts = result.skills.filter(item => item.state === 'conflict').map(item => item.name);
-        if (conflicts.length) outcome.preserved.push({ client, names: conflicts });
+        const copies = preservedCopiesOf(result);
+        if (copies.length) outcome.preserved.push({ client, copies });
       } catch (error) {
         outcome.failed.push({
           client,
@@ -1248,24 +1296,23 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
     announceBulkSkillsResult('update', outcome);
   }
-  /** Rewrites every installed CoAgent8 package across clients after modal confirmation for conflicts. */
+  /** Rewrites every installed CoAgent8 package across clients after modal confirmation bound to each conflict root. */
   async function reinstallAllSkills(): Promise<void> {
     const outcome: BulkSkillOutcome = { succeeded: [], preserved: [], failed: [], skipped: [] };
-    const targets: { client: SetupClient; status: SkillManagementResult; conflicts: string[] }[] = [];
+    const targets: { client: SetupClient; status: SkillManagementResult; conflictCopies: PreservedSkill[] }[] = [];
     for (const client of SETUP_CLIENTS) {
       const skillOptions = skillOptionsFor(client);
       try {
         const current = await startTracked(() => manageSkills(skillOptions));
         if (!current.selection.installed.length) {
           outcome.skipped.push(current);
-          const unrecorded = current.skills.filter(item => item.state === 'conflict').map(item => item.name);
-          if (unrecorded.length) outcome.preserved.push({ client, names: unrecorded });
+          const copies = preservedCopiesOf(current);
+          if (copies.length) outcome.preserved.push({ client, copies });
           continue;
         }
-        const conflicts = current.skills
-          .filter(item => item.state === 'conflict' && current.selection.installed.includes(item.name))
-          .map(item => item.name);
-        targets.push({ client, status: current, conflicts });
+        const selectedSet = new Set(current.selection.installed);
+        const conflictCopies = preservedCopiesOf(current, selectedSet);
+        targets.push({ client, status: current, conflictCopies });
       } catch (error) {
         outcome.failed.push({
           client,
@@ -1273,9 +1320,9 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         });
       }
     }
-    const conflicted = targets.filter(entry => entry.conflicts.length > 0);
+    const conflicted = targets.filter(entry => entry.conflictCopies.length > 0);
     if (conflicted.length) {
-      const conflictList = conflicted.map(entry => `${LABELS[entry.client]}: ${entry.conflicts.join(', ')}`).join('; ');
+      const conflictList = conflicted.map(entry => `${LABELS[entry.client]}: ${formatPreservedCopies(entry.conflictCopies)}`).join('; ');
       const choice = await vscode.window.showWarningMessage(
         `Overwrite packages changed outside CoAgent8 (${conflictList}) and reinstall all CoAgent8 skills?`,
         {
@@ -1288,20 +1335,29 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
     for (const entry of targets) {
       const skillOptions = skillOptionsFor(entry.client);
-      const confirmedConflicts = new Set(entry.conflicts);
-      const overwrite = [...entry.status.selection.installed];
+      const overwrite: SkillOverwrite[] = entry.status.selection.installed.map(name => {
+        const obs = entry.status.observations.find(item => item.name === name);
+        if (!obs) throw new Error(`Missing observation for ${name}.`);
+        return obs;
+      });
       try {
         const preview = await startTracked(() => manageSkills({ ...skillOptions, selection: entry.status.selection, overwrite }));
-        // Never overwrite a conflict that appeared after the user confirmed the modal list.
-        if (preview.skills.some(item => item.state === 'conflict' && !confirmedConflicts.has(item.name))) {
-          throw new Error('A skill package changed outside CoAgent8 after confirmation; run Reinstall all again.');
+        // Verify every targeted package's enabled and disabled roots match what the user confirmed.
+        const changedRoots: string[] = [];
+        for (const expected of overwrite) {
+          const seen = preview.observations.find(item => item.name === expected.name);
+          if (!seen || seen.enabled !== expected.enabled) changedRoots.push(`${expected.name} (enabled)`);
+          if (!seen || seen.disabled !== expected.disabled) changedRoots.push(`${expected.name} (disabled)`);
+        }
+        if (changedRoots.length) {
+          throw new Error(`Changed after confirmation: ${changedRoots.join(', ')}; run Reinstall all again.`);
         }
         const result = await startTracked(() =>
           manageSkills({ ...skillOptions, selection: entry.status.selection, overwrite, apply: preview.token }),
         );
         outcome.succeeded.push({ client: entry.client, count: entry.status.selection.installed.length, result });
-        const remainingConflicts = result.skills.filter(item => item.state === 'conflict').map(item => item.name);
-        if (remainingConflicts.length) outcome.preserved.push({ client: entry.client, names: remainingConflicts });
+        const remainingCopies = preservedCopiesOf(result);
+        if (remainingCopies.length) outcome.preserved.push({ client: entry.client, copies: remainingCopies });
       } catch (error) {
         outcome.failed.push({
           client: entry.client,
@@ -1370,22 +1426,23 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
   register('coagent8.manageSkills', async () => {
     type SkillListItem = vscode.QuickPickItem & { client?: SetupClient; bulk?: 'updateAll' | 'reinstallAll' };
     for (;;) {
-      const states = await Promise.all(
-        SETUP_CLIENTS.map(async client => ({
-          client,
-          result: await startTracked(() => manageSkills(skillOptionsFor(client))),
-        })),
+      const inspections = await inspectAllClientSkills();
+      if (isDeactivating) return;
+      const clientItems: SkillListItem[] = inspections.map(entry =>
+        'result' in entry
+          ? {
+              label: `${entry.result.skills.some(item => item.state === 'enabled') ? '$(pass-filled)' : '$(circle-large-outline)'} ${LABELS[entry.client]}`,
+              client: entry.client,
+              description: skillSummary(entry.result.skills, entry.result.removable.length),
+            }
+          : {
+              label: `$(error) ${LABELS[entry.client]}`,
+              description: entry.error,
+            },
       );
-      const clientItems: SkillListItem[] = states.map(({ client, result: { skills } }) => ({
-        label: `${skills.some(item => item.state === 'enabled') ? '$(pass-filled)' : '$(circle-large-outline)'} ${LABELS[client]}`,
-        client,
-        description: skillSummary(skills),
-      }));
-      const updateCount = states.reduce(
-        (sum, { result: { skills } }) => sum + skills.filter(item => item.state !== 'conflict' && item.updateAvailable).length,
-        0,
-      );
-      const hasInstalled = states.some(({ result }) => result.selection.installed.length > 0);
+      const healthy = inspections.filter((entry): entry is { client: SetupClient; result: SkillManagementResult } => 'result' in entry);
+      const updateCount = healthy.reduce((sum, { result }) => sum + updateCountOf(result), 0);
+      const hasInstalled = healthy.some(({ result }) => result.selection.installed.length > 0);
       const bulkItems: SkillListItem[] = [
         ...(updateCount
           ? [
@@ -1418,7 +1475,8 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         await reinstallAllSkills();
         return;
       }
-      if (selected.client && (await manageSkillsOf(selected.client, true)) !== 'back') return;
+      if (!selected.client) continue;
+      if ((await manageSkillsOf(selected.client, true)) !== 'back') return;
     }
   });
   /**
@@ -2121,12 +2179,12 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       return;
     const fingerprint = skillCatalogFingerprint();
     if (readSetupState(storage).skillsOffered === fingerprint || isDeactivating) return;
-    const statuses = await Promise.all(SETUP_CLIENTS.map(client => startTracked(() => manageSkills(skillOptionsFor(client)))));
-    const outdated = statuses
-      .filter(
-        status => status.selection.installed.length > 0 && status.skills.some(item => item.state !== 'conflict' && item.updateAvailable),
-      )
-      .map(status => status.client);
+    const inspections = await inspectAllClientSkills();
+    if (isDeactivating) return;
+    const outdated = inspections
+      .filter((entry): entry is { client: SetupClient; result: SkillManagementResult } => 'result' in entry)
+      .filter(({ result }) => updateCountOf(result) > 0)
+      .map(({ client }) => client);
     if (!outdated.length || isDeactivating) return;
     await startTracked(() => updateSetupState(storage, { skillsOffered: fingerprint }));
     if (isDeactivating) return;

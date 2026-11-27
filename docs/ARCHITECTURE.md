@@ -654,9 +654,11 @@ only recorded packages. Empty installed lists opt out, and explicit selections
 do not gain new catalog names. Setup/repair/update honor the selection. Catalog
 removals delete only unchanged owned packages; edited copies are preserved.
 Bulk updates in VS Code apply each client's current selection unchanged via
-`manageSkills`, while bulk reinstalls pass user-confirmed package names in
-`overwrite` (bound to the preview token) so `reconcileSkills` replaces
-conflicting or current copies in their desired enabled or disabled root. On
+`manageSkills` (including owned packages dropped from the catalog, exposed in
+`removable`), while bulk reinstalls pass user-confirmed per-root observations in
+`overwrite` (bound to the preview token and re-checked immediately before each
+write or removal) so `reconcileSkills` replaces only confirmed conflicting or
+current copies in their desired enabled or disabled root. On
 activation, VS Code hashes the sorted catalog names and digests and offers
 **Update Skills** once per fingerprint in `setup-state.json` (`skillsOffered`)
 when any installed package has a non-conflict update.
