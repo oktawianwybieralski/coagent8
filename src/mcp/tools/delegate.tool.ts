@@ -231,6 +231,7 @@ export async function handleDelegate(
       scope: effectiveScope,
       requestId: typeof requestId === 'string' && requestId ? requestId : undefined,
       requestSignal: abortSignal,
+      callerBudget: options.budget,
       format: formatTaskOutcome,
       options: { requireEnvelope: false, askConsent: options.askConsent, warnings: options.warnings, clock: options.clock },
     });

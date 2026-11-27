@@ -163,6 +163,16 @@ export interface TaskOptions {
 
 const activeExecutionTasks = new Set<Promise<unknown>>();
 const activeSessionAborts = new Map<string, { abort: () => void; wait: () => Promise<boolean> }>();
+let taskCanceller: ((handle: string) => Promise<CancelOutcome> | CancelOutcome) | null = null;
+
+/**
+ * Registers the background-task canceller so cancelling one session of a multi-turn task
+ * (such as a multi-part async review) stops the entire task controller cleanly.
+ */
+export function setTaskCanceller(canceller: ((handle: string) => Promise<CancelOutcome> | CancelOutcome) | null): void {
+  taskCanceller = canceller;
+}
+
 /** What a result says when the job helper did not confirm that the turn's process tree ended (#211). */
 export const UNCONFIRMED_TREE_WARNING =
   'The Windows job helper did not confirm that every process of this turn ended; one may still be running and change the workspace.';
@@ -170,16 +180,20 @@ export const UNCONFIRMED_TREE_WARNING =
 const MAX_ADAPTER_WARNINGS = 5;
 
 /**
- * Cancels active CLI execution for a specific session handle, aborting the process tree.
+ * Cancels active CLI execution for a specific session handle, aborting the process tree
+ * and any owning background task controller.
  *
  * @param handle - Session handle to abort.
  * @returns `none` when no turn of this handle runs here, `settled` when it ended within the timeout, `timed_out` otherwise.
  */
 async function cancelSessionExecution(handle: string): Promise<CancelOutcome> {
   const entry = activeSessionAborts.get(handle);
-  if (!entry) return 'none';
+  const taskPromise = taskCanceller ? Promise.resolve(taskCanceller(handle)) : Promise.resolve<CancelOutcome>('none');
+  if (!entry) return taskPromise;
   entry.abort();
-  return (await entry.wait()) ? 'settled' : 'timed_out';
+  const [settled, taskOutcome] = await Promise.all([entry.wait(), taskPromise]);
+  if (!settled || taskOutcome === 'timed_out') return 'timed_out';
+  return 'settled';
 }
 /** Composes session cancellation explicitly at the server/application lifecycle owner. */
 export function composeExecutionCancellation(): void {

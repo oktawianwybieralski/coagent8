@@ -389,7 +389,10 @@ test('consult mode: async returns a task handle, defaults to 60m up to 4h, and s
       },
       { signal: new AbortController().signal },
     );
-    assert.equal(mcpStarted.structuredContent.timeoutMs, 14_400_000);
+    assert.ok(
+      mcpStarted.structuredContent.timeoutMs > 14_300_000 && mcpStarted.structuredContent.timeoutMs <= 14_400_000,
+      `expected remaining budget near 14400000 ms, got ${mcpStarted.structuredContent.timeoutMs}`,
+    );
     await waitTask(mcpStarted.structuredContent.taskHandle);
 
     const mcpRejected = readResult(

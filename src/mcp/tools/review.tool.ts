@@ -82,6 +82,7 @@ export async function handleReview(
       fingerprintInput: { scope: scopeLabel, instructions, checks: args.checks },
       requestId: typeof args.request_id === 'string' && args.request_id ? args.request_id : undefined,
       requestSignal: abortSignal,
+      callerBudget: options.budget,
       root: { limits: config.rootLimits },
       limits,
       format: formatTaskOutcome,
@@ -515,8 +516,39 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
       },
     });
     results.push({ index, outcome });
+    const stoppedBySignal =
+      Boolean(review.abortSignal?.aborted) ||
+      Boolean(review.turnOptions.budget?.isCallerAborted()) ||
+      Boolean(review.turnOptions.budget?.isTimedOut());
     // A cancelled or timed-out part ends the review: the rest could not run either.
-    if (outcome.result.status === 'cancelled' || outcome.result.status === 'timed_out') return withParts(outcome, results, parts.length);
+    if (
+      outcome.result.status === 'cancelled' ||
+      outcome.result.status === 'timed_out' ||
+      outcome.result.error?.code === 'ABORTED' ||
+      outcome.result.error?.code === 'TIMEOUT' ||
+      stoppedBySignal
+    ) {
+      if (outcome.result.status === 'completed' && stoppedBySignal) {
+        const timedOut = Boolean(review.turnOptions.budget?.isTimedOut()) && !review.turnOptions.budget?.isCallerAborted();
+        const status = timedOut ? 'timed_out' : 'cancelled';
+        const code = timedOut ? 'TIMEOUT' : 'ABORTED';
+        return withParts(
+          {
+            ...outcome,
+            isError: true,
+            result: {
+              ...outcome.result,
+              status,
+              isError: true,
+              error: { code, message: `Review ${timedOut ? 'timed out' : 'cancelled'} before completion.`, retryable: false },
+            },
+          },
+          results,
+          parts.length,
+        );
+      }
+      return withParts(outcome, results, parts.length);
+    }
   }
 
   const findings = results

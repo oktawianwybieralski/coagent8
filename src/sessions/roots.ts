@@ -41,6 +41,8 @@ export interface RootTask {
   taskHandle: string;
   /** The worker's session; present once the turn is about to start. */
   sessionHandle?: string;
+  /** Additional worker sessions opened by this task (e.g. multi-part review parts and synthesis). */
+  sessionHandles?: string[];
   /** The task's writer record, where a worker that outlives the server shows. */
   writer?: { file: string; token: string };
   pid: number;
@@ -353,6 +355,11 @@ function charge(record: RootRecord): void {
  * is reserved, `INPUT_LIMIT` for a parent outside the root or another than a continued session has,
  * `SESSION_INVALID` without such a root.
  */
+/** Whether a root task already owns a worker session (initial, later review part, or synthesis). */
+function taskHasSession(task: RootTask, sessionHandle: string): boolean {
+  return task.sessionHandle === sessionHandle || Boolean(task.sessionHandles?.includes(sessionHandle));
+}
+
 export function reserveRootTask(
   handle: string,
   request: { taskHandle: string; parentTask?: string; continues?: string },
@@ -366,7 +373,7 @@ export function reserveRootTask(
 }> {
   return updateRoot(handle, (record, now) => {
     // A continuation is classified once, here, and its entry keeps the class for its later rounds.
-    const earlier = request.continues ? record.tasks.findLast(task => task.sessionHandle === request.continues) : undefined;
+    const earlier = request.continues ? record.tasks.findLast(task => taskHasSession(task, request.continues!)) : undefined;
     const continuation = Boolean(earlier);
     const { remainingMs, baseRemainingMs } = assertUsable(record, now, continuation);
     if (record.tasks.some(task => task.taskHandle === request.taskHandle && isRootTaskActive(task))) {
@@ -436,15 +443,19 @@ export function bindRootTask(
 }
 
 /**
- * Charges one more backend turn of a running task, such as a fix round or a review attempt; a
- * continued session's turn may use the grace minutes.
+ * Charges one more backend turn of a running task, such as a fix round, review part, or synthesis;
+ * records any extra session handles opened by the task so continuations keep the root, and lets
+ * a continued session's turn use the grace minutes.
  * @throws `ROOT_LIMIT` at a limit, `ABORTED` for a cancelled root.
  */
-export function reserveRootCall(handle: string, taskHandle?: string): Promise<void> {
+export function reserveRootCall(handle: string, taskHandle?: string, sessionHandle?: string): Promise<void> {
   return updateRoot(handle, (record, now) => {
     const task = taskHandle ? record.tasks.findLast(entry => entry.taskHandle === taskHandle) : undefined;
     assertUsable(record, now, Boolean(task?.continuation));
     charge(record);
+    if (sessionHandle && task && !taskHasSession(task, sessionHandle)) {
+      task.sessionHandles = [...(task.sessionHandles ?? []), sessionHandle];
+    }
   });
 }
 
@@ -537,7 +548,7 @@ function eachRoot(options: { skipDamaged?: boolean } = {}): RootRecord[] {
 
 /** The root that holds a worker session, so a continuation stays under its budget. */
 export function findRootOfSession(sessionHandle: string): RootRecord | null {
-  return eachRoot().find(root => root.tasks.some(task => task.sessionHandle === sessionHandle)) ?? null;
+  return eachRoot().find(root => root.tasks.some(task => taskHasSession(task, sessionHandle))) ?? null;
 }
 
 /** The root that holds a task. */

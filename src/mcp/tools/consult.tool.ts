@@ -156,6 +156,7 @@ export async function handleConsult(
       },
       requestId: typeof args.request_id === 'string' && args.request_id ? args.request_id : undefined,
       requestSignal: abortSignal,
+      callerBudget: options.budget,
       root: { limits: config.rootLimits },
       limits,
       format: formatTaskOutcome,
