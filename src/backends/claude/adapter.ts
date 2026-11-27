@@ -522,7 +522,12 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
       message: redactDiagnostic(`Ignoring unsupported Claude reasoning effort '${effort.slice(0, 32)}'.`),
     });
   args.push(resumeId ? '--resume' : '--session-id', sessionId);
-  const collector = createClaudeStreamCollector({ expectedSessionId: sessionId, allowedTools: tools, onEvent: options.onEvent });
+  const collector = createClaudeStreamCollector({
+    expectedSessionId: sessionId,
+    allowedTools: tools,
+    resumed: Boolean(resumeId),
+    onEvent: options.onEvent,
+  });
   let channel: StdinChannel | undefined;
   const session: StdinSession = {
     start(opened, input) {

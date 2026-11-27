@@ -728,6 +728,11 @@ test('#231 #233 #245: Claude waits for background notification turns, sums usage
     assert.equal(resumed.nativeSessionId, session);
     assert.equal(resumed.continuationAvailable, true);
     assert.equal(resumed.usage.outputTokens, 48, 'skipped earlier notification usage is not counted');
+    assert.ok(
+      !events.some(e => (e.type === 'assistant_message' || e.type === 'assistant_delta') && /Earlier|sleep 25/.test(e.text)),
+      'skipped earlier notification text is never published as assistant progress',
+    );
+    assert.ok(events.some(e => e.type === 'assistant_message' && e.text === 'OK'));
     const warnings = events.filter(e => e.type === 'warning').map(e => e.message);
     assert.equal(warnings.length, 1);
     assert.match(warnings[0], /sleep 25/);
@@ -771,5 +776,13 @@ test('#231 #233 #245: Claude waits for background notification turns, sums usage
       captured().records.map(r => r.type),
       ['user', 'control_request'],
     );
+    assert.equal(activeProcesses.size, 0);
+    // (f) A turn timed out while streaming its first assistant message keeps partial deltas and remains resumable.
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'streaming-interruptible';
+    const streamingTimedOut = await executeClaude('x', { cwd: dir, model: MODEL, timeoutMs: 250 });
+    assert.equal(streamingTimedOut.status, 'timed_out');
+    assert.equal(streamingTimedOut.error?.code, 'TIMEOUT');
+    assert.match(streamingTimedOut.output, /^\[Partial progress: .*\]\n\nStreaming partial report$/);
+    assert.equal(streamingTimedOut.continuationAvailable, true);
     assert.equal(activeProcesses.size, 0);
   }));

@@ -377,13 +377,40 @@ test('Claude collector warns once for an unexpected origin kind and never treats
   assert.match(warnings[0], /cron-tick/);
 });
 
-test('Claude collector skips a notification result of an earlier task before the answer on resume and warns (#233)', () => {
+test('Claude collector skips a notification result of an earlier task before the answer on resume without publishing its text (#233)', () => {
   const events = recording('success-partial');
-  const { snapshot, seen } = collect([...notificationTurn('run-0', 'Earlier sleep 25 done.').slice(3), ...events]);
+  const skipped = [
+    ...notificationTurn('run-0', 'Earlier sleep 25 done.').slice(3, 5),
+    { type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_notification_run-0' } } },
+    { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Earlier ' } } },
+    notificationTurn('run-0', 'Earlier sleep 25 done.')[5],
+  ];
+  const seen = [];
+  const collector = createClaudeStreamCollector({
+    expectedSessionId: SESSION,
+    allowedTools: TOOLS,
+    resumed: true,
+    onEvent: e => seen.push(e),
+  });
+  for (const event of skipped) collector.line(JSON.stringify(event));
+  assert.equal(collector.snapshot().hasAssistantMessage, false, 'dropped skipped turn does not mark session resumable');
+  assert.equal(collector.partialProgress(), '', 'dropped skipped turn leaves no partial progress');
+  assert.ok(!seen.some(e => e.type === 'assistant_message' || e.type === 'assistant_delta'), 'no skipped text emitted');
+  for (const event of events) collector.line(JSON.stringify(event));
+  const snapshot = collector.snapshot();
   assert.equal(snapshot.error, undefined);
   assert.equal(snapshot.output, 'OK');
   assert.equal(snapshot.terminal, true);
   assert.equal(snapshot.usage.outputTokens, 48, 'skipped earlier notification usage is not counted');
+  assert.deepEqual(
+    seen.filter(e => e.type === 'assistant_message').map(e => e.text),
+    ['OK'],
+    'prompt turn assistant message is published once its own result confirms it',
+  );
+  assert.deepEqual(
+    seen.filter(e => e.type === 'assistant_delta').map(e => e.text),
+    ['OK'],
+  );
   assert.deepEqual(
     seen.filter(e => e.type === 'warning').map(e => e.message),
     ['Skipped notification result from an earlier background task: Earlier sleep 25 done.'],
@@ -419,6 +446,7 @@ test('Claude collector offers streaming deltas and latest assistant text as mark
     JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'draft' } } }),
   );
   assert.equal(collector.partialProgress(), `${PARTIAL_PROGRESS_NOTICE}\n\nFirst draft`);
+  assert.equal(collector.snapshot().hasAssistantMessage, true, 'accepted streaming text enables continuation');
   for (const event of events.slice(1)) collector.line(JSON.stringify(event));
   assert.equal(collector.partialProgress(), `${PARTIAL_PROGRESS_NOTICE}\n\nOK`);
   for (const event of backgroundStarted) collector.line(JSON.stringify(event));

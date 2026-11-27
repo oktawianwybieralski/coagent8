@@ -78,6 +78,7 @@ const recordings = {
   'missing-init': ['success-partial', 0],
   'startup-failure': ['success-partial', 1],
   interruptible: ['success-partial', 0],
+  'streaming-interruptible': ['success-partial', 0],
   'ignore-interrupt': ['success-partial', 0],
   'max-tokens': ['success-partial', 0],
   'background-task': ['success-partial', 0],
@@ -200,6 +201,24 @@ function answer() {
     // `max-tokens`: the answer stopped at the output length limit (ENVELOPE-001).
     if (scenario === 'max-tokens' && event.type === 'result') event.stop_reason = 'max_tokens';
     if ((scenario === 'no-result' || scenario === 'interruptible' || scenario === 'ignore-interrupt') && event.type === 'result') continue;
+    if (scenario === 'streaming-interruptible') {
+      if (event.subtype !== 'init') continue;
+      out.push(
+        event,
+        { type: 'stream_event', session_id: sessionId, event: { type: 'message_start', message: { id: 'msg_stream_1' } } },
+        {
+          type: 'stream_event',
+          session_id: sessionId,
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Streaming ' } },
+        },
+        {
+          type: 'stream_event',
+          session_id: sessionId,
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'partial report' } },
+        },
+      );
+      break;
+    }
     // `background-task` (#245): the prompt turn answers "I'll wait..." while a background task runs,
     // and the automatic notification turn later emits the real report (or stays interruptible).
     if (scenario === 'background-task' || scenario === 'notification-interruptible') {
@@ -249,7 +268,7 @@ function answer() {
   }
   // A CLI that dies without a terminal result: exit without waiting for stdin.
   if (scenario === 'no-result') process.exit(exitCode);
-  if (scenario === 'interruptible' || scenario === 'ignore-interrupt') {
+  if (scenario === 'interruptible' || scenario === 'ignore-interrupt' || scenario === 'streaming-interruptible') {
     // The turn keeps running until an interrupt arrives (2.1.289 output shapes, recorded live).
     interruptible = setInterval(() => {}, 1000);
     if (env.CLAUDE_FIXTURE_READY) {

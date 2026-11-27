@@ -51,6 +51,8 @@ export interface ClaudeStreamCollectorOptions {
   expectedSessionId: string;
   /** Built-in tools the run may expose; `system/init` must not report any other tool. */
   allowedTools: readonly string[];
+  /** Whether the CLI runs `--resume`, so pre-answer notification turns must be buffered until `result`. */
+  resumed?: boolean;
   onEvent?: (event: AdapterEvent) => void;
   maxTotalMessageBytes?: number;
   maxMessages?: number;
@@ -168,6 +170,11 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   let streamingMessageId: string | null = null;
   let streamingText = '';
   let streamingTruncated = false;
+  // On `--resume`, buffer pre-answer assistant progress until `result` proves it is not an earlier task notification.
+  const pendingMessageIds = new Set<string>();
+  const pendingAssistantEvents: AdapterEvent[] = [];
+  let pendingEventBytes = 0;
+  const bufferingPreAnswer = () => Boolean(options.resumed) && !terminal;
   // Background tasks still running: task ID to description.
   const tasks = new Map<string, string>();
   // Finished tasks after the prompt result whose notification turn result has not arrived yet.
@@ -329,7 +336,17 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
           throw new BufferLimitError('Too many Claude Code public messages.');
         reducer.upsertMessage(id, (reducer.getMessageMap().get(id) ?? '') + block.text);
         latestMessageId = id;
-        emit({ type: 'assistant_message', messageId: id, text: reducer.getMessageMap().get(id) ?? '' });
+        const msgText = reducer.getMessageMap().get(id) ?? '';
+        if (bufferingPreAnswer()) {
+          pendingMessageIds.add(id);
+          const bytes = Buffer.byteLength(msgText);
+          if (pendingEventBytes + bytes <= reducer.maxTotalBytes * 2) {
+            pendingEventBytes += bytes;
+            pendingAssistantEvents.push({ type: 'assistant_message', messageId: id, text: msgText });
+          }
+        } else {
+          emit({ type: 'assistant_message', messageId: id, text: msgText });
+        }
       } else if (block.type === 'tool_use') {
         if (!validEventIdentifier(block.id) || !validEventIdentifier(block.name)) fail('PROTOCOL_ERROR', 'Invalid Claude Code tool call.');
         if (tools.has(block.id as string)) continue;
@@ -368,7 +385,15 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       if (delta?.type !== 'text_delta' || typeof delta.text !== 'string' || !currentMessageId) return;
       // Deltas stop at the public budget; the bounded assistant message still replaces the draft.
       streamedBytes += Buffer.byteLength(delta.text);
-      if (streamedBytes <= reducer.maxTotalBytes) emit({ type: 'assistant_delta', messageId: currentMessageId, text: delta.text });
+      if (bufferingPreAnswer()) {
+        const bytes = Buffer.byteLength(delta.text);
+        if (pendingEventBytes + bytes <= reducer.maxTotalBytes) {
+          pendingEventBytes += bytes;
+          pendingAssistantEvents.push({ type: 'assistant_delta', messageId: currentMessageId, text: delta.text });
+        }
+      } else if (streamedBytes <= reducer.maxTotalBytes) {
+        emit({ type: 'assistant_delta', messageId: currentMessageId, text: delta.text });
+      }
       if (streamingMessageId !== currentMessageId) {
         streamingMessageId = currentMessageId;
         streamingText = '';
@@ -389,12 +414,17 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     }
     const runId = origin && typeof origin.runId === 'string' ? origin.runId : null;
     if (origin && !terminal) {
-      // Before the prompt turn's answer it belongs to a task of an earlier turn (#233): skip it
-      // and reset latest/streaming text so skipped text cannot leak into partialProgress().
+      // Before the prompt turn's answer it belongs to a task of an earlier turn (#233): drop any
+      // buffered assistant progress from that skipped turn so it is never published or resumable.
+      if (pendingMessageIds.size > 0) reducer.removeMessages(pendingMessageIds);
+      pendingMessageIds.clear();
+      pendingAssistantEvents.length = 0;
+      pendingEventBytes = 0;
       latestMessageId = null;
       streamingMessageId = null;
       streamingText = '';
       streamingTruncated = false;
+      streamedBytes = 0;
       const summary = (runId && summaries.get(runId)) || taskText(event.result) || runId || 'unnamed task';
       emit({ type: 'warning', message: redactDiagnostic(`Skipped notification result from an earlier background task: ${summary}`, 512) });
       return;
@@ -403,6 +433,12 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     if (typeof event.session_id === 'string' && event.session_id.toLowerCase() !== options.expectedSessionId.toLowerCase()) {
       fail('PROTOCOL_ERROR', 'Claude Code result reported an unexpected session ID.');
     }
+    if (!origin && pendingAssistantEvents.length > 0) {
+      for (const buffered of pendingAssistantEvents) emit(buffered);
+    }
+    pendingMessageIds.clear();
+    pendingAssistantEvents.length = 0;
+    pendingEventBytes = 0;
     terminal = true;
     const isError = event.is_error === true || (typeof event.subtype === 'string' && event.subtype !== 'success');
     if (!isError && sessionId === null) {
@@ -503,7 +539,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       lengthLimited: stopReason === null ? undefined : stopReason === 'max_tokens',
       error,
       output: resultFields?.isError || !sessionId ? '' : output,
-      hasAssistantMessage: reducer.getMessageMap().size > 0,
+      hasAssistantMessage: reducer.getMessageMap().size > 0 || streamingText.trim().length > 0,
     };
   }
   /**
