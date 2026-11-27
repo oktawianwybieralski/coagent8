@@ -417,9 +417,13 @@ where CoAgent8 is registered. Codex lists them in `/skills` and runs them as
 uninstall, enable or disable one or all skills per client. Your choices are
 kept, so repair does not bring back a skill you removed. Disabled skills move
 to `~/.coagent8/disabled-skills/<client>/`. A skill you edited is never
-overwritten. Start a new chat to see changes. VS Code chat also reads
-`~/.claude/skills/` and `~/.agents/skills/`, so with both Claude Code and Codex
-set up it lists each skill twice.
+overwritten without your confirmation. Start a new chat to see changes. VS Code
+chat also reads `~/.claude/skills/` and `~/.agents/skills/`, so with both
+Claude Code and Codex set up it lists each skill twice. In VS Code,
+**Manage Skills** also offers **Update all** and **Reinstall all** across
+clients (asking confirmation before overwriting skills changed outside CoAgent8),
+and an activation notice offers **Update Skills** once per catalog change when
+installed skills have updates.
 
 ```sh
 npx -y coagent8@next skills status --clients=agy

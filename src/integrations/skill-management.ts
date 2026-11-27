@@ -26,6 +26,7 @@ import {
   readSkillCatalog,
   removeSkills,
   skillRoot,
+  type SkillObserved,
   type SkillPackage,
   type SkillRecord,
   type SkillStatus,
@@ -40,6 +41,20 @@ export interface ManagedSkill {
   updateAvailable: boolean;
   message: string;
 }
+/** Observed state of one package root (`digest`, `'absent'`, or `'foreign'`). */
+export type SkillRootObservation = 'absent' | 'foreign' | string;
+/** Confirmed per-root observations for overwriting a package without touching unexpected edits. */
+export interface SkillOverwrite {
+  name: string;
+  enabled: SkillRootObservation;
+  disabled: SkillRootObservation;
+}
+/** Preserved package copy that could not be modified without confirmation. */
+export interface PreservedSkill {
+  name: string;
+  location: 'enabled' | 'disabled';
+  message: string;
+}
 /** Preview binding for one client's selected packages. */
 export interface SkillManagementResult {
   client: SetupClient;
@@ -47,6 +62,12 @@ export interface SkillManagementResult {
   disabledRoot: string;
   selection: SkillSelection;
   skills: ManagedSkill[];
+  /** Owned packages dropped from the catalog that will be removed on reconcile. */
+  removable: string[];
+  /** Per-root observed states for each catalog package at preview or status time. */
+  observations: SkillOverwrite[];
+  /** Preserved package copies (conflicts, root mismatches after confirmation, or edited dropped packages). */
+  preserved?: PreservedSkill[];
   token: string;
   applied?: boolean;
 }
@@ -60,6 +81,26 @@ export interface SkillManagementOptions {
   selection?: SkillSelection;
   /** Applying a selection requires the current preview token. */
   apply?: string;
+  /** Confirmed per-root observations for packages to rewrite in their desired location. */
+  overwrite?: SkillOverwrite[];
+  /** When set, preview and apply require the client's current selection to match this snapshot. */
+  expectedSelection?: SkillSelection;
+}
+
+function sameSkillSelection(a: SkillSelection, b: SkillSelection): boolean {
+  const normalize = (value: SkillSelection) => ({
+    installed: [...value.installed].sort(),
+    disabled: [...value.disabled].sort(),
+  });
+  return JSON.stringify(normalize(a)) === JSON.stringify(normalize(b));
+}
+
+function observeRootState(seen: SkillObserved): SkillRootObservation {
+  return seen.state === 'file' ? seen.digest : seen.state;
+}
+
+function isValidRootObservation(value: unknown): value is SkillRootObservation {
+  return value === 'absent' || value === 'foreign' || (typeof value === 'string' && /^[a-f0-9]{64}$/.test(value));
 }
 
 function validateProfile(home: string, env: NodeJS.ProcessEnv): void {
@@ -97,12 +138,19 @@ function inventory(
       (disabled.state === 'file' && disabled.digest !== saved.disabledSkills?.[client]?.[item.name]);
     const state = conflict ? 'conflict' : active.state === 'file' ? 'enabled' : disabled.state === 'file' ? 'disabled' : 'absent';
     const desired = !selection.installed.includes(item.name) ? 'absent' : selection.disabled.includes(item.name) ? 'disabled' : 'enabled';
+    const savedActive = saved.skills[client]?.[item.name];
+    const savedDisabled = saved.disabledSkills?.[client]?.[item.name];
+    const recordedOutdated =
+      (savedActive !== undefined && savedActive !== item.digest) || (savedDisabled !== undefined && savedDisabled !== item.digest);
+    const foreignOutdated = (active.state === 'foreign' || disabled.state === 'foreign') && recordedOutdated;
     return {
       name: item.name,
       state,
       desired,
       updateAvailable:
-        (active.state === 'file' && active.digest !== item.digest) || (disabled.state === 'file' && disabled.digest !== item.digest),
+        (active.state === 'file' && active.digest !== item.digest) ||
+        (disabled.state === 'file' && disabled.digest !== item.digest) ||
+        foreignOutdated,
       message: conflict
         ? 'Edited, foreign, linked or duplicate package; preserved.'
         : state === 'enabled'
@@ -144,8 +192,7 @@ function persistRecords(
   } else delete saved.skillOrigin[client];
 }
 
-/** Reconciles package files and ownership under the caller's setup lease, with crash recovery. */
-export function reconcileSkills(
+function reconcileSkillsDetailed(
   client: SetupClient,
   home: string,
   catalog: SkillPackage[],
@@ -153,7 +200,8 @@ export function reconcileSkills(
   selection: SkillSelection,
   origin?: RegistrationOrigin,
   expectedState?: string | null,
-): SkillStatus[] {
+  overwrite: SkillOverwrite[] = [],
+): { statuses: SkillStatus[]; preserved: PreservedSkill[] } {
   const state = path.join(home, '.coagent8', 'setup.json'),
     before = expectedState === undefined ? read(state) : expectedState;
   if (read(state) !== before) throw new Error('Setup ownership changed concurrently; retry skill apply.');
@@ -161,15 +209,22 @@ export function reconcileSkills(
   const active = { ...saved.skills[client] },
     disabled = { ...saved.disabledSkills?.[client] };
   const targets: SkillTarget[] = [];
+  const overwriteByName = new Map(overwrite.map(entry => [entry.name, entry]));
   const planned = inventory(client, home, catalog, saved, selection);
   for (const item of planned) {
-    if (item.state === 'conflict') {
-      statuses.push({ name: item.name, action: 'preserved', message: item.message });
+    const expected = overwriteByName.get(item.name);
+    const force = expected !== undefined;
+    if (item.state === 'conflict' && !force) {
+      const activeSeen = observeSkill(path.join(skillRoot(client, home), item.name));
+      const disabledSeen = observeSkill(path.join(disabledSkillRoot(client, home), item.name));
+      if (activeSeen.state !== 'absent') statuses.push({ name: item.name, action: 'preserved', message: item.message });
+      if (disabledSeen.state !== 'absent' || activeSeen.state === 'absent')
+        statuses.push({ name: item.name, action: 'preserved', message: item.message, location: 'disabled' });
       continue;
     }
     const content = catalog.find(pkg => pkg.name === item.name)!.content;
-    const unchanged = item.state === item.desired && !item.updateAvailable;
-    if (unchanged) {
+    const unchanged = item.state === item.desired && !item.updateAvailable && !force;
+    if (unchanged || (item.state === 'absent' && item.desired === 'absent')) {
       statuses.push({
         name: item.name,
         action: item.state === 'absent' ? 'absent' : 'current',
@@ -178,10 +233,33 @@ export function reconcileSkills(
       });
       continue;
     }
-    targets.push(
-      { name: item.name, disabled: false, content: item.desired === 'enabled' ? content : null },
-      { name: item.name, disabled: true, content: item.desired === 'disabled' ? content : null },
-    );
+    for (const [isDisabled, expectedRoot] of [
+      [false, expected?.enabled],
+      [true, expected?.disabled],
+    ] as const) {
+      if (force) {
+        const root = isDisabled ? disabledSkillRoot(client, home) : skillRoot(client, home);
+        const seen = observeSkill(path.join(root, item.name));
+        // Foreign roots and roots whose observed state differs from confirmation are never passed to the transaction.
+        if (seen.state === 'foreign' || expectedRoot === 'foreign' || observeRootState(seen) !== expectedRoot) {
+          statuses.push({
+            name: item.name,
+            action: 'preserved',
+            message:
+              seen.state === 'foreign' || expectedRoot === 'foreign'
+                ? 'Has other files or non-regular entries; remove or fix by hand to reinstall.'
+                : 'Changed after confirmation; preserved.',
+            ...(isDisabled ? { location: 'disabled' as const } : {}),
+          });
+          continue;
+        }
+      }
+      targets.push({
+        name: item.name,
+        disabled: isDisabled,
+        content: (isDisabled ? item.desired === 'disabled' : item.desired === 'enabled') ? content : null,
+      });
+    }
   }
   // Catalog removals are handled by ownership, including disabled packages.
   for (const name of new Set([...Object.keys(active), ...Object.keys(disabled)])) {
@@ -195,7 +273,13 @@ export function reconcileSkills(
       const seen = observeSkill(path.join(root, name));
       if (seen.state === 'file' && seen.digest === record[name]) targets.push({ name, disabled: isDisabled, content: null });
       else if (seen.state === 'absent') delete record[name];
-      else statuses.push({ name, action: 'preserved', message: 'Dropped catalog package was edited; preserved.' });
+      else
+        statuses.push({
+          name,
+          action: 'preserved',
+          message: 'Dropped catalog package was edited; preserved.',
+          ...(isDisabled ? { location: 'disabled' as const } : {}),
+        });
     }
   }
   const previous = JSON.stringify(saved);
@@ -204,15 +288,36 @@ export function reconcileSkills(
       const root = target.disabled ? disabledSkillRoot(client, home) : skillRoot(client, home),
         record = target.disabled ? disabled : active;
       let result: SkillStatus;
+      const expected = overwriteByName.get(target.name);
+      let ownedForTarget: SkillRecord;
+      if (expected) {
+        const seen = observeSkill(path.join(root, target.name));
+        const expectedRoot = target.disabled ? expected.disabled : expected.enabled;
+        // Re-verify immediately before each write or removal so a concurrent edit or foreign copy is preserved.
+        if (seen.state === 'foreign' || expectedRoot === 'foreign' || observeRootState(seen) !== expectedRoot) {
+          statuses.push({
+            name: target.name,
+            action: 'preserved',
+            message:
+              seen.state === 'foreign' || expectedRoot === 'foreign'
+                ? 'Has other files or non-regular entries; remove or fix by hand to reinstall.'
+                : 'Changed after confirmation; preserved.',
+            ...(target.disabled ? { location: 'disabled' as const } : {}),
+          });
+          continue;
+        }
+        ownedForTarget = seen.state === 'file' ? { [target.name]: seen.digest } : {};
+      } else {
+        ownedForTarget = record[target.name] ? { [target.name]: record[target.name] } : {};
+      }
       if (target.content !== null) {
         const pkg = catalog.find(item => item.name === target.name)!;
-        const outcome = installSkills(client, home, [pkg], record[target.name] ? { [target.name]: record[target.name] } : {}, root);
+        const outcome = installSkills(client, home, [pkg], ownedForTarget, root);
         result = outcome.statuses[0];
         if (outcome.owned[target.name]) record[target.name] = outcome.owned[target.name];
       } else {
-        const owned = record[target.name] ? { [target.name]: record[target.name] } : {};
-        const preview = previewSkillRemoval(client, home, owned, root);
-        const outcome = removeSkills(client, home, owned, preview, root);
+        const preview = previewSkillRemoval(client, home, ownedForTarget, root);
+        const outcome = removeSkills(client, home, ownedForTarget, preview, root);
         result = outcome.statuses[0] ?? { name: target.name, action: 'absent', message: 'Not installed.' };
         if (!outcome.owned[target.name] && result.action !== 'preserved') delete record[target.name];
       }
@@ -236,13 +341,37 @@ export function reconcileSkills(
     Object.assign(saved, JSON.parse(previous));
     throw error;
   }
-  return [...new Set(statuses.map(item => item.name))].map(name => {
+  const preserved: PreservedSkill[] = statuses
+    .filter(item => item.action === 'preserved')
+    .map(item => ({
+      name: item.name,
+      location: item.location === 'disabled' ? 'disabled' : 'enabled',
+      message: item.message,
+    }));
+  const summary = [...new Set(statuses.map(item => item.name))].map(name => {
     const entries = statuses.filter(item => item.name === name),
       desired = planned.find(item => item.name === name)?.desired;
+    const kept = entries.find(item => item.action === 'preserved');
+    if (kept) return kept;
     if (desired === 'enabled') return entries.find(item => item.location !== 'disabled') ?? entries[0];
     if (desired === 'disabled') return entries.find(item => item.location === 'disabled') ?? entries[0];
     return entries.find(item => item.action === 'removed') ?? entries[0];
   });
+  return { statuses: summary, preserved };
+}
+
+/** Reconciles package files and ownership under the caller's setup lease, with crash recovery. */
+export function reconcileSkills(
+  client: SetupClient,
+  home: string,
+  catalog: SkillPackage[],
+  saved: Selection,
+  selection: SkillSelection,
+  origin?: RegistrationOrigin,
+  expectedState?: string | null,
+  overwrite: SkillOverwrite[] = [],
+): SkillStatus[] {
+  return reconcileSkillsDetailed(client, home, catalog, saved, selection, origin, expectedState, overwrite).statuses;
 }
 
 /** Converts a package action into explicit desired state while retaining other selections. */
@@ -347,6 +476,40 @@ export async function manageSkills(options: SkillManagementOptions): Promise<Ski
       new Set(selection.disabled).size !== selection.disabled.length)
   )
     throw new Error('Invalid skill selection; choose catalog names and a unique disabled subset.');
+  const expectedSelection = options.expectedSelection;
+  if (
+    expectedSelection &&
+    (!Array.isArray(expectedSelection.installed) ||
+      !Array.isArray(expectedSelection.disabled) ||
+      expectedSelection.installed.some(name => !catalog.some(item => item.name === name)) ||
+      new Set(expectedSelection.installed).size !== expectedSelection.installed.length ||
+      expectedSelection.disabled.some(name => !expectedSelection.installed.includes(name)) ||
+      new Set(expectedSelection.disabled).size !== expectedSelection.disabled.length)
+  )
+    throw new Error('Invalid expected skill selection; choose catalog names and a unique disabled subset.');
+  const overwrite = options.overwrite;
+  if (
+    overwrite !== undefined &&
+    (!Array.isArray(overwrite) ||
+      overwrite.some(
+        entry =>
+          !entry ||
+          typeof entry !== 'object' ||
+          Array.isArray(entry) ||
+          typeof entry.name !== 'string' ||
+          !catalog.some(item => item.name === entry.name) ||
+          !isValidRootObservation(entry.enabled) ||
+          !isValidRootObservation(entry.disabled),
+      ) ||
+      new Set(overwrite.map(entry => entry.name)).size !== overwrite.length)
+  )
+    throw new Error('Invalid skill overwrite list; choose unique catalog entries with per-root observations.');
+  const overwriteList: SkillOverwrite[] = overwrite
+    ? [...overwrite]
+        .map(entry => ({ name: entry.name, enabled: entry.enabled, disabled: entry.disabled }))
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    : [];
+  const overwriteByName = new Map(overwriteList.map(entry => [entry.name, entry]));
   const perform = async (): Promise<SkillManagementResult> => {
     if (options.apply !== undefined) recoverSkillTransaction(home);
     const stateSnapshot = read(path.join(root, 'setup.json'));
@@ -366,12 +529,47 @@ export async function manageSkills(options: SkillManagementOptions): Promise<Ski
           disabled: catalog.filter(item => saved.disabledSkills?.[client]?.[item.name]).map(item => item.name),
         };
     const desired = selection ?? current;
+    if (expectedSelection && !sameSkillSelection(expectedSelection, current)) {
+      throw new Error('Skill selection changed; run it again.');
+    }
     const skills = inventory(client, home, catalog, saved, desired);
-    const observations = catalog.map(pkg => [
-      pkg.name,
-      observeSkill(path.join(skillRoot(client, home), pkg.name)),
-      observeSkill(path.join(disabledSkillRoot(client, home), pkg.name)),
-    ]);
+    const rawObservations = catalog.map(pkg => ({
+      name: pkg.name,
+      enabled: observeSkill(path.join(skillRoot(client, home), pkg.name)),
+      disabled: observeSkill(path.join(disabledSkillRoot(client, home), pkg.name)),
+    }));
+    const observations: SkillOverwrite[] = rawObservations.map(obs => ({
+      name: obs.name,
+      enabled: observeRootState(obs.enabled),
+      disabled: observeRootState(obs.disabled),
+    }));
+    const removableSet = new Set<string>();
+    const droppedPreserved: PreservedSkill[] = [];
+    const droppedObservations: [string, SkillRootObservation, SkillRootObservation][] = [];
+    for (const name of new Set([...Object.keys(saved.skills[client] ?? {}), ...Object.keys(saved.disabledSkills?.[client] ?? {})])) {
+      if (catalog.some(item => item.name === name)) continue;
+      const activeDigest = saved.skills[client]?.[name];
+      const disabledDigest = saved.disabledSkills?.[client]?.[name];
+      const activeSeen = observeSkill(path.join(skillRoot(client, home), name));
+      const disabledSeen = observeSkill(path.join(disabledSkillRoot(client, home), name));
+      droppedObservations.push([name, observeRootState(activeSeen), observeRootState(disabledSeen)]);
+      for (const [isDisabled, digest, seen] of [
+        [false, activeDigest, activeSeen],
+        [true, disabledDigest, disabledSeen],
+      ] as const) {
+        if (!digest) continue;
+        if (seen.state === 'file' && seen.digest === digest) removableSet.add(name);
+        else if (seen.state !== 'absent') {
+          droppedPreserved.push({
+            name,
+            location: isDisabled ? 'disabled' : 'enabled',
+            message: 'Dropped catalog package was edited; preserved.',
+          });
+        }
+      }
+    }
+    const removable = [...removableSet].sort();
+    droppedObservations.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
     const token = hash(
       JSON.stringify({
         client,
@@ -380,7 +578,17 @@ export async function manageSkills(options: SkillManagementOptions): Promise<Ski
         state: stateSnapshot,
         catalog: catalog.map(pkg => [pkg.name, pkg.digest]),
         desired,
-        observations,
+        ...(expectedSelection
+          ? {
+              expectedSelection: {
+                installed: [...expectedSelection.installed].sort(),
+                disabled: [...expectedSelection.disabled].sort(),
+              },
+            }
+          : {}),
+        ...(overwriteList.length ? { overwrite: overwriteList } : {}),
+        observations: rawObservations.map(obs => [obs.name, obs.enabled, obs.disabled]),
+        ...(droppedObservations.length ? { droppedObservations } : {}),
       }),
     );
     const result: SkillManagementResult = {
@@ -389,6 +597,9 @@ export async function manageSkills(options: SkillManagementOptions): Promise<Ski
       disabledRoot: disabledSkillRoot(client, home),
       selection: desired,
       skills,
+      removable,
+      observations,
+      ...(droppedPreserved.length ? { preserved: droppedPreserved } : {}),
       token,
     };
     if (options.apply === undefined) return result;
@@ -397,6 +608,7 @@ export async function manageSkills(options: SkillManagementOptions): Promise<Ski
       skills.some(
         item =>
           item.state === 'conflict' &&
+          !overwriteByName.has(item.name) &&
           item.desired !==
             (current.installed.includes(item.name) ? (current.disabled.includes(item.name) ? 'disabled' : 'enabled') : 'absent'),
       )
@@ -405,8 +617,14 @@ export async function manageSkills(options: SkillManagementOptions): Promise<Ski
     const same = JSON.stringify(configured ?? current) === JSON.stringify(desired);
     // Desired intent is durable first. If an apply fails, repair retries it; actual state is reported separately.
     if (!same || configured === undefined) await setBackendSkills(client, desired, file, configSnapshot);
-    reconcileSkills(client, home, catalog, saved, desired, options.origin, stateSnapshot);
-    return { ...result, applied: true, skills: inventory(client, home, catalog, saved, desired) };
+    const reconciled = reconcileSkillsDetailed(client, home, catalog, saved, desired, options.origin, stateSnapshot, overwriteList);
+    return {
+      ...result,
+      applied: true,
+      skills: inventory(client, home, catalog, saved, desired),
+      removable: [],
+      preserved: reconciled.preserved,
+    };
   };
   if (options.apply === undefined) return perform();
   fs.mkdirSync(root, { recursive: true });

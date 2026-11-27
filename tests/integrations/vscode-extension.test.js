@@ -108,11 +108,14 @@ async function runExtension({
   executableChecks = {},
   removalRuns = true,
   skillProfile = false,
+  skillsSource = path.resolve(__dirname, '../../skills'),
   nativeRemoval = [],
   inputs = [],
   workspaceFolders = [],
   remoteName,
   deactivateOn,
+  onWarning,
+  onBeforeSkillApply,
   pathAdapter = new MockPathAdapter('C:\\Tools', 'REG_SZ'),
 } = {}) {
   const handlers = {},
@@ -378,7 +381,9 @@ async function runExtension({
         warnings.push(message);
         if (deactivateOn?.test(message)) void module.exports.deactivate();
         warningDetails.push(rest.find(item => typeof item === 'object')?.detail);
-        return answer(rest.filter(item => typeof item === 'string'));
+        const choice = answer(rest.filter(item => typeof item === 'string'));
+        if (onWarning) await onWarning({ message, choice });
+        return choice;
       },
       // The user cancels a wait that does not succeed on its first check.
       async withProgress(options, task) {
@@ -547,7 +552,20 @@ async function runExtension({
     clearInterval,
     setImmediate,
     require(name) {
-      return name === 'vscode' ? vscode : require(name);
+      if (name === 'vscode') return vscode;
+      if (name === 'node:fs/promises' && onBeforeSkillApply) {
+        const fsp = require('node:fs/promises');
+        return {
+          ...fsp,
+          async link(src, dst) {
+            if (typeof dst === 'string' && dst.endsWith(path.join('.coagent8', 'setup.lease'))) {
+              await onBeforeSkillApply(dst);
+            }
+            return fsp.link(src, dst);
+          },
+        };
+      }
+      return require(name);
     },
   });
   if (typeof module.exports.setPathAdapterForTest === 'function') {
@@ -595,7 +613,7 @@ async function runExtension({
   const readState = () => (fs.existsSync(stateFile) ? fs.readFileSync(stateFile, 'utf8') : undefined);
   const initialState = readState();
   fs.mkdirSync(path.join(extensionRoot, 'dist'));
-  fs.cpSync(path.resolve(__dirname, '../../skills'), path.join(extensionRoot, 'skills'), { recursive: true });
+  fs.cpSync(skillsSource, path.join(extensionRoot, 'skills'), { recursive: true });
   fs.writeFileSync(path.join(extensionRoot, 'dist/index.cjs'), 'fixture runtime');
   const context = {
     subscriptions: [],
@@ -2343,4 +2361,704 @@ test('VS Code extension PATH opt-in prompt lifecycle and explicit commands', asy
   } finally {
     fs.rmSync(manualHome, { recursive: true, force: true });
   }
+});
+
+test('activation skill update notice appears once per catalog fingerprint, updates every client, and skips clients without installed skills', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-skills-notice-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const home = path.join(root, 'home');
+  const catalogV1 = path.join(root, 'catalog-v1');
+  const catalogV2 = path.join(root, 'catalog-v2');
+  const catalogV3 = path.join(root, 'catalog-v3');
+  const sourceCatalog = path.resolve(__dirname, '../../skills');
+  fs.cpSync(sourceCatalog, catalogV1, { recursive: true });
+  fs.cpSync(sourceCatalog, catalogV2, { recursive: true });
+  fs.appendFileSync(path.join(catalogV2, 'coagent8-review', 'SKILL.md'), '\nRevision 2.\n');
+  fs.appendFileSync(path.join(catalogV2, 'coagent8-doctor', 'SKILL.md'), '\nRevision 2.\n');
+  fs.cpSync(catalogV2, catalogV3, { recursive: true });
+  fs.appendFileSync(path.join(catalogV3, 'coagent8-review', 'SKILL.md'), '\nRevision 3.\n');
+
+  // Before any client has installed skills, no skill update notice is shown.
+  const empty = await runExtension({ home, skillProfile: true, skillsSource: catalogV2, activationOnly: true });
+  assert.deepEqual(empty.notifications, []);
+  assert.equal(empty.state?.skillsOffered, undefined);
+
+  // Install v1 skills on claude (enabled) and agy (disabled); leave codex without installed skills.
+  const { manageSkills, skillSelectionForAction } = require('../../src/integrations/skill-management.ts');
+  const { readSkillCatalog, skillRoot, disabledSkillRoot } = require('../../src/integrations/skills.ts');
+  const fingerprint = require('node:crypto')
+    .createHash('sha256')
+    .update(
+      JSON.stringify(
+        readSkillCatalog(catalogV2)
+          .map(pkg => [pkg.name, pkg.digest])
+          .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+      ),
+    )
+    .digest('hex');
+  const installFor = async (client, names, disable = false) => {
+    const env = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      CODEX_HOME: path.join(home, '.codex'),
+      coagent8_CONFIG: path.join(home, '.coagent8/config.json'),
+    };
+    delete env.CODEX_CONFIG_PATH;
+    delete env.CLAUDE_CONFIG_DIR;
+    delete env.GEMINI_CLI_HOME;
+    const opts = { client, home, env, skillsSource: catalogV1 };
+    let cur = await manageSkills(opts);
+    let sel = skillSelectionForAction(cur.selection, names, 'install');
+    if (disable) sel = skillSelectionForAction(sel, names, 'disable');
+    const prev = await manageSkills({ ...opts, selection: sel });
+    await manageSkills({ ...opts, selection: sel, apply: prev.token });
+  };
+  await installFor('claude', ['coagent8-review']);
+  await installFor('agy', ['coagent8-doctor'], true);
+
+  // Activation with v2 offers Update Skills once, naming only clients with installed skills.
+  const declined = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    activationOnly: true,
+    awaitState: true,
+    awaitNotifications: 1,
+  });
+  assert.equal(declined.notifications.length, 1);
+  assert.equal(declined.notifications[0].message, 'Newer CoAgent8 skills are available for Claude Code CLI, Antigravity CLI.');
+  assert.deepEqual(declined.notifications[0].actions, ['Update Skills']);
+  assert.match(declined.state.skillsOffered.claude, /^[0-9a-f]{64}$/);
+  assert.match(declined.state.skillsOffered.codex, /^[0-9a-f]{64}$/);
+  assert.match(declined.state.skillsOffered.agy, /^[0-9a-f]{64}$/);
+  assert.deepEqual(declined.legacyUpdates, [], 'nothing is stored in globalState');
+
+  // Re-activating with the same v2 catalog does not show the notice again.
+  const sameAgain = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    activationOnly: true,
+    storedState: declined.state,
+  });
+  assert.deepEqual(sameAgain.notifications, []);
+
+  // Re-activating after catalog changes to v3 shows the notice again, and clicking Update Skills updates every client.
+  const accepted = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV3,
+    activationOnly: true,
+    storedState: declined.state,
+    action: 'Update Skills',
+    awaitNotifications: 2,
+  });
+  assert.equal(accepted.notifications[0].message, 'Newer CoAgent8 skills are available for Claude Code CLI, Antigravity CLI.');
+  assert.match(accepted.notifications[1].message, /Updated CoAgent8 skills for Claude Code CLI \(1\), Antigravity CLI \(1\)\./);
+  assert.match(accepted.notifications[1].message, /Start a new chat to refresh its skills/);
+  assert.deepEqual(
+    fs.readFileSync(path.join(skillRoot('claude', home), 'coagent8-review', 'SKILL.md'), 'utf8'),
+    fs.readFileSync(path.join(catalogV3, 'coagent8-review', 'SKILL.md'), 'utf8'),
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(disabledSkillRoot('agy', home), 'coagent8-doctor', 'SKILL.md'), 'utf8'),
+    fs.readFileSync(path.join(catalogV3, 'coagent8-doctor', 'SKILL.md'), 'utf8'),
+    'disabled packages are updated in disabled storage without being enabled',
+  );
+  assert.equal(fs.existsSync(path.join(skillRoot('agy', home), 'coagent8-doctor', 'SKILL.md')), false);
+});
+
+test('Manage Skills Update all and Reinstall all update across clients and require confirmation for conflicts', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-bulk-skills-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const home = path.join(root, 'home');
+  const catalogV1 = path.join(root, 'catalog-v1');
+  const catalogV2 = path.join(root, 'catalog-v2');
+  const sourceCatalog = path.resolve(__dirname, '../../skills');
+  fs.cpSync(sourceCatalog, catalogV1, { recursive: true });
+  fs.cpSync(sourceCatalog, catalogV2, { recursive: true });
+  fs.appendFileSync(path.join(catalogV2, 'coagent8-review', 'SKILL.md'), '\nBulk revision 2.\n');
+  fs.appendFileSync(path.join(catalogV2, 'coagent8-doctor', 'SKILL.md'), '\nBulk revision 2.\n');
+
+  const { manageSkills, skillSelectionForAction } = require('../../src/integrations/skill-management.ts');
+  const { readSkillCatalog, skillRoot, disabledSkillRoot } = require('../../src/integrations/skills.ts');
+  const fingerprint = require('node:crypto')
+    .createHash('sha256')
+    .update(
+      JSON.stringify(
+        readSkillCatalog(catalogV2)
+          .map(pkg => [pkg.name, pkg.digest])
+          .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+      ),
+    )
+    .digest('hex');
+  const install = async (client, enabled, disabled = []) => {
+    const env = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      CODEX_HOME: path.join(home, '.codex'),
+      coagent8_CONFIG: path.join(home, '.coagent8/config.json'),
+    };
+    delete env.CODEX_CONFIG_PATH;
+    delete env.CLAUDE_CONFIG_DIR;
+    delete env.GEMINI_CLI_HOME;
+    const opts = { client, home, env, skillsSource: catalogV1 };
+    let cur = await manageSkills(opts);
+    let sel = skillSelectionForAction(cur.selection, [...enabled, ...disabled], 'install');
+    if (disabled.length) sel = skillSelectionForAction(sel, disabled, 'disable');
+    const prev = await manageSkills({ ...opts, selection: sel });
+    await manageSkills({ ...opts, selection: sel, apply: prev.token });
+  };
+
+  // Without installed skills, neither Update all nor Reinstall all is offered.
+  const none = await runExtension({ home, skillProfile: true, command: 'coagent8.manageSkills' });
+  assert.ok(!none.menus[0].items.some(item => item.separator || /Update all|Reinstall all/.test(item.label)));
+
+  // Install v1: claude has coagent8-review (enabled) and coagent8-issue (conflict), agy has coagent8-doctor (disabled), codex is up to date on v2.
+  await install('claude', ['coagent8-review', 'coagent8-issue']);
+  await install('agy', [], ['coagent8-doctor']);
+  {
+    const env = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      CODEX_HOME: path.join(home, '.codex'),
+      coagent8_CONFIG: path.join(home, '.coagent8/config.json'),
+    };
+    delete env.CODEX_CONFIG_PATH;
+    delete env.CLAUDE_CONFIG_DIR;
+    delete env.GEMINI_CLI_HOME;
+    const opts = { client: 'codex', home, env, skillsSource: catalogV2 };
+    const cur = await manageSkills(opts);
+    const sel = skillSelectionForAction(cur.selection, ['coagent8-session'], 'install');
+    const prev = await manageSkills({ ...opts, selection: sel });
+    await manageSkills({ ...opts, selection: sel, apply: prev.token });
+  }
+  const conflictFile = path.join(skillRoot('claude', home), 'coagent8-issue', 'SKILL.md');
+  fs.writeFileSync(conflictFile, 'custom external edit');
+
+  // Mark skillsOffered with the v2 fingerprint so activation notice stays quiet while testing Manage Skills command.
+  const setupState = {
+    welcomed: true,
+    pathPrompt: 'accepted',
+    skillsOffered: { codex: fingerprint, claude: fingerprint, agy: fingerprint },
+  };
+
+  // Update all updates claude and agy, skips codex, keeps agy disabled, and preserves + names coagent8-issue.
+  const updatedAll = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: setupState,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(sync) Update all' }],
+    action: 'Show Details',
+  });
+  assert.deepEqual(updatedAll.notifications, [], 'no extra activation notice or info notice when warning is shown');
+  const bulkSection = updatedAll.menus[0].items.slice(-3);
+  assert.deepEqual(
+    bulkSection.map(item => (item.separator ? `-- ${item.label}` : [item.label, item.description])),
+    ['-- All CLIs', ['$(sync) Update all', '2 updates available'], ['$(refresh) Reinstall all', 'rewrite installed packages']],
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(skillRoot('claude', home), 'coagent8-review', 'SKILL.md'), 'utf8'),
+    fs.readFileSync(path.join(catalogV2, 'coagent8-review', 'SKILL.md'), 'utf8'),
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(disabledSkillRoot('agy', home), 'coagent8-doctor', 'SKILL.md'), 'utf8'),
+    fs.readFileSync(path.join(catalogV2, 'coagent8-doctor', 'SKILL.md'), 'utf8'),
+  );
+  assert.equal(fs.existsSync(path.join(skillRoot('agy', home), 'coagent8-doctor', 'SKILL.md')), false);
+  assert.equal(fs.readFileSync(conflictFile, 'utf8'), 'custom external edit');
+  assert.match(updatedAll.warnings.at(-1), /Updated CoAgent8 skills for Claude Code CLI \(1\), Antigravity CLI \(1\)\./);
+  assert.match(updatedAll.warnings.at(-1), /coagent8-issue/);
+  assert.match(updatedAll.warnings.at(-1), /Start a new chat to refresh its skills/);
+  assert.ok(updatedAll.reveals.length > 0, 'Show Details reveals output channel');
+
+  // Reinstall all without confirmation writes nothing and modal names conflicting package.
+  const configBefore = fs.readFileSync(path.join(home, '.coagent8/config.json'));
+  const stateBefore = fs.readFileSync(path.join(home, '.coagent8/setup.json'));
+  const cancelledReinstall = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: setupState,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(refresh) Reinstall all' }],
+  });
+  assert.ok(!cancelledReinstall.menus[0].items.some(item => item.label === '$(sync) Update all'), 'Update all hidden when up to date');
+  assert.match(cancelledReinstall.warnings.at(-1), /Claude Code CLI: coagent8-issue \(enabled\)/);
+  assert.match(cancelledReinstall.warningDetails.at(-1), /will be overwritten/);
+  assert.equal(fs.readFileSync(conflictFile, 'utf8'), 'custom external edit');
+  assert.deepEqual(fs.readFileSync(path.join(home, '.coagent8/config.json')), configBefore);
+  assert.deepEqual(fs.readFileSync(path.join(home, '.coagent8/setup.json')), stateBefore);
+
+  // If a copy appears in the other root after confirmation, Reinstall all rejects that client before applying.
+  const hiddenDisabledConflict = path.join(disabledSkillRoot('claude', home), 'coagent8-issue', 'SKILL.md');
+  const otherRootAppeared = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: setupState,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(refresh) Reinstall all' }],
+    action: 'Overwrite and Reinstall',
+    onWarning: ({ message }) => {
+      if (message.includes('coagent8-issue')) {
+        fs.mkdirSync(path.dirname(hiddenDisabledConflict), { recursive: true });
+        fs.writeFileSync(hiddenDisabledConflict, 'newly appeared disabled conflict');
+      }
+    },
+  });
+  assert.match(otherRootAppeared.warnings.at(-1), /Failed for Claude Code CLI \(Changed after confirmation: coagent8-issue \(disabled\)/);
+  assert.equal(fs.readFileSync(conflictFile, 'utf8'), 'custom external edit');
+  assert.equal(fs.readFileSync(hiddenDisabledConflict, 'utf8'), 'newly appeared disabled conflict');
+  fs.rmSync(path.dirname(hiddenDisabledConflict), { recursive: true, force: true });
+
+  // Unselected conflicting package outside selection.installed does not block Reinstall all and is named as preserved.
+  const unselectedConflict = path.join(skillRoot('claude', home), 'coagent8-doctor', 'SKILL.md');
+  fs.mkdirSync(path.dirname(unselectedConflict), { recursive: true });
+  fs.writeFileSync(unselectedConflict, 'unselected external skill');
+
+  // Reinstall all with confirmation overwrites coagent8-issue, leaves unselected coagent8-doctor alone and names it.
+  const confirmedReinstall = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: setupState,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(refresh) Reinstall all' }],
+    action: 'Overwrite and Reinstall',
+  });
+  assert.deepEqual(fs.readFileSync(conflictFile, 'utf8'), fs.readFileSync(path.join(catalogV2, 'coagent8-issue', 'SKILL.md'), 'utf8'));
+  assert.equal(fs.readFileSync(unselectedConflict, 'utf8'), 'unselected external skill');
+  assert.match(
+    confirmedReinstall.warnings.at(-1),
+    /Reinstalled CoAgent8 skills for Codex CLI \(1\), Claude Code CLI \(2\), Antigravity CLI \(1\)\./,
+  );
+  assert.match(
+    confirmedReinstall.warnings.at(-1),
+    /Left alone because changed outside CoAgent8: Claude Code CLI \(coagent8-doctor \(enabled\)\)\./,
+  );
+  fs.rmSync(path.dirname(unselectedConflict), { recursive: true, force: true });
+
+  // A package changed between Reinstall all preview and apply is preserved and named with its root in the failure message.
+  const reviewFile = path.join(skillRoot('claude', home), 'coagent8-review', 'SKILL.md');
+  let lockCalls = 0;
+  const changedBetweenPreviewAndApply = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: setupState,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(refresh) Reinstall all' }],
+    onBeforeSkillApply: () => {
+      lockCalls++;
+      // 1st setup.lease is codex apply; 2nd is claude apply after claude preview succeeded.
+      if (lockCalls === 2) {
+        fs.writeFileSync(reviewFile, 'race edit between preview and apply');
+      }
+    },
+  });
+  assert.ok(lockCalls >= 2);
+  assert.equal(fs.readFileSync(reviewFile, 'utf8'), 'race edit between preview and apply');
+  assert.match(
+    changedBetweenPreviewAndApply.warnings.at(-1),
+    /Failed for Claude Code CLI \(Changed after confirmation: coagent8-review \(enabled\)/,
+  );
+  // Restore coagent8-review for the partial-failure test below.
+  fs.writeFileSync(reviewFile, fs.readFileSync(path.join(catalogV2, 'coagent8-review', 'SKILL.md'), 'utf8'));
+
+  // Foreign copies are excluded from overwrite and modal, never block other clients, and instruct manual cleanup.
+  const foreignDir = path.join(skillRoot('codex', home), 'coagent8-session', 'extra.txt');
+  fs.writeFileSync(foreignDir, 'foreign');
+  const foreignOnly = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: setupState,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(refresh) Reinstall all' }],
+  });
+  assert.match(foreignOnly.warnings.at(-1), /Reinstalled CoAgent8 skills for Claude Code CLI \(2\), Antigravity CLI \(1\)\./);
+  assert.match(
+    foreignOnly.warnings.at(-1),
+    /Codex CLI \(coagent8-session \(enabled\) has other files or a link; remove or fix by hand to reinstall\)/,
+  );
+  assert.ok(
+    !/Overwrite packages changed outside CoAgent8/.test(foreignOnly.warnings.join('\n')),
+    'no modal shown for foreign-only conflicts',
+  );
+  assert.ok(!/Reinstalled CoAgent8 skills for[^.]*Codex CLI/.test(foreignOnly.warnings.at(-1)));
+
+  // When a client has both a healthy package and a foreign package, Reinstall all reinstalls the healthy one and names the foreign one.
+  {
+    const env = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      CODEX_HOME: path.join(home, '.codex'),
+      coagent8_CONFIG: path.join(home, '.coagent8/config.json'),
+    };
+    delete env.CODEX_CONFIG_PATH;
+    delete env.CLAUDE_CONFIG_DIR;
+    delete env.GEMINI_CLI_HOME;
+    const opts = { client: 'codex', home, env, skillsSource: catalogV2 };
+    const cur = await manageSkills(opts);
+    const sel = skillSelectionForAction(cur.selection, ['coagent8-review'], 'install');
+    const prev = await manageSkills({ ...opts, selection: sel });
+    await manageSkills({ ...opts, selection: sel, apply: prev.token });
+  }
+  const mixedForeign = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: setupState,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(refresh) Reinstall all' }],
+  });
+  assert.match(
+    mixedForeign.warnings.at(-1),
+    /Reinstalled CoAgent8 skills for Codex CLI \(1\), Claude Code CLI \(2\), Antigravity CLI \(1\)\./,
+  );
+  assert.match(
+    mixedForeign.warnings.at(-1),
+    /Codex CLI \(coagent8-session \(enabled\) has other files or a link; remove or fix by hand to reinstall\)/,
+  );
+
+  // A client failure during Reinstall all is named in Failed without claiming success for that client.
+  const outsideCodex = path.join(root, 'outside-codex');
+  fs.mkdirSync(outsideCodex, { recursive: true });
+  fs.rmSync(skillRoot('codex', home), { recursive: true, force: true });
+  fs.symlinkSync(outsideCodex, skillRoot('codex', home), process.platform === 'win32' ? 'junction' : 'dir');
+  const partialFailure = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: setupState,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(refresh) Reinstall all' }],
+  });
+  assert.match(partialFailure.warnings.at(-1), /Reinstalled CoAgent8 skills for Claude Code CLI \(2\), Antigravity CLI \(1\)\./);
+  assert.match(partialFailure.warnings.at(-1), /Failed for Codex CLI \(/);
+  assert.ok(!/Reinstalled CoAgent8 skills for[^.]*Codex CLI/.test(partialFailure.warnings.at(-1)));
+});
+
+test('Manage Skills and activation tolerate one failing client and reconcile catalog-only removals', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-skills-resilience-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const home = path.join(root, 'home');
+  const catalogFull = path.resolve(__dirname, '../../skills');
+  const catalogReduced = path.join(root, 'catalog-reduced');
+  fs.mkdirSync(catalogReduced, { recursive: true });
+  for (const name of ['coagent8-review', 'coagent8-doctor']) {
+    fs.cpSync(path.join(catalogFull, name), path.join(catalogReduced, name), { recursive: true });
+  }
+
+  const { manageSkills, skillSelectionForAction } = require('../../src/integrations/skill-management.ts');
+  const { skillRoot } = require('../../src/integrations/skills.ts');
+  const install = async (client, names) => {
+    const env = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      CODEX_HOME: path.join(home, '.codex'),
+      coagent8_CONFIG: path.join(home, '.coagent8/config.json'),
+    };
+    delete env.CODEX_CONFIG_PATH;
+    delete env.CLAUDE_CONFIG_DIR;
+    delete env.GEMINI_CLI_HOME;
+    const opts = { client, home, env, skillsSource: catalogFull };
+    const cur = await manageSkills(opts);
+    const sel = skillSelectionForAction(cur.selection, names, 'install');
+    const prev = await manageSkills({ ...opts, selection: sel });
+    await manageSkills({ ...opts, selection: sel, apply: prev.token });
+  };
+  await install('claude', ['coagent8-issue']);
+  await install('agy', ['coagent8-session']);
+  fs.writeFileSync(path.join(skillRoot('agy', home), 'coagent8-session', 'SKILL.md'), 'edited dropped skill');
+
+  // Make codex fail inspection with a redirected skill root.
+  const outside = path.join(root, 'outside');
+  fs.mkdirSync(outside, { recursive: true });
+  fs.mkdirSync(path.join(home, '.agents'), { recursive: true });
+  fs.symlinkSync(outside, path.join(home, '.agents', 'skills'), process.platform === 'win32' ? 'junction' : 'dir');
+
+  // Activation ignores the failing codex client and still offers Update Skills for claude's removable dropped package while naming agy's edited dropped copy.
+  const notice = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogReduced,
+    activationOnly: true,
+    awaitState: true,
+    awaitNotifications: 1,
+  });
+  assert.deepEqual(notice.errors, []);
+  assert.equal(
+    notice.notifications[0].message,
+    'Newer CoAgent8 skills are available for Claude Code CLI. Left alone: Antigravity CLI (coagent8-session (enabled)).',
+  );
+  assert.deepEqual(notice.notifications[0].actions, ['Update Skills']);
+  assert.equal(notice.state.skillsOffered.codex, undefined, 'failed client is not recorded as offered');
+
+  // When codex becomes healthy on the next activation with the same catalog, only codex is retried.
+  fs.rmSync(path.join(home, '.agents', 'skills'), { recursive: true, force: true });
+  await install('codex', ['coagent8-issue']);
+  const retriedCodex = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogReduced,
+    storedState: notice.state,
+    activationOnly: true,
+    awaitState: true,
+    awaitNotifications: 1,
+  });
+  assert.equal(retriedCodex.notifications[0].message, 'Newer CoAgent8 skills are available for Codex CLI.');
+  assert.match(retriedCodex.state.skillsOffered.codex, /^[0-9a-f]{64}$/);
+  // Reset codex back to failing for the Manage Skills picker test below.
+  fs.rmSync(path.join(home, '.agents', 'skills'), { recursive: true, force: true });
+  fs.symlinkSync(outside, path.join(home, '.agents', 'skills'), process.platform === 'win32' ? 'junction' : 'dir');
+
+  // Manage Skills picker lists failing Codex CLI with its reason, keeps Update all for Claude, and clicking Update all removes claude's dropped skill and reports agy's edited dropped copy.
+  const updated = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogReduced,
+    storedState: retriedCodex.state,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(error) Codex CLI' }, { label: '$(sync) Update all' }],
+  });
+  const codexItem = updated.menus[0].items.find(item => item.label === '$(error) Codex CLI');
+  assert.ok(codexItem && /Linked skill root/.test(codexItem.description));
+  assert.equal(codexItem.client, undefined);
+  assert.ok(updated.menus[0].items.some(item => item.label === '$(sync) Update all' && item.description === '1 update available'));
+  assert.equal(fs.existsSync(path.join(skillRoot('claude', home), 'coagent8-issue')), false);
+  assert.equal(fs.readFileSync(path.join(skillRoot('agy', home), 'coagent8-session', 'SKILL.md'), 'utf8'), 'edited dropped skill');
+  assert.match(updated.warnings.at(-1), /Updated CoAgent8 skills for Claude Code CLI \(1\)\./);
+  assert.match(updated.warnings.at(-1), /Left alone because changed outside CoAgent8: Antigravity CLI \(coagent8-session \(enabled\)\)\./);
+  assert.match(updated.warnings.at(-1), /Failed for Codex CLI \(/);
+});
+
+test('activation notice for preserved-only catalog changes names copies, offers Manage Skills, and ignores legacy string skillsOffered', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-skills-preserved-notice-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const home = path.join(root, 'home');
+  const catalogV1 = path.join(root, 'catalog-v1');
+  const catalogV2 = path.join(root, 'catalog-v2');
+  const sourceCatalog = path.resolve(__dirname, '../../skills');
+  fs.cpSync(sourceCatalog, catalogV1, { recursive: true });
+  fs.cpSync(sourceCatalog, catalogV2, { recursive: true });
+  fs.appendFileSync(path.join(catalogV2, 'coagent8-review', 'SKILL.md'), '\nPreserved conflict v2.\n');
+
+  const { manageSkills, skillSelectionForAction } = require('../../src/integrations/skill-management.ts');
+  const { skillRoot } = require('../../src/integrations/skills.ts');
+  const env = {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    CODEX_HOME: path.join(home, '.codex'),
+    coagent8_CONFIG: path.join(home, '.coagent8/config.json'),
+  };
+  delete env.CODEX_CONFIG_PATH;
+  delete env.CLAUDE_CONFIG_DIR;
+  delete env.GEMINI_CLI_HOME;
+  const opts = { client: 'claude', home, env, skillsSource: catalogV1 };
+  const cur = await manageSkills(opts);
+  const sel = skillSelectionForAction(cur.selection, ['coagent8-review'], 'install');
+  const prev = await manageSkills({ ...opts, selection: sel });
+  await manageSkills({ ...opts, selection: sel, apply: prev.token });
+  fs.writeFileSync(path.join(skillRoot('claude', home), 'coagent8-review', 'SKILL.md'), 'edited by user');
+
+  // Legacy string skillsOffered is treated as no record, and preserved-only change offers Manage Skills.
+  const notice = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: { welcomed: true, pathPrompt: 'accepted', skillsOffered: 'legacy-string' },
+    activationOnly: true,
+    action: 'Manage Skills',
+    awaitState: true,
+    awaitNotifications: 1,
+  });
+  assert.equal(notice.notifications.length, 1);
+  assert.equal(
+    notice.notifications[0].message,
+    'CoAgent8 skills changed; edited copies left alone: Claude Code CLI (coagent8-review (enabled)).',
+  );
+  assert.deepEqual(notice.notifications[0].actions, ['Manage Skills']);
+  assert.deepEqual(notice.requests, [['coagent8.manageSkills']]);
+  assert.equal(typeof notice.state.skillsOffered, 'object');
+
+  // Same fingerprint is not offered again.
+  const second = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: notice.state,
+    activationOnly: true,
+  });
+  assert.deepEqual(second.notifications, []);
+});
+
+test('bulk actions refuse intervening selection changes and notice/Manage Skills name outdated foreign copies', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-skills-round3-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const home = path.join(root, 'home');
+  const catalogV1 = path.join(root, 'catalog-v1');
+  const catalogV2 = path.join(root, 'catalog-v2');
+  const sourceCatalog = path.resolve(__dirname, '../../skills');
+  fs.cpSync(sourceCatalog, catalogV1, { recursive: true });
+  fs.cpSync(sourceCatalog, catalogV2, { recursive: true });
+  fs.appendFileSync(path.join(catalogV2, 'coagent8-review', 'SKILL.md'), '\nRound 3 revision.\n');
+  fs.appendFileSync(path.join(catalogV2, 'coagent8-doctor', 'SKILL.md'), '\nRound 3 revision.\n');
+
+  const { manageSkills, skillSelectionForAction } = require('../../src/integrations/skill-management.ts');
+  const { readSkillCatalog, skillRoot, disabledSkillRoot } = require('../../src/integrations/skills.ts');
+  const { setBackendSkills } = require('../../src/config.ts');
+  const fingerprintV2 = require('node:crypto')
+    .createHash('sha256')
+    .update(
+      JSON.stringify(
+        readSkillCatalog(catalogV2)
+          .map(pkg => [pkg.name, pkg.digest])
+          .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+      ),
+    )
+    .digest('hex');
+  const install = async (client, enabled, disabled = []) => {
+    const env = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      CODEX_HOME: path.join(home, '.codex'),
+      coagent8_CONFIG: path.join(home, '.coagent8/config.json'),
+    };
+    delete env.CODEX_CONFIG_PATH;
+    delete env.CLAUDE_CONFIG_DIR;
+    delete env.GEMINI_CLI_HOME;
+    const opts = { client, home, env, skillsSource: catalogV1 };
+    const cur = await manageSkills(opts);
+    let sel = skillSelectionForAction(cur.selection, [...enabled, ...disabled], 'install');
+    if (disabled.length) sel = skillSelectionForAction(sel, disabled, 'disable');
+    const prev = await manageSkills({ ...opts, selection: sel });
+    await manageSkills({ ...opts, selection: sel, apply: prev.token });
+  };
+
+  // Foreign copies (extra file in directory) on enabled claude skill and disabled agy skill.
+  await install('claude', ['coagent8-review']);
+  await install('agy', [], ['coagent8-doctor']);
+  fs.writeFileSync(path.join(skillRoot('claude', home), 'coagent8-review', 'extra.txt'), 'foreign active');
+  fs.writeFileSync(path.join(disabledSkillRoot('agy', home), 'coagent8-doctor', 'extra.txt'), 'foreign disabled');
+
+  // With unchanged v1 catalog, no notice is shown for foreign copies.
+  const quietV1 = await runExtension({ home, skillProfile: true, skillsSource: catalogV1, activationOnly: true });
+  assert.deepEqual(quietV1.notifications, []);
+
+  // With v2 catalog changing those packages, activation notice names both foreign copies with their locations and offers Manage Skills.
+  const noticeV2 = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    activationOnly: true,
+    awaitState: true,
+    awaitNotifications: 1,
+  });
+  assert.equal(
+    noticeV2.notifications[0].message,
+    'CoAgent8 skills changed; edited copies left alone: Claude Code CLI (coagent8-review (enabled)); Antigravity CLI (coagent8-doctor (disabled)).',
+  );
+  assert.deepEqual(noticeV2.notifications[0].actions, ['Manage Skills']);
+
+  // A foreign copy moved to the other root (enabled ownership moved into disabled root) is also detected and named with its location.
+  fs.rmSync(path.join(skillRoot('claude', home), 'coagent8-review'), { recursive: true, force: true });
+  const movedClaudeDisabled = path.join(disabledSkillRoot('claude', home), 'coagent8-review');
+  fs.mkdirSync(movedClaudeDisabled, { recursive: true });
+  fs.writeFileSync(path.join(movedClaudeDisabled, 'extra.txt'), 'moved foreign');
+  const movedNotice = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    activationOnly: true,
+    awaitState: true,
+    awaitNotifications: 1,
+  });
+  assert.match(movedNotice.notifications[0].message, /Claude Code CLI \(coagent8-review \(disabled\)\)/);
+  fs.rmSync(movedClaudeDisabled, { recursive: true, force: true });
+  fs.mkdirSync(path.join(skillRoot('claude', home), 'coagent8-review'), { recursive: true });
+  fs.writeFileSync(
+    path.join(skillRoot('claude', home), 'coagent8-review', 'SKILL.md'),
+    fs.readFileSync(path.join(catalogV1, 'coagent8-review', 'SKILL.md'), 'utf8'),
+  );
+  fs.writeFileSync(path.join(skillRoot('claude', home), 'coagent8-review', 'extra.txt'), 'foreign active');
+
+  // Single-client Manage Skills action also names the preserved foreign copy with its location.
+  const singleClient = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: noticeV2.state,
+    command: 'coagent8.manageSkills',
+    steps: [{ client: 'claude' }, { action: 'install' }, { names: ['coagent8-issue'] }],
+  });
+  assert.match(
+    singleClient.warnings.at(-1),
+    /Left alone because changed outside CoAgent8: coagent8-review \(enabled\) has other files or a link; remove or fix by hand to reinstall\./,
+  );
+
+  // Set up clean outdated codex + claude with an edited conflict and test Reinstall all refusing an intervening selection change.
+  fs.rmSync(path.join(skillRoot('claude', home), 'coagent8-review', 'extra.txt'));
+  fs.rmSync(path.join(disabledSkillRoot('agy', home), 'coagent8-doctor', 'extra.txt'));
+  await install('codex', ['coagent8-review']);
+  const claudeIssue = path.join(skillRoot('claude', home), 'coagent8-issue', 'SKILL.md');
+  fs.writeFileSync(claudeIssue, 'external edit for modal');
+  const configFile = path.join(home, '.coagent8', 'config.json');
+  const offeredV2 = {
+    welcomed: true,
+    pathPrompt: 'accepted',
+    skillsOffered: { codex: fingerprintV2, claude: fingerprintV2, agy: fingerprintV2 },
+  };
+  const modifiedClaudeSelection = { installed: ['coagent8-issue', 'coagent8-review'], disabled: ['coagent8-review'] };
+  const reinstallChangedSelection = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: offeredV2,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(refresh) Reinstall all' }],
+    action: 'Overwrite and Reinstall',
+    onWarning: async ({ message }) => {
+      if (message.includes('coagent8-issue')) {
+        await setBackendSkills('claude', modifiedClaudeSelection, configFile);
+      }
+    },
+  });
+  assert.match(reinstallChangedSelection.warnings.at(-1), /Failed for Claude Code CLI \(Skill selection changed; run it again\.\)/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(configFile, 'utf8')).backends.claude.skills, modifiedClaudeSelection);
+  assert.equal(fs.readFileSync(claudeIssue, 'utf8'), 'external edit for modal');
+
+  // Test Update all refusing to overwrite an intervening selection change between preview and apply.
+  const freshClaude = { installed: ['coagent8-review'], disabled: [] };
+  await setBackendSkills('claude', freshClaude, configFile);
+  let updateLockCalls = 0;
+  const intervenedSelection = { installed: ['coagent8-review'], disabled: ['coagent8-review'] };
+  const updateChangedSelection = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: offeredV2,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(sync) Update all' }],
+    onBeforeSkillApply: async () => {
+      updateLockCalls++;
+      // codex is already up to date on v2, so 1st setup.lease is claude apply after claude preview succeeded.
+      if (updateLockCalls === 1) {
+        await setBackendSkills('claude', intervenedSelection, configFile);
+      }
+    },
+  });
+  assert.ok(updateLockCalls >= 1);
+  assert.match(updateChangedSelection.warnings.at(-1), /Failed for Claude Code CLI \(Skill selection changed; run it again\.\)/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(configFile, 'utf8')).backends.claude.skills, intervenedSelection);
 });

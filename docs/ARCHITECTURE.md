@@ -653,6 +653,21 @@ preferences retain setup's full-catalog default; management initially selects
 only recorded packages. Empty installed lists opt out, and explicit selections
 do not gain new catalog names. Setup/repair/update honor the selection. Catalog
 removals delete only unchanged owned packages; edited copies are preserved.
+Bulk updates in VS Code apply each client's current selection unchanged via
+`manageSkills` (including owned packages dropped from the catalog, exposed in
+`removable`), while bulk reinstalls pass user-confirmed per-root observations in
+`overwrite` (bound to the preview token and re-checked immediately before each
+write or removal) so `reconcileSkills` replaces only confirmed conflicting or
+current copies in their desired enabled or disabled root; foreign directories
+(extra files, links, non-regular entries) are never overwrite targets and are
+left alone for manual cleanup; both bulk actions pass
+`expectedSelection` to refuse applying a stale selection if `backends.<client>.skills`
+changed since inspection. On activation, VS Code
+hashes the sorted catalog names and digests and offers **Update Skills** (or
+**Manage Skills** when only edited copies are affected) once per client and
+fingerprint in `setup-state.json` (`skillsOffered`) when any installed package
+has an update or an affected preserved copy, retrying clients whose inspection
+failed.
 
 Disable moves an unchanged package outside discovery into
 `~/.coagent8/disabled-skills/<client>/<name>/SKILL.md`; enable restores it to the
