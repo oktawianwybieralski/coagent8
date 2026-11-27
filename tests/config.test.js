@@ -434,10 +434,19 @@ test('setDefaultModel writes and replaces the backend default, rejects invalid o
     assert.deepEqual(fileReport.defaultModels.codex, { model: 'gpt-6-astra', source: 'config' });
     assert.match(formatDoctorSummary(fileReport), /agy: [^\n]* - model gemini-3\.8-flash-low \(config\.json\)/);
 
-    process.env[EDITOR_SETTINGS_ENV] = JSON.stringify({ 'agy.defaultModel': 'gemini-3.8-flash-low' });
+    // An empty editor setting leaves the file value and its config.json source intact.
+    process.env[EDITOR_SETTINGS_ENV] = JSON.stringify({ 'agy.defaultModel': '' });
+    const emptyEditorReport = await runDoctor({ quota: false });
+    assert.deepEqual(emptyEditorReport.defaultModels.agy, { model: 'gemini-3.8-flash-low', source: 'config' });
+    assert.match(formatDoctorSummary(emptyEditorReport), /agy: [^\n]* - model gemini-3\.8-flash-low \(config\.json\)/);
+
+    // A non-empty VS Code setting overriding a different file value reports source 'editor' (VS Code setting).
+    await setModelRule('gemini-3.8-flash-high', null, isolated);
+    process.env[EDITOR_SETTINGS_ENV] = JSON.stringify({ 'agy.defaultModel': 'gemini-3.8-flash-high' });
     const editorReport = await runDoctor({ quota: false });
-    assert.deepEqual(editorReport.defaultModels.agy, { model: 'gemini-3.8-flash-low', source: 'config' });
+    assert.deepEqual(editorReport.defaultModels.agy, { model: 'gemini-3.8-flash-high', source: 'editor' });
     assert.deepEqual(editorReport.configProvenance.overrides, ['agy.defaultModel']);
+    assert.match(formatDoctorSummary(editorReport), /agy: [^\n]* - model gemini-3\.8-flash-high \(VS Code setting\)/);
   } finally {
     adapterRegistry.agy = origAgy;
     adapterRegistry.codex = origCodex;

@@ -304,6 +304,7 @@ async function runExtension({
             listeners.hide();
             return;
           }
+          if (step.before) step.before();
           if (step.button) {
             const button = picker.buttons.find(entry => entry.tooltip === step.button);
             assert.ok(button, `no ${step.button} button`);
@@ -773,14 +774,15 @@ function fixtureModelReport(configFile, editorSettingsRaw, extraAgyModels = []) 
   const models = { allow: [], ask: [], deny: [], ...governance.models };
   const configuredDefault = id => {
     const fromEditor = editor[`${id}.defaultModel`];
-    if (typeof fromEditor === 'string' && fromEditor !== '') return fromEditor;
-    return parsed.backends?.[id]?.defaultModel;
+    if (typeof fromEditor === 'string' && fromEditor !== '') return { model: fromEditor, source: 'editor' };
+    const fromFile = parsed.backends?.[id]?.defaultModel;
+    return fromFile ? { model: fromFile, source: 'config' } : undefined;
   };
   const codexDefault = configuredDefault('codex');
   const agyDefault = configuredDefault('agy');
   const agyCatalog = [{ model: 'gemini-3.8-flash', output: 3.75, defaultRuns: 'gemini-3.8-flash-low' }, ...extraAgyModels];
   const agyMatched = agyDefault
-    ? agyCatalog.find(item => agyDefault === item.model || agyDefault.startsWith(`${item.model}-`))
+    ? agyCatalog.find(item => agyDefault.model === item.model || agyDefault.model.startsWith(`${item.model}-`))
     : agyCatalog[0];
   // `runs`: the name a default model runs as (agy's `<id>-<effort>`), which its rules see.
   const row = (backend, model, output, { runs, efforts = [], effortRequired = false, ...extra } = {}) => {
@@ -809,13 +811,13 @@ function fixtureModelReport(configFile, editorSettingsRaw, extraAgyModels = []) 
       codex: {
         installed: true,
         allowed: true,
-        defaultModel: { model: codexDefault ?? 'gpt-6-luna', source: codexDefault ? 'config' : 'catalog' },
+        defaultModel: codexDefault ?? { model: 'gpt-6-luna', source: 'catalog' },
       },
       claude: { installed: false, allowed: true },
       agy: {
         installed: true,
         allowed: true,
-        defaultModel: { model: agyDefault ?? 'gemini-3.8-flash-low', source: agyDefault ? 'config' : 'catalog' },
+        defaultModel: agyDefault ?? { model: 'gemini-3.8-flash-low', source: 'catalog' },
       },
     },
     selection: [
@@ -823,17 +825,17 @@ function fixtureModelReport(configFile, editorSettingsRaw, extraAgyModels = []) 
         'codex',
         'gpt-6-luna',
         0.5,
-        codexDefault ? (codexDefault === 'gpt-6-luna' ? { defaultSource: 'config' } : {}) : { defaultSource: 'catalog' },
+        codexDefault ? (codexDefault.model === 'gpt-6-luna' ? { defaultSource: codexDefault.source } : {}) : { defaultSource: 'catalog' },
       ),
-      row('codex', 'gpt-6-astra', 50, codexDefault === 'gpt-6-astra' ? { defaultSource: 'config' } : {}),
-      row('codex', 'gpt-7-nova', null, codexDefault === 'gpt-7-nova' ? { defaultSource: 'config' } : {}),
+      row('codex', 'gpt-6-astra', 50, codexDefault?.model === 'gpt-6-astra' ? { defaultSource: codexDefault.source } : {}),
+      row('codex', 'gpt-7-nova', null, codexDefault?.model === 'gpt-7-nova' ? { defaultSource: codexDefault.source } : {}),
       ...agyCatalog.map(item => {
         const isDefault = item === agyMatched;
-        const runs = isDefault ? (agyDefault ?? item.defaultRuns) : undefined;
+        const runs = isDefault ? (agyDefault?.model ?? item.defaultRuns) : undefined;
         return row('agy', item.model, item.output, {
           efforts: item.efforts ?? [],
           effortRequired: item.effortRequired ?? false,
-          ...(isDefault ? { defaultSource: agyDefault ? 'config' : 'catalog', ...(runs ? { runs } : {}) } : {}),
+          ...(isDefault ? { defaultSource: agyDefault ? agyDefault.source : 'catalog', ...(runs ? { runs } : {}) } : {}),
         });
       }),
     ],
@@ -1878,11 +1880,12 @@ test('Manage Model Approvals sets default models in config.json or VS Code setti
     '10 USD - default (high) - runs without asking',
   );
 
-  // 4. Denied models do not offer Set as Default, and denied effort variants are refused before writing.
+  // 4. Denied base models do not offer Set as Default; denying only the current effort variant still lets the user switch to an allowed effort.
+  const configFile = path.join(home, '.coagent8/config.json');
   fs.writeFileSync(
-    path.join(home, '.coagent8/config.json'),
+    configFile,
     JSON.stringify({
-      backends: { codex: { defaultModel: 'gpt-6-luna' }, agy: { defaultModel: 'gemini-3.8-flash-low' } },
+      backends: { codex: { defaultModel: 'gpt-6-luna' }, agy: { defaultModel: 'gemini-4-hydrogen-high' } },
       governance: { models: { allow: [], ask: [], deny: ['gpt-6-astra', 'gemini-4-hydrogen-high'] } },
     }),
   );
@@ -1898,26 +1901,129 @@ test('Manage Model Approvals sets default models in config.json or VS Code setti
     'a denied model is not offered Set as Default',
   );
 
-  const deniedEffort = await runExtension({
+  // Even when the current default variant gemini-4-hydrogen-high is denied (so the row shows denied),
+  // Set as Default stays offered for allowed efforts and the effort picker lists only allowed efforts.
+  const switchFromDeniedEffort = await runExtension({
     home,
     command,
     extraAgyModels,
-    steps: [{ label: /Antigravity CLI$/ }, { label: /gemini-4-hydrogen$/ }, { label: '$(star) Set as Default' }, { label: 'high' }],
+    steps: [{ label: /Antigravity CLI$/ }, { label: /gemini-4-hydrogen$/ }, { label: '$(star) Set as Default' }, { label: 'low' }],
   });
-  assert.equal(deniedEffort.errors.length, 1);
-  assert.match(deniedEffort.errors[0], /denied by the user and cannot be set as the default/);
-  assert.equal(deniedEffort.config.backends.agy.defaultModel, 'gemini-3.8-flash-low');
+  assert.deepEqual(switchFromDeniedEffort.errors, []);
+  assert.equal(
+    switchFromDeniedEffort.menus[2].items.some(item => item.label === '$(star) Set as Default'),
+    true,
+    'Set as Default is offered when the base model and at least one effort are allowed',
+  );
+  assert.deepEqual(
+    switchFromDeniedEffort.menus[3].items.map(item => item.label),
+    ['xhigh', 'medium', 'low'],
+    'effort picker omits the denied variant',
+  );
+  assert.equal(switchFromDeniedEffort.config.backends.agy.defaultModel, 'gemini-4-hydrogen-low');
+  assert.equal(
+    switchFromDeniedEffort.menus[4].items.find(item => item.label.endsWith('gemini-4-hydrogen')).description,
+    '10 USD - default (low) - runs without asking',
+  );
 
-  const deniedEffortEditor = await runExtension({
+  // When the base model (or every effort) is denied, Set as Default is omitted.
+  fs.writeFileSync(
+    configFile,
+    JSON.stringify({
+      backends: { agy: { defaultModel: 'gemini-3.8-flash-low' } },
+      governance: { models: { allow: [], ask: [], deny: ['gemini-4-hydrogen'] } },
+    }),
+  );
+  const deniedBaseEffortModel = await runExtension({
+    home,
+    command,
+    extraAgyModels,
+    steps: [{ label: /Antigravity CLI$/ }, { label: /gemini-4-hydrogen$/ }],
+  });
+  assert.equal(
+    deniedBaseEffortModel.menus[2].items.some(item => item.label === '$(star) Set as Default'),
+    false,
+    'when the base model is denied, Set as Default is omitted',
+  );
+
+  fs.writeFileSync(
+    configFile,
+    JSON.stringify({
+      backends: { agy: { defaultModel: 'gemini-3.8-flash-low' } },
+      governance: {
+        models: {
+          allow: [],
+          ask: [],
+          deny: ['gemini-4-hydrogen-high', 'gemini-4-hydrogen-xhigh', 'gemini-4-hydrogen-medium', 'gemini-4-hydrogen-low'],
+        },
+      },
+    }),
+  );
+  const allEffortsDenied = await runExtension({
+    home,
+    command,
+    extraAgyModels,
+    steps: [{ label: /Antigravity CLI$/ }, { label: /gemini-4-hydrogen$/ }],
+  });
+  assert.equal(
+    allEffortsDenied.menus[2].items.some(item => item.label === '$(star) Set as Default'),
+    false,
+    'when every effort variant is denied, Set as Default is omitted',
+  );
+
+  // If a variant becomes denied after the effort picker opened, both write paths still refuse it.
+  const denyLow = () =>
+    fs.writeFileSync(
+      configFile,
+      JSON.stringify({
+        backends: { agy: { defaultModel: 'gemini-3.8-flash-low' } },
+        governance: { models: { allow: [], ask: [], deny: ['gemini-4-hydrogen-low'] } },
+      }),
+    );
+  fs.writeFileSync(
+    configFile,
+    JSON.stringify({
+      backends: { agy: { defaultModel: 'gemini-3.8-flash-low' } },
+      governance: { models: { allow: [], ask: [], deny: [] } },
+    }),
+  );
+  const concurrentDeniedFile = await runExtension({
+    home,
+    command,
+    extraAgyModels,
+    steps: [
+      { label: /Antigravity CLI$/ },
+      { label: /gemini-4-hydrogen$/ },
+      { label: '$(star) Set as Default' },
+      { label: 'low', before: denyLow },
+    ],
+  });
+  assert.equal(concurrentDeniedFile.errors.length, 1);
+  assert.match(concurrentDeniedFile.errors[0], /denied by the user and cannot be set as the default/);
+  assert.equal(concurrentDeniedFile.config.backends.agy.defaultModel, 'gemini-3.8-flash-low');
+
+  fs.writeFileSync(
+    configFile,
+    JSON.stringify({
+      backends: { agy: { defaultModel: 'gemini-3.8-flash-low' } },
+      governance: { models: { allow: [], ask: [], deny: [] } },
+    }),
+  );
+  const concurrentDeniedEditor = await runExtension({
     home,
     command,
     extraAgyModels,
     editorSettings: { 'agy.defaultModel': 'gemini-3.8-flash-low' },
-    steps: [{ label: /Antigravity CLI$/ }, { label: /gemini-4-hydrogen$/ }, { label: '$(star) Set as Default' }, { label: 'high' }],
+    steps: [
+      { label: /Antigravity CLI$/ },
+      { label: /gemini-4-hydrogen$/ },
+      { label: '$(star) Set as Default' },
+      { label: 'low', before: denyLow },
+    ],
   });
-  assert.equal(deniedEffortEditor.errors.length, 1);
-  assert.match(deniedEffortEditor.errors[0], /denied by the user and cannot be set as the default/);
-  assert.deepEqual(deniedEffortEditor.settingUpdates, [], 'denied variant is refused before updating VS Code setting');
+  assert.equal(concurrentDeniedEditor.errors.length, 1);
+  assert.match(concurrentDeniedEditor.errors[0], /denied by the user and cannot be set as the default/);
+  assert.deepEqual(concurrentDeniedEditor.settingUpdates, [], 'denied variant is refused before updating VS Code setting');
 });
 test('Manage Model Approvals opens in a multi-root window, where setup asks for one workspace', async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-approvals-roots-'));

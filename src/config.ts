@@ -445,6 +445,7 @@ function collectSources(
   }
 
   for (const key of Object.keys(editorSettings) as EditorSettingKey[]) {
+    if (key.endsWith('.defaultModel') && editorSettings[key] === '') continue;
     if (key === 'defaultBackend') sources.defaultBackend = 'editor';
     else if (key === 'routing.strategy') sources['routing.strategy'] = 'editor';
     else if (key === 'routing.allowedBackends') sources['routing.allowedBackends'] = 'editor';

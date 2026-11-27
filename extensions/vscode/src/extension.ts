@@ -1714,6 +1714,14 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       if (!chosen?.row) return;
       const { row } = chosen,
         current = ruleOf(row);
+      const deniedList = readGovernance(configurationFile()).models.deny;
+      const isDeniedModel = (model: string) => deniedList.some(listed => namesModelOrVariant(listed, model));
+      const requiresEffort = row.effortRequired === true && row.efforts.length > 0;
+      const allowedEfforts = requiresEffort ? row.efforts.filter(effort => !isDeniedModel(effortVariant(row.model, effort))) : [];
+      // A denied current effort variant must not block switching to another allowed effort of the same model.
+      const canSetDefault = requiresEffort
+        ? !isDeniedModel(row.model) && allowedEfforts.length > 0
+        : !row.approval.denied && !isDeniedModel(row.model);
       const backendDefault = report?.backends[id]?.defaultModel?.model;
       const defaultEffort =
         row.defaultSource && row.effortRequired && backendDefault?.startsWith(`${row.model}-`)
@@ -1725,22 +1733,22 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
           ...item,
           description: item.rule === current ? `current - ${item.description}` : item.description,
         })),
-        ...(row.approval.denied
-          ? []
-          : [
+        ...(canSetDefault
+          ? [
               separator<ModelActionItem>('Default'),
               {
                 label: '$(star) Set as Default',
                 setDefault: true,
                 description: row.defaultSource
-                  ? row.effortRequired && row.efforts.length
+                  ? requiresEffort
                     ? `current${defaultEffort ? ` (${defaultEffort})` : ''} - choose effort for ${backendLabel(id)}`
                     : `current - default for ${backendLabel(id)}`
-                  : row.effortRequired && row.efforts.length
+                  : requiresEffort
                     ? `choose effort and use for ${backendLabel(id)}`
                     : `use for ${backendLabel(id)}`,
               },
-            ]),
+            ]
+          : []),
       ];
       for (;;) {
         const action = await choose<ModelActionItem>({
@@ -1762,21 +1770,16 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
           break;
         }
         let targetModel = row.model;
-        if (row.effortRequired && row.efforts.length) {
-          const deniedList = readGovernance(configurationFile()).models.deny;
+        if (requiresEffort) {
           const effortChoice = await choose({
             title: `${row.model} - Default Effort`,
             step: [4, 4],
             back: true,
             placeholder: `Choose the reasoning effort for ${row.model} when used as default`,
-            items: row.efforts.map(effort => {
-              const candidate = effortVariant(row.model, effort);
-              const isDenied = deniedList.some(listed => namesModelOrVariant(listed, candidate));
-              return {
-                label: effort,
-                description: isDenied ? 'denied - cannot be set as default' : effort === defaultEffort ? 'current' : undefined,
-              };
-            }),
+            items: allowedEfforts.map(effort => ({
+              label: effort,
+              description: effort === defaultEffort ? 'current' : undefined,
+            })),
           });
           if (effortChoice === 'back') continue;
           if (!effortChoice?.length) return;
