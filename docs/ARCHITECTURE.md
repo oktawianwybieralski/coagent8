@@ -179,9 +179,6 @@ models) to the file. Workspace/default editor settings are not passed. Recorded 
 only to the file. Other hosts/CLI read the file, not VS Code settings. Unknown
 file properties are ignored and dropped on write; malformed/unreadable/invalid
 existing config blocks execution with POLICY_DENIED. Discovery remains available.
-Configuration writers refuse paths outside `os.tmpdir()` when running under Node's
-test runner (`NODE_TEST_CONTEXT`, a `*.test.*` entry script, or with `node:test` loaded)
-(#248).
 
 Core fields are schemaVersion: 1, defaultBackend, routing.strategy
 (fixed or smart_quota), routing.allowedBackends (codex/claude/agy), per-backend
@@ -541,8 +538,10 @@ every CoAgent8 path variable (`coagent8_CONFIG`, `coagent8_DIR`, `coagent8_QUOTA
 per-process disposable directory under `os.tmpdir()` (created lazily on the first turn
 and removed best-effort on exit; stale directories older than a day are pruned only for
 dead PIDs) while keeping backend profile variables (`USERPROFILE`, `CLAUDE_CONFIG_DIR`,
-`CODEX_HOME`) intact (`src/execution/nested-turn.ts`, #248); nested CoAgent8 refuses
-execution before probes. Codex verifies isolation; agy's inherited-tool limitation was accepted by
+`CODEX_HOME`) intact (`src/execution/nested-turn.ts`, #248), so commands or tests run
+inside a turn cannot mutate the user's files (outside a turn, tests run through
+`tests/run.cjs`); nested CoAgent8 refuses execution before probes. Codex verifies
+isolation; agy's inherited-tool limitation was accepted by
 the owner on 2026-10-08 and is named by doctor. It is not permission to claim
 isolation or remove the recursion guard. User hooks/plugins in Claude need further
 native acceptance. Security requirements belong to
