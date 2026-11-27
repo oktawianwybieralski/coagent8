@@ -8,9 +8,10 @@
  *    end its turn over that protocol; the session closes stdin on the terminal event and
  *    the CLI exits by itself, cleaning up its own children.
  * 2. **Forced stop of the owned root**: when the CLI has not exited within the grace
- *    period, {@link terminateProcessTree} stops it. Windows uses `proc.kill()`, which
- *    calls `TerminateProcess` on the handle Node holds since spawn. POSIX signals the
- *    detached process group with `SIGTERM`, then `SIGKILL`.
+ *    period, {@link terminateProcessTree} stops it. The same stop ends a CLI that stays
+ *    alive after its turn's terminal event ({@link StdinChannel.endAfter}). Windows uses
+ *    `proc.kill()`, which calls `TerminateProcess` on the handle Node holds since spawn.
+ *    POSIX signals the detached process group with `SIGTERM`, then `SIGKILL`.
  * 3. **No tree guessing**: no process is ever selected by PID or parent PID. There is no
  *    snapshot, polling or name list. On Windows, a run started through the job helper
  *    owns its whole tree: closing the stop pipe ends the helper's job and the helper reports
@@ -243,6 +244,13 @@ export interface StdinChannel {
   send(record: unknown): void;
   /** Closes stdin. Protocol CLIs exit after their terminal event once stdin is closed. */
   close(): void;
+  /**
+   * Closes stdin after the turn's terminal event and stops the owned process tree (layer 2)
+   * when the CLI has not exited within `graceMs`, for a CLI that stays alive for work the
+   * turn no longer waits for, such as Claude Code's background tasks. The deadline no longer
+   * applies; the result then carries `stoppedAfterTurn`.
+   */
+  endAfter(graceMs: number): void;
 }
 
 /**
@@ -299,6 +307,8 @@ export interface RunCommandResult {
    * process of the run has ended. A writer must not be released on `false`.
    */
   treeEnded?: boolean;
+  /** Set when the runner stopped the CLI after its turn had ended ({@link StdinChannel.endAfter}). */
+  stoppedAfterTurn?: boolean;
 }
 
 function failure(code: ExecutionError['code'], message: string): RunCommandResult {
@@ -386,7 +396,8 @@ export function runCommand(command: string, args: string[], options: RunCommandO
     let stopped: RunCommandResult | undefined;
     let forced = false,
       started = false,
-      stdinClosed = false;
+      stdinClosed = false,
+      stoppedAfterTurn = false;
     let stdout = '',
       stderr = '',
       truncated = false;
@@ -395,7 +406,7 @@ export function runCommand(command: string, args: string[], options: RunCommandO
     const outLines = options.onStdoutLine ? createLineDecoder(options.onStdoutLine, options.maxLineBytes) : null;
     const errLines = options.onStderrLine ? createLineDecoder(options.onStderrLine, options.maxLineBytes) : null;
     let timer: NodeJS.Timeout;
-    let graceTimer: NodeJS.Timeout | undefined, drainTimer: NodeJS.Timeout | undefined;
+    let graceTimer: NodeJS.Timeout | undefined, drainTimer: NodeJS.Timeout | undefined, endTimer: NodeJS.Timeout | undefined;
     const channel: StdinChannel = {
       send(record) {
         if (stdinClosed || !child.stdin?.writable) return;
@@ -405,6 +416,17 @@ export function runCommand(command: string, args: string[], options: RunCommandO
         if (stdinClosed) return;
         stdinClosed = true;
         child.stdin?.end();
+      },
+      endAfter(graceMs) {
+        channel.close();
+        if (endTimer || stopped || forced) return;
+        // The turn is over: its deadline must not turn a delivered answer into a timeout.
+        clearTimeout(timer);
+        endTimer = setTimeout(() => {
+          if (stopped || hasExited(child)) return;
+          stoppedAfterTurn = true;
+          forceStop();
+        }, graceMs);
       },
     };
     const forceStop = () => {
@@ -472,6 +494,7 @@ export function runCommand(command: string, args: string[], options: RunCommandO
     // POSIX group and stop waiting for the pipes after a bounded drain period.
     child.once('exit', () => {
       if (graceTimer) clearTimeout(graceTimer);
+      if (endTimer) clearTimeout(endTimer);
       void terminateProcessTree(child, signalGrace);
       drainTimer = setTimeout(() => {
         child.stdout?.destroy();
@@ -482,6 +505,7 @@ export function runCommand(command: string, args: string[], options: RunCommandO
       clearTimeout(timer);
       if (graceTimer) clearTimeout(graceTimer);
       if (drainTimer) clearTimeout(drainTimer);
+      if (endTimer) clearTimeout(endTimer);
       options.abortSignal?.removeEventListener('abort', cancel);
       try {
         if (!stopped) {
@@ -509,6 +533,7 @@ export function runCommand(command: string, args: string[], options: RunCommandO
         signal,
         isTruncated: truncated,
         ...(status ? { treeEnded: jobTreeEnded(statusText) } : {}),
+        ...(stoppedAfterTurn && !stopped ? { stoppedAfterTurn: true } : {}),
       });
     });
     timer = setTimeout(() => stop('TIMEOUT', `CLI deadline exceeded (${timeout} ms).`), timeout);

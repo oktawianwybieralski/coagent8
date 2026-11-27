@@ -227,3 +227,74 @@ test('AX-001c: partial Claude usage keeps the reported counts and sums only comp
   );
   assert.equal(writes(undefined).cacheWriteLongInputTokens, undefined, 'no split reported');
 });
+
+// Background task events of Claude Code 2.1.332 (#231, #233).
+const TASK = { task_id: 'b7x2k9q4', run_id: 'run-1', tool_use_id: 'toolu_background_1', description: 'sleep 25' };
+const backgroundStarted = [
+  { type: 'system', subtype: 'background_tasks_changed', tasks: [{ ...TASK, task_type: 'local_bash' }] },
+  { type: 'system', subtype: 'task_started', ...TASK, is_backgrounded: true, task_type: 'local_bash' },
+  { type: 'tool_progress', tool_use_id: TASK.tool_use_id, tool_name: 'Bash', elapsed_time_seconds: 1 },
+];
+function notificationTurn(runId, text) {
+  return [
+    { type: 'system', subtype: 'task_updated', task_id: TASK.task_id, run_id: runId, patch: { status: 'completed', end_time: 1 } },
+    {
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: TASK.task_id,
+      run_id: runId,
+      status: 'completed',
+      summary: 'sleep 25 completed',
+    },
+    { type: 'system', subtype: 'background_tasks_changed', tasks: [] },
+    { type: 'system', subtype: 'init', session_id: SESSION, tools: TOOLS, mcp_servers: [], permissionMode: 'dontAsk' },
+    { type: 'assistant', message: { id: 'msg_notification', content: [{ type: 'text', text }] } },
+    { type: 'result', subtype: 'success', session_id: SESSION, result: text, origin: { kind: 'task-notification', runId } },
+  ];
+}
+
+test('Claude collector keeps the answer when a background task notification turn follows it', () => {
+  const events = recording('success-partial');
+  const answer = events.pop();
+  const seen = [];
+  const collector = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS, onEvent: e => seen.push(e) });
+  for (const event of [...events, ...backgroundStarted, answer]) collector.line(JSON.stringify(event));
+  assert.deepEqual(collector.runningTasks(), ['sleep 25'], 'the running task is tracked by description');
+  for (const event of notificationTurn('run-1', 'The task finished.')) collector.line(JSON.stringify(event));
+  const snapshot = collector.snapshot();
+  assert.equal(snapshot.error, undefined, 'a result with origin is no second result');
+  assert.equal(snapshot.output, 'OK');
+  assert.deepEqual(collector.runningTasks(), []);
+  assert.ok(seen.some(e => e.type === 'warning' && e.message === 'A background task finished after the answer: sleep 25 completed'));
+  assert.ok(!seen.some(e => e.type === 'assistant_message' && e.text === 'The task finished.'), 'the notification turn is not the answer');
+  assert.ok(!seen.some(e => e.type === 'warning' && /Ignoring unknown/.test(e.message)), 'task events and tool_progress are known');
+  assert.ok(seen.some(e => e.type === 'status' && e.message === 'Background task started: sleep 25'));
+});
+
+test('Claude collector skips a notification result of an earlier task before the answer on resume (#233)', () => {
+  const events = recording('success-partial');
+  const { snapshot, seen } = collect([...notificationTurn('run-0', 'Earlier task done.').slice(3), ...events]);
+  assert.equal(snapshot.error, undefined);
+  assert.equal(snapshot.output, 'OK');
+  assert.equal(snapshot.terminal, true);
+  assert.equal(seen.filter(e => e.type === 'warning').length, 0);
+});
+
+test('Claude collector still rejects a second result without origin', () => {
+  const events = recording('success-partial');
+  assert.throws(
+    () => collect([...events, ...notificationTurn('run-1', 'x').slice(0, 5), { ...events.at(-1) }]),
+    err => err.code === 'PROTOCOL_ERROR' && /second result/.test(err.message),
+  );
+});
+
+test('Claude collector offers the latest assistant text as marked partial progress (#231)', () => {
+  const { PARTIAL_PROGRESS_NOTICE } = require('../../../src/backends/claude/collector.ts');
+  const events = recording('success-partial').filter(e => e.type !== 'result');
+  const collector = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS, maxTotalMessageBytes: 200 });
+  assert.equal(collector.partialProgress(), '', 'nothing before any assistant text');
+  for (const event of events) collector.line(JSON.stringify(event));
+  assert.equal(collector.partialProgress(), `${PARTIAL_PROGRESS_NOTICE}\n\nOK`);
+  collector.line(JSON.stringify({ type: 'assistant', message: { id: 'msg_long', content: [{ type: 'text', text: 'y'.repeat(150) }] } }));
+  assert.ok(Buffer.byteLength(collector.partialProgress()) <= 200, 'bounded by the public budget');
+});

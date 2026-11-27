@@ -7,13 +7,42 @@ import type { TerminalExecutionResult } from '../types.js';
 import { classifyClaudeFailure } from './errors.js';
 import { isValidModelIdentifier } from '../../models/identifier.js';
 
-/** Event types emitted by `claude -p --output-format stream-json --verbose` (observed with 2.1.289). */
-const KNOWN_TYPES = new Set(['system', 'assistant', 'user', 'stream_event', 'result', 'rate_limit_event', 'control_response']);
+/**
+ * Event types emitted by `claude -p --output-format stream-json --verbose` (observed with 2.1.289).
+ * `tool_progress` (2.1.332) reports a running tool's elapsed time; tool events already show the activity.
+ */
+const KNOWN_TYPES = new Set([
+  'system',
+  'assistant',
+  'user',
+  'stream_event',
+  'result',
+  'rate_limit_event',
+  'control_response',
+  'tool_progress',
+]);
 /**
  * `system` subtypes the collector understands; others produce one warning each.
  * `permission_denied` (2.1.300) repeats a denial that the denied tool's result already reports.
+ * The task subtypes (2.1.332) describe background tasks, such as a Bash command run in the background.
  */
-const KNOWN_SYSTEM_SUBTYPES = new Set(['init', 'status', 'thinking_tokens', 'api_retry', 'permission_denied']);
+const KNOWN_SYSTEM_SUBTYPES = new Set([
+  'init',
+  'status',
+  'thinking_tokens',
+  'api_retry',
+  'permission_denied',
+  'task_started',
+  'task_updated',
+  'task_notification',
+  'background_tasks_changed',
+]);
+/** Upper bound of a task description or summary quoted in a status or warning. */
+const MAX_TASK_TEXT = 160;
+/** Upper bound of the background tasks tracked at once, so a runaway list cannot grow memory. */
+const MAX_TASKS = 64;
+/** Marks the latest assistant text returned when a turn ended without its answer (#231). */
+export const PARTIAL_PROGRESS_NOTICE = '[Partial progress: the turn ended before its final answer; this is the latest assistant message.]';
 
 export interface ClaudeStreamCollectorOptions {
   /** Session ID passed as `--session-id` or `--resume`; `system/init` must report the same ID. */
@@ -31,6 +60,12 @@ function record(value: unknown): Record<string, unknown> | null {
 function fail(code: 'PROTOCOL_ERROR' | 'SANDBOX_UNAVAILABLE', message: string): never {
   throw new ToolError(code, message);
 }
+function isTaskSubtype(subtype: unknown): boolean {
+  return typeof subtype === 'string' && (subtype.startsWith('task_') || subtype === 'background_tasks_changed');
+}
+function taskText(value: unknown): string {
+  return typeof value === 'string' ? redactDiagnostic(value.replace(/\s+/g, ' ').trim(), MAX_TASK_TEXT) : '';
+}
 function count(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
@@ -41,11 +76,18 @@ function count(value: unknown): number {
  * @returns A line collector whose snapshot is used directly by the production adapter.
  * @throws `SANDBOX_UNAVAILABLE` when `system/init` reports a tool, MCP server or
  * permission mode other than requested; `PROTOCOL_ERROR` on malformed
- * known events, a mismatched session ID or a second terminal result.
+ * known events, a mismatched session ID or a second answer result.
  * @remarks
  * Thinking blocks, tool inputs and tool results are discarded. Unknown event
  * types and `system` subtypes are tolerated with one warning per type. Answer
  * text is not passed through keyword redaction; only diagnostics are redacted.
+ *
+ * The answer is the first `result` without `origin`. Claude Code 2.1.332 keeps the
+ * process alive while background tasks run and then runs an automatic turn for each
+ * task notification, which ends in a `result` with `origin` (#231, #233). Such a
+ * result is never the answer: before the answer it belongs to an earlier turn's task
+ * and is skipped, after it it becomes a warning. After the answer, only task events
+ * and results are read.
  */
 export function createClaudeStreamCollector(options: ClaudeStreamCollectorOptions) {
   const reducer = new StreamReducer({
@@ -60,6 +102,12 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   let model: string | undefined;
   let currentMessageId: string | null = null;
   let terminal = false;
+  // Message ID of the latest public assistant text: the partial progress of an unfinished turn.
+  let latestMessageId: string | null = null;
+  // Background tasks still running: task ID to description.
+  const tasks = new Map<string, string>();
+  // Summaries of finished tasks by run ID, which a notification turn's `origin.runId` names.
+  const summaries = new Map<string, string>();
   let finalText: string | null = null;
   let streamedBytes = 0;
   let category: string | null = null;
@@ -79,8 +127,11 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     if (sessionId === null) fail('SANDBOX_UNAVAILABLE', 'Claude Code emitted events before its initialization.');
   }
 
+  /**
+   * Validates `system/init`. A notification turn of a background task (2.1.332) starts
+   * with another init of the same session, which must pass the same checks.
+   */
   function acceptInit(event: Record<string, unknown>) {
-    if (sessionId !== null) fail('PROTOCOL_ERROR', 'Claude Code emitted a second init event.');
     if (typeof event.session_id !== 'string' || event.session_id.toLowerCase() !== options.expectedSessionId.toLowerCase()) {
       fail('PROTOCOL_ERROR', 'Claude Code reported an unexpected session ID.');
     }
@@ -92,6 +143,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     if (!Array.isArray(servers) || servers.length > 0)
       fail('SANDBOX_UNAVAILABLE', 'Claude Code connected MCP servers despite the empty strict MCP configuration.');
     if (event.permissionMode !== 'dontAsk') fail('SANDBOX_UNAVAILABLE', 'Claude Code did not start in dontAsk permission mode.');
+    if (sessionId !== null) return;
     sessionId = options.expectedSessionId.toLowerCase();
     // The CLI resolves aliases such as `opus`; report the model that actually answers.
     if (isValidModelIdentifier(event.model)) model = event.model;
@@ -110,8 +162,40 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
           512,
         ),
       });
-    } else if (!KNOWN_SYSTEM_SUBTYPES.has(subtype))
+    } else if (isTaskSubtype(subtype)) acceptTask(subtype, event);
+    else if (!KNOWN_SYSTEM_SUBTYPES.has(subtype))
       warnOnce(`system/${subtype}`, `Ignoring unknown Claude Code system event '${subtype.slice(0, 64)}'.`);
+  }
+  /** Tracks background tasks, so the turn can name the ones it stops, and shows their progress. */
+  function acceptTask(subtype: string, event: Record<string, unknown>) {
+    if (!KNOWN_SYSTEM_SUBTYPES.has(subtype)) {
+      warnOnce(`system/${subtype}`, `Ignoring unknown Claude Code system event '${subtype.slice(0, 64)}'.`);
+      return;
+    }
+    const id = typeof event.task_id === 'string' ? event.task_id.slice(0, 128) : null;
+    if (subtype === 'background_tasks_changed') {
+      if (!Array.isArray(event.tasks)) return;
+      // The list is the CLI's full set of running tasks, so it replaces the tracked one.
+      tasks.clear();
+      for (const entry of event.tasks.slice(0, MAX_TASKS)) {
+        const task = record(entry);
+        if (typeof task?.task_id === 'string') tasks.set(task.task_id.slice(0, 128), taskText(task.description));
+      }
+    } else if (subtype === 'task_started' && id) {
+      if (!tasks.has(id) && tasks.size >= MAX_TASKS) return;
+      const description = taskText(event.description);
+      tasks.set(id, description);
+      emit({ type: 'status', message: `Background task started: ${description || id}` });
+    } else if (subtype === 'task_updated' && id) {
+      const status = record(event.patch)?.status;
+      if (typeof status === 'string' && status !== 'running' && status !== 'pending') tasks.delete(id);
+    } else if (subtype === 'task_notification' && id) {
+      const description = tasks.get(id);
+      tasks.delete(id);
+      const summary = taskText(event.summary) || description || id;
+      if (typeof event.run_id === 'string' && summaries.size < MAX_TASKS) summaries.set(event.run_id, summary);
+      emit({ type: 'status', message: `Background task ${taskText(event.status) || 'ended'}: ${summary}` });
+    }
   }
   function acceptAssistant(event: Record<string, unknown>) {
     ensureInitialized();
@@ -130,6 +214,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
         if (!reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages)
           throw new BufferLimitError('Too many Claude Code public messages.');
         reducer.upsertMessage(id, (reducer.getMessageMap().get(id) ?? '') + block.text);
+        latestMessageId = id;
         emit({ type: 'assistant_message', messageId: id, text: reducer.getMessageMap().get(id) ?? '' });
       } else if (block.type === 'tool_use') {
         if (!validEventIdentifier(block.id) || !validEventIdentifier(block.name)) fail('PROTOCOL_ERROR', 'Invalid Claude Code tool call.');
@@ -167,7 +252,20 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       if (streamedBytes <= reducer.maxTotalBytes) emit({ type: 'assistant_delta', messageId: currentMessageId, text: delta.text });
     }
   }
+  /**
+   * Handles the `result` of a notification turn, which Claude Code runs by itself when a
+   * background task ends (`origin.kind` `task-notification`, 2.1.332). It never fails the turn.
+   */
+  function acceptOriginResult(event: Record<string, unknown>, origin: Record<string, unknown>) {
+    // Before the answer it belongs to a task of an earlier turn (#233): the answer is still to come.
+    if (!terminal) return;
+    const runId = typeof origin.runId === 'string' ? origin.runId : null;
+    const summary = (runId && summaries.get(runId)) || taskText(event.result) || 'unnamed task';
+    emit({ type: 'warning', message: redactDiagnostic(`A background task finished after the answer: ${summary}`, 512) });
+  }
   function acceptResult(event: Record<string, unknown>) {
+    const origin = record(event.origin);
+    if (origin) return acceptOriginResult(event, origin);
     if (terminal) fail('PROTOCOL_ERROR', 'Claude Code emitted a second result event.');
     if (typeof event.session_id === 'string' && event.session_id.toLowerCase() !== options.expectedSessionId.toLowerCase()) {
       fail('PROTOCOL_ERROR', 'Claude Code result reported an unexpected session ID.');
@@ -233,7 +331,9 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     }
     const event = record(parsed);
     if (!event || typeof event.type !== 'string') fail('PROTOCOL_ERROR', 'Invalid Claude Code event.');
-    if (terminal && event.type !== 'result') return;
+    // After the answer only task events and results matter: a notification turn's own
+    // init, messages and tool activity must not replace the answer or reach the caller.
+    if (terminal && event.type !== 'result' && !(event.type === 'system' && isTaskSubtype(event.subtype))) return;
     if (event.type === 'system') acceptSystem(event);
     else if (event.type === 'assistant') acceptAssistant(event);
     else if (event.type === 'user') acceptUser(event);
@@ -277,5 +377,21 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       hasAssistantMessage: reducer.getMessageMap().size > 0,
     };
   }
-  return { line, snapshot, isTerminal: () => terminal };
+  /**
+   * The latest public assistant text, marked as partial progress, for a turn that ended
+   * without its answer (#231); bounded by the public byte budget. Empty when there is none.
+   */
+  function partialProgress(): string {
+    const text = latestMessageId === null ? '' : (reducer.getMessageMap().get(latestMessageId) ?? '');
+    if (!text.trim()) return '';
+    return truncateToByteLength(`${PARTIAL_PROGRESS_NOTICE}\n\n${text}`, reducer.maxTotalBytes);
+  }
+  return {
+    line,
+    snapshot,
+    partialProgress,
+    isTerminal: () => terminal,
+    /** Descriptions (or IDs) of the background tasks still running. */
+    runningTasks: () => [...tasks].map(([id, description]) => description || id),
+  };
 }

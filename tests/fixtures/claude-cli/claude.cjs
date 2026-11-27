@@ -80,6 +80,8 @@ const recordings = {
   interruptible: ['success-partial', 0],
   'ignore-interrupt': ['success-partial', 0],
   'max-tokens': ['success-partial', 0],
+  'background-task': ['success-partial', 0],
+  'resume-notification': ['success-partial', 0],
 };
 const [file, exitCode] = recordings[scenario] || [];
 if (!file) {
@@ -105,6 +107,62 @@ function capture() {
     JSON.stringify({ argv, stdin: user ? user.message.content : '', records, nested: env.COAGENT8_NESTED_TURN ?? null }),
   );
 }
+// Background task events (shapes of Claude Code 2.1.332, recorded 2026-11-27): a Bash command
+// run in the background, its notification, and the automatic turn the CLI runs for it.
+const TASK = { task_id: 'b7x2k9q4', run_id: 'run-1', tool_use_id: 'toolu_background_1', description: 'sleep 25' };
+const taskStarted = () => [
+  { type: 'system', subtype: 'background_tasks_changed', session_id: sessionId, tasks: [{ ...TASK, task_type: 'local_bash' }] },
+  { type: 'system', subtype: 'task_started', session_id: sessionId, ...TASK, is_backgrounded: true, task_type: 'local_bash' },
+  { type: 'tool_progress', tool_use_id: TASK.tool_use_id, tool_name: 'Bash', elapsed_time_seconds: 1, session_id: sessionId },
+];
+function notificationTurn(task, text, index) {
+  return [
+    {
+      type: 'system',
+      subtype: 'task_updated',
+      session_id: sessionId,
+      task_id: task.task_id,
+      run_id: task.run_id,
+      patch: { status: 'completed', end_time: 1 },
+    },
+    {
+      type: 'system',
+      subtype: 'task_notification',
+      session_id: sessionId,
+      task_id: task.task_id,
+      run_id: task.run_id,
+      tool_use_id: task.tool_use_id,
+      status: 'completed',
+      output_file: '<redacted>',
+      summary: `Background command "${task.description}" completed (exit code 0)`,
+    },
+    { type: 'system', subtype: 'background_tasks_changed', session_id: sessionId, tasks: [] },
+    {
+      type: 'system',
+      subtype: 'init',
+      session_id: sessionId,
+      tools: (valueOf('--tools') || '').split(','),
+      mcp_servers: [],
+      model: 'claude-haiku-4-5-20251001',
+      permissionMode: 'dontAsk',
+    },
+    {
+      type: 'assistant',
+      session_id: sessionId,
+      message: { id: `msg_notification_${index}`, role: 'assistant', content: [{ type: 'text', text }] },
+    },
+    {
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      session_id: sessionId,
+      result: text,
+      origin: { kind: 'task-notification', producer: 'session-task', runId: task.run_id },
+      result_index: index,
+      process_turn_index: index,
+    },
+  ];
+}
 function answer() {
   const lines = fs
     .readFileSync(path.join(__dirname, 'recordings', `${file}.jsonl`), 'utf8')
@@ -121,6 +179,12 @@ function answer() {
     // `max-tokens`: the answer stopped at the output length limit (ENVELOPE-001).
     if (scenario === 'max-tokens' && event.type === 'result') event.stop_reason = 'max_tokens';
     if ((scenario === 'no-result' || scenario === 'interruptible' || scenario === 'ignore-interrupt') && event.type === 'result') continue;
+    // `background-task`: the answer arrives while a background task runs.
+    if (scenario === 'background-task' && event.type === 'result') out.push(...taskStarted());
+    // `resume-notification` (#233): a task of the timed-out earlier turn ends first, and its
+    // notification turn runs before the resumed turn's own init and answer.
+    if (scenario === 'resume-notification' && event.subtype === 'init')
+      out.push(...notificationTurn({ ...TASK, run_id: 'run-0' }, 'The earlier background command finished.', 0).slice(3));
     if (scenario === 'unknown-events' && event.type === 'result') {
       out.push(
         { type: 'future_event_type', payload: 1 },
@@ -131,6 +195,16 @@ function answer() {
     out.push(event);
   }
   for (const event of out) send(event);
+  if (scenario === 'background-task') {
+    // Like 2.1.332 the process stays alive until the task ends, even after stdin is closed;
+    // CLAUDE_FIXTURE_TASK_MS sets how long the task runs.
+    setTimeout(
+      () => {
+        for (const event of notificationTurn(TASK, 'The background command sleep 25 finished.', 1)) send(event);
+      },
+      Number(env.CLAUDE_FIXTURE_TASK_MS || 500),
+    );
+  }
   // A CLI that dies without a terminal result: exit without waiting for stdin.
   if (scenario === 'no-result') process.exit(exitCode);
   if (scenario === 'interruptible' || scenario === 'ignore-interrupt') {

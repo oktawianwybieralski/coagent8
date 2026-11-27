@@ -276,6 +276,8 @@ test('Claude cancellation and deadlines interrupt the turn over stream-json befo
       assert.equal(result.status, expected, mode);
       assert.equal(result.error.code, mode === 'abort' ? 'ABORTED' : 'TIMEOUT');
       assert.equal(result.exitCode, 1, `${mode}: Claude exited by itself after the interrupted result`);
+      // #231: the agent's latest progress survives the stop, marked as partial.
+      assert.match(result.output, /^\[Partial progress: .*\]\n\nOK$/, mode);
       assert.ok(Date.now() - startedAt < 2900, `${mode}: no wait for the forced-stop grace period`);
       const { records } = captured();
       assert.deepEqual(
@@ -677,4 +679,46 @@ test('ENVELOPE-001: Claude forwards a stop at the output length limit as lengthL
     const limited = await executeClaude('Reply with OK', { cwd: dir, model: MODEL });
     assert.equal(limited.status, 'completed');
     assert.equal(limited.lengthLimited, true);
+  }));
+
+test('#231 #233: Claude returns the answer of a turn with a background task, whose notification turn is no second result', () =>
+  withFixture(async ({ dir }) => {
+    const { activeProcesses } = require('../../../src/execution/process.ts');
+    const { BACKGROUND_TASK_GRACE_MS } = require('../../../src/backends/claude/adapter.ts');
+    // (a) The task ends within the grace: its notification turn becomes a warning naming it.
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'background-task';
+    process.env.CLAUDE_FIXTURE_TASK_MS = '300';
+    let events = [];
+    const finished = await executeClaude('x', { cwd: dir, model: MODEL, onEvent: e => events.push(e) });
+    assert.equal(finished.status, 'completed', finished.error?.message);
+    assert.equal(finished.output, 'OK');
+    assert.equal(finished.continuationAvailable, true);
+    const warnings = events.filter(e => e.type === 'warning').map(e => e.message);
+    assert.deepEqual(warnings, ['A background task finished after the answer: Background command "sleep 25" completed (exit code 0)']);
+    assert.ok(!events.some(e => e.type === 'assistant_message' && /finished/.test(e.text)), 'the notification turn is not the answer');
+    // (c) The task outlives the grace: the process tree is stopped and the task is named.
+    process.env.CLAUDE_FIXTURE_TASK_MS = '60000';
+    events = [];
+    const startedAt = Date.now();
+    const stopped = await executeClaude('x', { cwd: dir, model: MODEL, onEvent: e => events.push(e) });
+    const elapsed = Date.now() - startedAt;
+    assert.equal(stopped.status, 'completed', stopped.error?.message);
+    assert.equal(stopped.output, 'OK');
+    assert.equal(stopped.continuationAvailable, true);
+    assert.ok(elapsed >= BACKGROUND_TASK_GRACE_MS && elapsed < 30000, `stopped after the grace (${elapsed} ms)`);
+    assert.deepEqual(
+      events.filter(e => e.type === 'warning').map(e => e.message),
+      ['Background tasks were stopped when the turn ended: sleep 25.'],
+    );
+    assert.equal(activeProcesses.size, 0, 'the stopped process is released');
+    // (b) A resumed turn first receives the notification turn of the earlier turn's task.
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'resume-notification';
+    events = [];
+    const session = '859bbd7d-81ae-440c-b76a-a80e596d0fa5';
+    const resumed = await executeClaude('x', { cwd: dir, model: MODEL, nativeSessionId: session, onEvent: e => events.push(e) });
+    assert.equal(resumed.status, 'completed', resumed.error?.message);
+    assert.equal(resumed.output, 'OK');
+    assert.equal(resumed.nativeSessionId, session);
+    assert.equal(resumed.continuationAvailable, true);
+    assert.equal(events.filter(e => e.type === 'warning').length, 0);
   }));

@@ -34,6 +34,12 @@ export function claudeTurnSettings(): string {
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const claudeCommand = () => configuredBackendCommand('claude');
+/**
+ * Time Claude Code has to exit after the answer while background tasks run. 2.1.332 keeps
+ * the process alive until they end and then runs a notification turn the caller never
+ * waits for (#231), so the turn ends with its answer and the process tree is stopped.
+ */
+export const BACKGROUND_TASK_GRACE_MS = 3000;
 /** User settings, which can choose the default model; a change invalidates cached probes and observed models. */
 const claudeSettingsPath = () => path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json');
 
@@ -432,6 +438,9 @@ export async function listModels(probe?: AdapterProbeResult, context?: BackendRe
  * pins a fresh `--session-id`; a continuation passes `--resume`. The prompt is one
  * stream-json user message on stdin, which stays open so cancellation and deadlines
  * can interrupt the turn (`control_request` `interrupt`) before the process is stopped.
+ * The answer ends the turn: a process kept alive by background tasks is stopped after
+ * {@link BACKGROUND_TASK_GRACE_MS}, and the tasks it ran are named in a warning. A turn
+ * that times out or is cancelled returns its latest assistant text marked as partial (#231).
  */
 export async function executeClaude(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
   const rejected = (code: ExecutionError['code'], message: string, model?: string): TerminalExecutionResult => ({
@@ -502,7 +511,10 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
     try {
       collector.line(line);
     } finally {
-      if (collector.isTerminal()) channel?.close();
+      if (collector.isTerminal()) {
+        if (collector.runningTasks().length) channel?.endAfter(BACKGROUND_TASK_GRACE_MS);
+        else channel?.close();
+      }
     }
   };
   const result = await runCommand(claudeCommand(), args, {
@@ -517,6 +529,18 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
     onStdoutLine,
   });
   const snapshot = collector.snapshot();
+  if (result.stoppedAfterTurn) {
+    const running = collector.runningTasks();
+    options.onEvent?.({
+      type: 'warning',
+      message: redactDiagnostic(
+        running.length
+          ? `Background tasks were stopped when the turn ended: ${running.join('; ')}.`
+          : 'Claude Code was stopped after the answer while it finished background work.',
+        512,
+      ),
+    });
+  }
   let error = result.error || snapshot.error;
   if (!error && !snapshot.terminal) {
     error =
@@ -531,7 +555,8 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
   if (!error && !snapshot.initialized) {
     error = { code: 'SANDBOX_UNAVAILABLE', message: 'Claude Code completed without its initialization.', retryable: false };
   }
-  if (!error && result.status !== 'completed')
+  // A process stopped after the answer exits by a signal or with a failure code; the turn succeeded.
+  if (!error && result.status !== 'completed' && !result.stoppedAfterTurn)
     error = {
       code: 'PROCESS_ERROR',
       message: `Claude Code exited with code ${result.exitCode} after a successful result.`,
@@ -551,10 +576,11 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
   const continuationAvailable =
     !!nativeSessionId &&
     (status === 'completed' || (Boolean(snapshot.hasAssistantMessage) && !nonResumableCodes.includes(error?.code || '')));
+  const stopped = status === 'cancelled' || status === 'timed_out';
   return {
     status,
     isError: status !== 'completed',
-    output: snapshot.output,
+    output: snapshot.output || (stopped ? collector.partialProgress() : ''),
     model: snapshot.model ?? model,
     threadId: nativeSessionId,
     nativeSessionId,
