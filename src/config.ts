@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'node:os';
 import path from 'path';
 import { PROVIDERS, ToolError, type ProviderId } from './contracts/index.js';
 import { getDataDir } from './paths.js';
@@ -145,7 +146,59 @@ const DEFAULT_CONFIG: CoAgent8Config = {
   governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: [] } },
 };
 
+function canonicalExistingPath(target: string): string | null {
+  let current = path.resolve(target);
+  const missing: string[] = [];
+  while (true) {
+    try {
+      const real = fs.realpathSync.native(current);
+      return path.join(real, ...missing);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      const parent = path.dirname(current);
+      if ((code !== 'ENOENT' && code !== 'ENOTDIR') || parent === current) {
+        return null;
+      }
+      let isSymlink = false;
+      try {
+        isSymlink = fs.lstatSync(current).isSymbolicLink();
+      } catch {
+        isSymlink = false;
+      }
+      // Reject dangling symlinks: where a write through them would land is unknown.
+      if (isSymlink) {
+        return null;
+      }
+      missing.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+function isInsideTempDir(file: string): boolean {
+  const root = canonicalExistingPath(os.tmpdir());
+  const candidate = canonicalExistingPath(file);
+  if (!root || !candidate) return false;
+  const normalize = (value: string) => (process.platform === 'win32' ? value.toLowerCase() : value);
+  const relative = path.relative(normalize(root), normalize(candidate));
+  return !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+/**
+ * Refuses configuration writes outside `os.tmpdir()` when running under Node's test runner
+ * (`NODE_TEST_CONTEXT`), so an isolated or hand-run test cannot mutate the user's file (#248).
+ */
+function assertWritableConfigPath(file: string): void {
+  if (process.env.NODE_TEST_CONTEXT && !isInsideTempDir(file)) {
+    throw new ToolError(
+      'POLICY_DENIED',
+      `Refusing to write CoAgent8 configuration outside os.tmpdir() while running under Node's test runner (${file}). Run tests through tests/run.cjs or point coagent8_CONFIG / coagent8_DIR inside os.tmpdir().`,
+    );
+  }
+}
+
 function ensureConfigDir(file = getConfigFile()): void {
+  assertWritableConfigPath(file);
   // A directory that cannot be created is reported here rather than as a later write failure.
   fs.mkdirSync(path.dirname(file), { recursive: true });
 }
@@ -653,6 +706,7 @@ export function loadConfigForDiagnostics(): { config: CoAgent8Config; error?: st
  * Callers hold the configuration lease.
  */
 async function writeConfig(config: CoAgent8Config, configFile = getConfigFile()): Promise<void> {
+  assertWritableConfigPath(configFile);
   await atomicWrite(configFile, JSON.stringify(config, null, 2));
 }
 

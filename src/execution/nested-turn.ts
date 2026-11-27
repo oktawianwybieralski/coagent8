@@ -11,17 +11,115 @@
  *
  * @packageDocumentation
  */
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { ToolError } from '../contracts/index.js';
 
 /** Set in the environment of every backend turn this server starts. */
 export const NESTED_TURN_ENV = 'COAGENT8_NESTED_TURN';
 
 /**
- * Environment for a backend turn: the given one with {@link NESTED_TURN_ENV} set.
+ * CoAgent8 path overrides replaced in every backend turn (`#248`).
+ * Removing them alone would fall back to `~/.coagent8`, so the server process creates one
+ * disposable directory under `os.tmpdir()` lazily on the first turn and reuses it.
+ */
+export const TURN_ISOLATED_PATH_ENV_VARS = [
+  'coagent8_DIR',
+  'coagent8_CONFIG',
+  'coagent8_QUOTA_CACHE',
+  'coagent8_SESSIONS_DIR',
+  'coagent8_SESSIONS',
+  'coagent8_END_NOTES_DIR',
+] as const;
+
+const TURN_DIR_PREFIX = 'coagent8-turn-';
+const STALE_TURN_DIR_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+const TURN_ENV_KEYS_TO_STRIP = new Set<string>([
+  NESTED_TURN_ENV.toLowerCase(),
+  ...TURN_ISOLATED_PATH_ENV_VARS.map(name => name.toLowerCase()),
+]);
+
+const createdTurnDirs = new Set<string>();
+let sharedTurnDir: { tmpdir: string; dir: string } | undefined;
+let stalePruned = false;
+let exitCleanupRegistered = false;
+
+function pruneStaleTurnDirs(tmpdir: string, now = Date.now()): void {
+  try {
+    for (const entry of fs.readdirSync(tmpdir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !entry.name.startsWith(TURN_DIR_PREFIX)) continue;
+      const candidate = path.join(tmpdir, entry.name);
+      try {
+        const stat = fs.lstatSync(candidate);
+        if (stat.isDirectory() && now - stat.mtimeMs > STALE_TURN_DIR_MAX_AGE_MS) {
+          fs.rmSync(candidate, { recursive: true, force: true });
+        }
+      } catch {
+        // Best-effort cleanup of stale directories left by earlier dead processes.
+      }
+    }
+  } catch {
+    // Failure to scan tmpdir must never block turn isolation.
+  }
+}
+
+function registerExitCleanup(): void {
+  if (exitCleanupRegistered) return;
+  exitCleanupRegistered = true;
+  process.once('exit', () => {
+    for (const dir of createdTurnDirs) {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // Best-effort removal on exit; never throw from an exit listener.
+      }
+    }
+  });
+}
+
+function getOrCreateTurnDir(): string {
+  const tmpdir = os.tmpdir();
+  if (sharedTurnDir && sharedTurnDir.tmpdir === tmpdir && fs.existsSync(sharedTurnDir.dir)) {
+    return sharedTurnDir.dir;
+  }
+  if (!stalePruned) {
+    stalePruned = true;
+    pruneStaleTurnDirs(tmpdir);
+  }
+  const dir = fs.mkdtempSync(path.join(tmpdir, TURN_DIR_PREFIX));
+  sharedTurnDir = { tmpdir, dir };
+  createdTurnDirs.add(dir);
+  registerExitCleanup();
+  return dir;
+}
+
+/**
+ * Environment for a backend turn: the given one with {@link NESTED_TURN_ENV} set and
+ * every CoAgent8 path variable pointed at a shared per-process disposable directory under
+ * `os.tmpdir()` (created lazily on the first turn and removed best-effort on process exit).
+ * Backend profile variables (`USERPROFILE`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`) stay untouched.
  * @param base - Environment to extend; defaults to this process's.
+ * @returns A fresh environment object isolated from the user's CoAgent8 paths.
  */
 export function turnEnvironment(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return { ...base, [NESTED_TURN_ENV]: '1' };
+  const turnDir = getOrCreateTurnDir();
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(base)) {
+    // Strip case-insensitive matches so Windows child processes never inherit an alternate-case user path.
+    if (!TURN_ENV_KEYS_TO_STRIP.has(key.toLowerCase())) {
+      env[key] = value;
+    }
+  }
+  env[NESTED_TURN_ENV] = '1';
+  env.coagent8_DIR = turnDir;
+  env.coagent8_CONFIG = path.join(turnDir, 'config.json');
+  env.coagent8_QUOTA_CACHE = path.join(turnDir, 'quota-cache.json');
+  env.coagent8_SESSIONS_DIR = path.join(turnDir, 'sessions');
+  env.coagent8_SESSIONS = path.join(turnDir, 'sessions.json');
+  env.coagent8_END_NOTES_DIR = path.join(turnDir, 'end-notes');
+  return env;
 }
 
 /**

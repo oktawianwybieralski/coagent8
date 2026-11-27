@@ -119,6 +119,18 @@ function capture() {
         BASH_DEFAULT_TIMEOUT_MS: env.BASH_DEFAULT_TIMEOUT_MS ?? null,
         BASH_MAX_TIMEOUT_MS: env.BASH_MAX_TIMEOUT_MS ?? null,
       },
+      coagent8Env: {
+        coagent8_DIR: env.coagent8_DIR ?? null,
+        coagent8_CONFIG: env.coagent8_CONFIG ?? null,
+        coagent8_QUOTA_CACHE: env.coagent8_QUOTA_CACHE ?? null,
+        coagent8_SESSIONS_DIR: env.coagent8_SESSIONS_DIR ?? null,
+        coagent8_SESSIONS: env.coagent8_SESSIONS ?? null,
+        coagent8_END_NOTES_DIR: env.coagent8_END_NOTES_DIR ?? null,
+        COAGENT8_NESTED_TURN: env.COAGENT8_NESTED_TURN ?? null,
+        USERPROFILE: env.USERPROFILE ?? null,
+        CLAUDE_CONFIG_DIR: env.CLAUDE_CONFIG_DIR ?? null,
+        CODEX_HOME: env.CODEX_HOME ?? null,
+      },
     }),
   );
 }
