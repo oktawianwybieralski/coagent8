@@ -403,9 +403,9 @@ reviewer reached the file. Without a snapshot the diff stays inlined. A diff abo
 `REVIEW_PART_CHARS` (200,000 characters) is split into parts at file, hunk and line boundaries,
 each piece under its file header, every line in exactly one part. Each part is reviewed in a
 session of its own, bound to `<snapshot>/part-<n>-of-<total>`; then one synthesis turn, which
-the caller may continue, gets the list of parts and their findings, no diff, and gives the
-verdict bound to the whole snapshot. The verdict stays BLOCKED unless every part ended READY;
-the server knows each part was delivered, not that it was read. Above `MAX_REVIEW_PARTS` (15)
+the caller may continue, gets the list of parts, each part's server-evaluated verdict and coverage, and their findings, no diff, and gives the
+verdict bound to the whole snapshot. The verdict stays BLOCKED unless every part ended READY with COMPLETE coverage;
+the server knows each part was delivered, not that it was read. Synthesis checks findings and cross-part concerns using the server-established part coverage rather than re-reading every changed file (#242). Above `MAX_REVIEW_PARTS` (15)
 the review is refused before any turn. This was chosen over letting the reviewer fetch the diff
 itself after consulting Codex and agy and comparing published review tools.
 

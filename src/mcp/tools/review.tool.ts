@@ -20,7 +20,7 @@ import { redactDiagnostic } from '../../security/redaction.js';
 import { MAX_REVIEW_PARTS, splitReviewDiff, type ReviewPart } from '../../review/parts.js';
 import { getSession } from '../../sessions/session.js';
 import type { TaskExecutionResult } from '../../contracts/execution.js';
-import type { ReviewGateContext } from '../../review/gate.js';
+import type { ReviewGateContext, StateEnvelopeEvaluation } from '../../review/gate.js';
 
 export function getCanonicalReviewToolDefinition() {
   return {
@@ -395,11 +395,18 @@ function findingLines(output: string): string {
     .join('\n');
 }
 
+/** Reads the server-evaluated review envelope on a turn outcome. */
+function partReview(outcome: TaskExecutionResult): StateEnvelopeEvaluation | undefined {
+  // Controller populates review with StateEnvelopeEvaluation while TaskExecutionResult keeps the transport contract minimal.
+  return outcome.review;
+}
+
 /**
  * Reviews a diff too large for one turn (`REVIEW-002`): each part in a session of its own, then
  * one synthesis turn, in a session the caller may continue, over the manifest and every part's
- * findings. The synthesis gives the verdict; a part that did not end READY with complete coverage
- * keeps it BLOCKED, since the server cannot tell that its lines were reviewed.
+ * server-evaluated status and findings. The synthesis gives the verdict; a part that did not end
+ * READY with complete coverage keeps it BLOCKED, since the server cannot tell that its lines were
+ * reviewed.
  */
 async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> {
   const { parts, snapshot } = review;
@@ -470,18 +477,19 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
 
   const findings = results
     .map(({ index, outcome }) => {
-      const verdict = outcome.isError
+      const reviewed = partReview(outcome);
+      const header = outcome.isError
         ? `failed: ${outcome.result.error?.message ?? 'no answer'}`
-        : (outcome.review?.verdict ?? 'no verdict');
-      return [`Part ${index + 1} (${verdict}):`, findingLines(outcome.result.output ?? '') || 'No findings.'].join('\n');
+        : `${reviewed?.verdict ?? 'no verdict'}, coverage ${reviewed?.coverage ?? 'unknown'}`;
+      return [`Part ${index + 1} (${header}):`, findingLines(outcome.result.output ?? '') || 'No findings.'].join('\n');
     })
     .join('\n\n');
   const synthesis = await runTask('review', {
     prompt: [
       `Review this diff: ${review.label}. It was too large for one turn and was reviewed in ${parts.length} parts by separate reviewers.`,
-      'Your turn has no diff. Check the parts together: problems that cross part boundaries, findings that contradict each other, and findings that do not hold. Read the files you need with your file tools.',
+      'Your turn has no diff. Check the parts together: problems that cross part boundaries, findings that contradict each other, and findings that do not hold. Read only the files you need to check findings or cross-part concerns; you are not expected to re-read every changed file.',
       'Repeat every P1 and P2 finding that still holds, with its file and line, and add any cross-part finding. Any P1 or P2 means VERDICT: BLOCKED.',
-      'COVERAGE: COMPLETE means every part ended with complete coverage and you checked their findings.',
+      "Each part's coverage is established by the server. Your COVERAGE is COMPLETE when every part is READY with COMPLETE coverage as listed and you checked the parts' findings and cross-part concerns; answer PARTIAL only when you could not check findings or cross-part concerns you identified.",
       'Focus: ' + review.instructions,
       'Parts and their files:',
       manifest,
@@ -516,23 +524,35 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
   return withParts(synthesis, results, parts.length);
 }
 
-/** The final result: the last turn's, BLOCKED unless every part ended READY, with a line per part. */
+/** The final result: the last turn's, BLOCKED unless every part ended READY with COMPLETE coverage, with a line per part. */
 function withParts(
   last: TaskExecutionResult,
   results: { index: number; outcome: TaskExecutionResult }[],
   total: number,
 ): TaskExecutionResult {
   const notReady = results.filter(({ outcome }) => outcome.isError || outcome.review?.verdict !== 'READY');
+  // A part whose coverage was not COMPLETE cannot establish that all of its diff lines were reviewed.
+  const notComplete = results.filter(({ outcome }) => !outcome.isError && partReview(outcome)?.coverage !== 'COMPLETE');
   const missing = total - results.length;
   const lines = [
     `Reviewed in ${total} parts:`,
-    ...results.map(
-      ({ index, outcome }) =>
-        `- part ${index + 1}: ${outcome.isError ? 'failed' : (outcome.review?.verdict ?? 'no verdict')}${outcome.sessionHandle ? `, session_handle=${outcome.sessionHandle}` : ''}`,
-    ),
+    ...results.map(({ index, outcome }) => {
+      const reviewed = partReview(outcome);
+      const status = outcome.isError ? 'failed' : `${reviewed?.verdict ?? 'no verdict'}, coverage ${reviewed?.coverage ?? 'unknown'}`;
+      return `- part ${index + 1}: ${status}${outcome.sessionHandle ? `, session_handle=${outcome.sessionHandle}` : ''}`;
+    }),
     ...(missing > 0 ? [`- ${missing} part(s) did not run`] : []),
   ];
-  const blocked = notReady.length > 0 || missing > 0;
+  const reasons: string[] = [];
+  if (missing > 0) {
+    reasons.push(`${missing} of ${total} parts did not run`);
+  } else {
+    if (notReady.length > 0) reasons.push(`part ${notReady.map(({ index }) => index + 1).join(', ')} did not end READY`);
+    if (notComplete.length > 0) {
+      reasons.push(`part ${notComplete.map(({ index }) => index + 1).join(', ')} did not have COMPLETE coverage`);
+    }
+  }
+  const blocked = notReady.length > 0 || notComplete.length > 0 || missing > 0;
   return {
     ...last,
     result: { ...last.result, output: `${last.result.output ?? ''}\n\n${lines.join('\n')}` },
@@ -540,10 +560,7 @@ function withParts(
       ? {
           review: {
             verdict: 'BLOCKED' as const,
-            reason:
-              missing > 0
-                ? `${missing} of ${total} parts did not run`
-                : `part ${notReady.map(({ index }) => index + 1).join(', ')} did not end READY`,
+            reason: reasons.join('; '),
           },
         }
       : {}),

@@ -137,7 +137,7 @@ function bigRepo() {
   return repo;
 }
 
-function stubReviewer(answer) {
+function stubReviewer(answer, coverage = () => 'COMPLETE') {
   const prompts = [];
   adapterRegistry.agy = {
     id: 'agy',
@@ -152,7 +152,7 @@ function stubReviewer(answer) {
       return {
         status: 'completed',
         isError: false,
-        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\n${answer(prompt, prompts.length)}${mark}\nCHECKS: typecheck=PASS; tests=PASS`,
+        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: ${coverage(prompt, prompts.length)}\n${answer(prompt, prompts.length)}${mark}\nCHECKS: typecheck=PASS; tests=PASS`,
         nativeSessionId: `11111111-2222-3333-4444-55555555555${prompts.length % 10}`,
         model: 'fixture-model',
         truncated: false,
@@ -182,9 +182,13 @@ test('a large change is reviewed in parts, each in its own session, then in one 
     assert.match(prompts[0], /reviewed in 2 parts; you have part 1/);
     assert.match(prompts[0], /^SNAPSHOT: .+\/part-1-of-2$/m);
     assert.doesNotMatch(prompts[2], /^DIFF:/m, 'the synthesis gets findings, not the diff');
-    assert.match(prompts[2], /Part 1 \(READY\):/);
+    assert.match(prompts[2], /Part 1 \(READY, coverage COMPLETE\):/);
+    assert.match(prompts[2], /Part 2 \(READY, coverage COMPLETE\):/);
+    assert.match(prompts[2], /not expected to re-read every changed file/);
     assert.equal(result.verdict, 'READY');
     assert.match(result.answer, /Reviewed in 2 parts:/);
+    assert.match(result.answer, /- part 1: READY, coverage COMPLETE/);
+    assert.match(result.answer, /- part 2: READY, coverage COMPLETE/);
   } finally {
     adapterRegistry.agy = original;
   }
@@ -219,6 +223,43 @@ test('a part that is not READY keeps the review BLOCKED, whatever the synthesis 
     const result = readResult(await handleReview('review', {}, repo, null, null));
     assert.equal(result.verdict, 'BLOCKED');
     assert.match(result.reason, /part 1 did not end READY/);
+  } finally {
+    adapterRegistry.agy = original;
+  }
+});
+
+test('a part with COVERAGE PARTIAL passes its coverage to synthesis and keeps the review BLOCKED', async () => {
+  const original = adapterRegistry.agy;
+  try {
+    await setup();
+    const repo = bigRepo();
+    const prompts = stubReviewer(
+      () => 'VERDICT: READY\nReviewed: the part.',
+      (prompt, n) => (n === 2 ? 'PARTIAL' : 'COMPLETE'),
+    );
+    const result = readResult(await handleReview('review', {}, repo, null, null));
+    assert.equal(prompts.length, 3);
+    assert.match(prompts[2], /Part 1 \(READY, coverage COMPLETE\):/);
+    assert.match(prompts[2], /Part 2 \(BLOCKED, coverage PARTIAL\):/);
+    assert.equal(result.verdict, 'BLOCKED');
+    assert.match(result.reason, /part 2 did not have COMPLETE coverage/);
+  } finally {
+    adapterRegistry.agy = original;
+  }
+});
+
+test('a synthesis with COVERAGE PARTIAL still fails the gate when every part was READY and COMPLETE', async () => {
+  const original = adapterRegistry.agy;
+  try {
+    await setup();
+    const repo = bigRepo();
+    stubReviewer(
+      () => 'VERDICT: READY\nReviewed: the parts.',
+      (prompt, n) => (n === 3 ? 'PARTIAL' : 'COMPLETE'),
+    );
+    const result = readResult(await handleReview('review', {}, repo, null, null));
+    assert.equal(result.verdict, 'BLOCKED');
+    assert.match(result.reason, /coverage is partial/i);
   } finally {
     adapterRegistry.agy = original;
   }
