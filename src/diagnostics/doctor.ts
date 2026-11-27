@@ -1,6 +1,6 @@
 import { probeBackend, readModelCatalog, readTurnSuccess } from '../backends/probe-cache.js';
 import { decideReadiness, READINESS_LABEL, type BackendReadiness } from './readiness.js';
-import { loadConfigSnapshotForDiagnostics, recordDefaultModel, type ConfigSnapshot } from '../config.js';
+import { loadConfigSnapshotForDiagnostics, recordDefaultModel, type ConfigProvenance, type ConfigSnapshot } from '../config.js';
 import { PROVIDERS, ToolError, type ProviderId, type ModelCatalog } from '../contracts/index.js';
 import { inspectQuotas } from '../backends/availability.js';
 import { catalogNames, listModelCandidates, type ModelCandidate, type ModelSelection, type ModelSource } from '../models/selection.js';
@@ -335,11 +335,15 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
           .map(async id => {
             let selection: ModelSelection;
             try {
-              selection = await selectModel(
+              selection = withEffectiveSource(
                 id,
-                probes[id]!,
-                {},
-                { observeAfresh: true, catalog: catalogs[selected.indexOf(id)], context: readContext },
+                await selectModel(
+                  id,
+                  probes[id]!,
+                  {},
+                  { observeAfresh: true, catalog: catalogs[selected.indexOf(id)], config: snapshot, context: readContext },
+                ),
+                snapshot.provenance,
               );
             } catch (err) {
               const code = (err as { code?: unknown })?.code;
@@ -489,11 +493,22 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   }
 }
 
+/**
+ * Propagates editor-setting provenance into a configured default's source so diagnostics
+ * distinguish VS Code settings from `config.json`.
+ */
+function withEffectiveSource(id: ProviderId, selection: ModelSelection, provenance: ConfigProvenance): ModelSelection {
+  return selection.source === 'config' && provenance.sources[`backends.${id}.defaultModel`] === 'editor'
+    ? { ...selection, source: 'editor' }
+    : selection;
+}
+
 /** How the summary names where a default model came from. */
 const MODEL_SOURCE_LABELS: Record<ModelSource, string> = {
   request: 'requested',
   session: 'session',
   config: 'config.json',
+  editor: 'VS Code setting',
   'cli-config': 'CLI config',
   catalog: 'CLI default',
   'first-listed': 'first listed',
@@ -794,7 +809,11 @@ export async function runModelReport(options: DoctorOptions = {}): Promise<Model
         selected.map(async (id, index): Promise<ModelSelection | undefined> => {
           if (!probes[index].installed || configError) return undefined;
           try {
-            return await selectModel(id, probes[index], {}, { context: readContext });
+            return withEffectiveSource(
+              id,
+              await selectModel(id, probes[index], {}, { config: snapshot, context: readContext }),
+              snapshot.provenance,
+            );
           } catch (err) {
             const code = (err as { code?: unknown })?.code;
             if (code === 'ABORTED' || code === 'TIMEOUT') throw err;

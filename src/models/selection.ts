@@ -15,12 +15,13 @@ import { checkPriceLimit, priceEvidence, type PriceEvidence, type PriceList } fr
 import { decideConsent, findModelRuleEntry, type ConsentBasis, type GovernanceSettings } from './governance.js';
 
 /**
- * Where a selected model came from: the call, its session, `config.json`, the CLI's own
- * configuration, the CLI catalog's declared default, the first model the catalog lists, the
- * model the CLI reports it runs without one, or the catalog model chosen for a price limit
- * the default does not meet.
+ * Where a selected model came from: the call, its session, `config.json`, a VS Code editor
+ * setting, the CLI's own configuration, the CLI catalog's declared default, the first model
+ * the catalog lists, the model the CLI reports it runs without one, or the catalog model
+ * chosen for a price limit the default does not meet.
  */
-export type ModelSource = 'request' | 'session' | 'config' | 'cli-config' | 'catalog' | 'first-listed' | 'observed' | 'price-limit';
+export type ModelSource =
+  'request' | 'session' | 'config' | 'editor' | 'cli-config' | 'catalog' | 'first-listed' | 'observed' | 'price-limit';
 
 /** A selected model and its origin. */
 export interface ModelSelection {

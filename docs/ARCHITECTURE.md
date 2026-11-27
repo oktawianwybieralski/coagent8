@@ -172,7 +172,10 @@ defaults do not establish what an already running process reads.
 Explicit VS Code user settings arrive through coagent8_EDITOR_SETTINGS and
 override the file. Approval rules (governance) have no VS Code setting: every
 client's server reads them from the file, and the VS Code command Manage Model
-Approvals edits them there. Workspace/default editor settings are not passed. Recorded defaults and remembered approvals write
+Approvals edits them there; when setting a backend's default model, it updates a
+non-empty `coagent8.<id>.defaultModel` user setting in place and otherwise writes
+`backends.<id>.defaultModel` (with its effort suffix when required, refusing denied
+models) to the file. Workspace/default editor settings are not passed. Recorded defaults and remembered approvals write
 only to the file. Other hosts/CLI read the file, not VS Code settings. Unknown
 file properties are ignored and dropped on write; malformed/unreadable/invalid
 existing config blocks execution with POLICY_DENIED. Discovery remains available.

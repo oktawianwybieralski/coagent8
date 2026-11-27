@@ -895,3 +895,55 @@ test('AX-005a: a measured zero quota is reported as exhausted, not as a rate lim
     Object.assign(adapterRegistry, original);
   }
 });
+
+test('doctor and model report show VS Code setting as the default model source when an editor setting overrides config.json', async () => {
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+  const { runModelReport, formatDoctorSummary, formatModelSummary } = require('../../src/diagnostics/doctor.ts');
+  const { EDITOR_SETTINGS_ENV } = require('../../src/config-overrides.ts');
+  const original = { ...adapterRegistry };
+  const savedEditorEnv = process.env[EDITOR_SETTINGS_ENV];
+  try {
+    adapterRegistry.agy = {
+      ...original.agy,
+      inspectQuota: async () => undefined,
+      probe: async () => ({
+        id: 'agy',
+        installed: true,
+        executionSupported: true,
+        version: 'agy-editor-fixture',
+        authStatus: 'authenticated',
+        capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true },
+      }),
+      listModels: async () => ({
+        source: 'agy fixture',
+        models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }],
+      }),
+    };
+    await saveConfig({
+      routing: { allowedBackends: ['codex', 'claude', 'agy'] },
+      backends: { agy: { defaultModel: 'gemini-3.8-flash-low' } },
+    });
+
+    process.env[EDITOR_SETTINGS_ENV] = JSON.stringify({ 'agy.defaultModel': 'gemini-3.8-flash-high' });
+    const doctorReport = await runDoctor({ backend: 'agy', quota: false });
+    assert.equal(doctorReport.defaultModels.agy.model, 'gemini-3.8-flash-high');
+    assert.equal(doctorReport.defaultModels.agy.source, 'editor');
+    assert.match(formatDoctorSummary(doctorReport), /agy: [^\n]* - model gemini-3\.8-flash-high \(VS Code setting/);
+
+    const modelReport = await runModelReport({ backend: 'agy' });
+    assert.equal(modelReport.backends.agy.defaultModel.model, 'gemini-3.8-flash-high');
+    assert.equal(modelReport.backends.agy.defaultModel.source, 'editor');
+    assert.equal(modelReport.selection.find(row => row.model === 'gemini-3.8-flash').defaultSource, 'editor');
+    assert.match(formatModelSummary(modelReport), /agy [^\n]* - model gemini-3\.8-flash-high \(VS Code setting/);
+
+    process.env[EDITOR_SETTINGS_ENV] = JSON.stringify({ 'agy.defaultModel': '' });
+    const fallbackDoctor = await runDoctor({ backend: 'agy', quota: false });
+    assert.equal(fallbackDoctor.defaultModels.agy.model, 'gemini-3.8-flash-low');
+    assert.equal(fallbackDoctor.defaultModels.agy.source, 'config');
+    assert.match(formatDoctorSummary(fallbackDoctor), /agy: [^\n]* - model gemini-3\.8-flash-low \(config\.json/);
+  } finally {
+    Object.assign(adapterRegistry, original);
+    if (savedEditorEnv === undefined) delete process.env[EDITOR_SETTINGS_ENV];
+    else process.env[EDITOR_SETTINGS_ENV] = savedEditorEnv;
+  }
+});
