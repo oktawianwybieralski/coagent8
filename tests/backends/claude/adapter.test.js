@@ -4,7 +4,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { CLAUDE_TOOLS: CLAUDE_HOST_TOOLS, executeClaude, probe } = require('../../../src/backends/claude/adapter.ts');
+const {
+  CLAUDE_TOOLS: CLAUDE_HOST_TOOLS,
+  CLAUDE_TURN_SYSTEM_PROMPT,
+  executeClaude,
+  probe,
+} = require('../../../src/backends/claude/adapter.ts');
 const MODEL = 'claude-sonnet-4-6';
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
@@ -61,6 +66,7 @@ test('Claude runs restricted print mode with the host tools, streaming, a pinned
     assert.ok(argv.includes('--strict-mcp-config'));
     assert.equal(argv[argv.indexOf('--output-format') + 1], 'stream-json');
     assert.ok(argv.includes('--include-partial-messages'));
+    assert.equal(argv[argv.indexOf('--append-system-prompt') + 1], CLAUDE_TURN_SYSTEM_PROMPT);
     assert.equal(argv[argv.indexOf('--effort') + 1], 'low');
     const session = argv[argv.indexOf('--session-id') + 1];
     assert.match(session, UUID);
@@ -681,37 +687,26 @@ test('ENVELOPE-001: Claude forwards a stop at the output length limit as lengthL
     assert.equal(limited.lengthLimited, true);
   }));
 
-test('#231 #233: Claude returns the answer of a turn with a background task, whose notification turn is no second result', () =>
+test('#231 #233 #245: Claude waits for background notification turns, sums usage, skips pre-answer notifications, and reports partial progress at deadline', () =>
   withFixture(async ({ dir }) => {
     const { activeProcesses } = require('../../../src/execution/process.ts');
-    const { BACKGROUND_TASK_GRACE_MS } = require('../../../src/backends/claude/adapter.ts');
-    // (a) The task ends within the grace: its notification turn becomes a warning naming it.
+    // (a) Answer "I'll wait..." followed by a notification turn with the real report: completed with the report.
     process.env.CLAUDE_FIXTURE_SCENARIO = 'background-task';
     process.env.CLAUDE_FIXTURE_TASK_MS = '300';
     let events = [];
     const finished = await executeClaude('x', { cwd: dir, model: MODEL, onEvent: e => events.push(e) });
     assert.equal(finished.status, 'completed', finished.error?.message);
-    assert.equal(finished.output, 'OK');
+    assert.equal(finished.output, 'Final report: sleep 25 completed.');
     assert.equal(finished.continuationAvailable, true);
-    const warnings = events.filter(e => e.type === 'warning').map(e => e.message);
-    assert.deepEqual(warnings, ['A background task finished after the answer: Background command "sleep 25" completed (exit code 0)']);
-    assert.ok(!events.some(e => e.type === 'assistant_message' && /finished/.test(e.text)), 'the notification turn is not the answer');
-    // (c) The task outlives the grace: the process tree is stopped and the task is named.
-    process.env.CLAUDE_FIXTURE_TASK_MS = '60000';
-    events = [];
-    const startedAt = Date.now();
-    const stopped = await executeClaude('x', { cwd: dir, model: MODEL, onEvent: e => events.push(e) });
-    const elapsed = Date.now() - startedAt;
-    assert.equal(stopped.status, 'completed', stopped.error?.message);
-    assert.equal(stopped.output, 'OK');
-    assert.equal(stopped.continuationAvailable, true);
-    assert.ok(elapsed >= BACKGROUND_TASK_GRACE_MS && elapsed < 30000, `stopped after the grace (${elapsed} ms)`);
-    assert.deepEqual(
-      events.filter(e => e.type === 'warning').map(e => e.message),
-      ['Background tasks were stopped when the turn ended: sleep 25.'],
+    assert.equal(events.filter(e => e.type === 'warning').length, 0);
+    assert.ok(
+      events.some(e => e.type === 'status' && /Waiting for background tasks:.*sleep 25/.test(e.message)),
+      'emits a status naming the running background task while waiting',
     );
-    assert.equal(activeProcesses.size, 0, 'the stopped process is released');
-    // (b) A resumed turn first receives the notification turn of the earlier turn's task.
+    assert.equal(finished.usage.inputTokens, 6715);
+    assert.equal(finished.usage.outputTokens, 60);
+    assert.equal(activeProcesses.size, 0);
+    // (b) A resumed turn first receives the notification turn of an earlier turn's task: answer returned, warning names task.
     process.env.CLAUDE_FIXTURE_SCENARIO = 'resume-notification';
     events = [];
     const session = '859bbd7d-81ae-440c-b76a-a80e596d0fa5';
@@ -720,5 +715,24 @@ test('#231 #233: Claude returns the answer of a turn with a background task, who
     assert.equal(resumed.output, 'OK');
     assert.equal(resumed.nativeSessionId, session);
     assert.equal(resumed.continuationAvailable, true);
-    assert.equal(events.filter(e => e.type === 'warning').length, 0);
+    assert.equal(resumed.usage.outputTokens, 48, 'skipped earlier notification usage is not counted');
+    const warnings = events.filter(e => e.type === 'warning').map(e => e.message);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /sleep 25/);
+    // (c) A background task still running at the deadline: timed_out, partial text, task named.
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'background-task';
+    process.env.CLAUDE_FIXTURE_TASK_MS = '60000';
+    events = [];
+    const timedOut = await executeClaude('x', { cwd: dir, model: MODEL, timeoutMs: 300, onEvent: e => events.push(e) });
+    assert.equal(timedOut.status, 'timed_out');
+    assert.equal(timedOut.error?.code, 'TIMEOUT');
+    assert.match(timedOut.output, /^\[Partial progress: /);
+    assert.ok(timedOut.output.includes("I'll wait for the background run to finish."));
+    assert.ok(timedOut.output.includes('sleep 25'));
+    assert.equal(activeProcesses.size, 0, 'the stopped process is released');
+    // (d) A second result without origin is still PROTOCOL_ERROR.
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'second-result';
+    const duplicate = await executeClaude('x', { cwd: dir, model: MODEL });
+    assert.equal(duplicate.status, 'failed');
+    assert.equal(duplicate.error?.code, 'PROTOCOL_ERROR');
   }));

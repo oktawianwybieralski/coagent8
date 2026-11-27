@@ -36,9 +36,10 @@ guarantees for window suppression.
      `Stop-Process`, CIM/WMI snapshots or descendant polling.
    - Stop a protocol CLI gracefully first: interrupt its turn over its own
      protocol and close stdin on the terminal event, then force-stop the owned root
-     after a bounded grace period.
-     A CLI that stays alive after its terminal event (Claude Code background tasks)
-     gets the same bounded grace and owned-tree stop (`StdinChannel.endAfter`).
+     after a bounded grace period. When Claude Code stays alive after its prompt
+     result while background tasks run, CoAgent8 waits within the turn's deadline
+     and applies that same graceful interrupt and owned-tree stop on deadline or
+     cancellation.
    - A chain of Node processes ends with its root through libuv's
      `KILL_ON_JOB_CLOSE` job on Windows. The per-run job helper
      ([ARCHITECTURE](../../docs/ARCHITECTURE.md#windows-per-call-containment-windows-001))

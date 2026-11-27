@@ -2,7 +2,7 @@
 import { BufferLimitError, truncateToByteLength } from '../../execution/runtime/stream.js';
 import { StreamReducer } from '../../execution/stream-reducer.js';
 import { redactDiagnostic } from '../../security/redaction.js';
-import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../contracts/index.js';
+import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError, type TokenUsage } from '../../contracts/index.js';
 import type { TerminalExecutionResult } from '../types.js';
 import { classifyClaudeFailure } from './errors.js';
 import { isValidModelIdentifier } from '../../models/identifier.js';
@@ -69,6 +69,59 @@ function taskText(value: unknown): string {
 function count(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
+const known = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+const USAGE_FIELDS = [
+  'inputTokens',
+  'cachedInputTokens',
+  'cacheWriteInputTokens',
+  'cacheWriteLongInputTokens',
+  'outputTokens',
+  'reasoningTokens',
+  'totalTokens',
+] as const;
+
+function parseResultUsage(raw: unknown): TokenUsage | undefined {
+  const data = record(raw);
+  if (!data) return undefined;
+  // Anthropic reports cached input separately; the sum is the input actually processed
+  // (AX-001c). Output includes extended thinking, reported as `output_tokens_details.thinking_tokens`.
+  // Each count is kept only when reported; a sum only when every part is known.
+  const uncached = data.input_tokens,
+    read = data.cache_read_input_tokens,
+    write = data.cache_creation_input_tokens;
+  const output = data.output_tokens,
+    thinking = record(data.output_tokens_details)?.thinking_tokens;
+  const input = known(uncached) && known(read) && known(write) ? uncached + read + write : undefined;
+  // Writes kept for an hour have their own list price; the split counts only when it adds up.
+  const classes = record(data.cache_creation),
+    short = classes?.ephemeral_5m_input_tokens,
+    long = classes?.ephemeral_1h_input_tokens;
+  const longWrite = known(write) && known(short) && known(long) && short + long === write ? long : undefined;
+  const counts: TokenUsage = {
+    source: 'provider',
+    ...(input !== undefined ? { inputTokens: input } : {}),
+    ...(known(read) ? { cachedInputTokens: read } : {}),
+    ...(known(write) ? { cacheWriteInputTokens: write } : {}),
+    ...(longWrite !== undefined ? { cacheWriteLongInputTokens: longWrite } : {}),
+    ...(known(output) ? { outputTokens: output } : {}),
+    ...(known(thinking) ? { reasoningTokens: thinking } : {}),
+    ...(input !== undefined && known(output) ? { totalTokens: input + output } : {}),
+  };
+  return Object.keys(counts).length > 1 ? counts : undefined;
+}
+
+/** Sums two token-usage objects, keeping a field only when both parts report it (AX-001c). */
+function mergeUsage(current: TokenUsage | undefined, next: TokenUsage | undefined): TokenUsage | undefined {
+  if (!current) return next;
+  if (!next) return current;
+  const merged: TokenUsage = { source: 'provider' };
+  for (const field of USAGE_FIELDS) {
+    const a = current[field],
+      b = next[field];
+    if (a !== undefined && b !== undefined) merged[field] = a + b;
+  }
+  return Object.keys(merged).length > 1 ? merged : undefined;
+}
 
 /**
  * Collects public answers, tool activity, session identity and the terminal result from Claude Code.
@@ -76,18 +129,18 @@ function count(value: unknown): number {
  * @returns A line collector whose snapshot is used directly by the production adapter.
  * @throws `SANDBOX_UNAVAILABLE` when `system/init` reports a tool, MCP server or
  * permission mode other than requested; `PROTOCOL_ERROR` on malformed
- * known events, a mismatched session ID or a second answer result.
+ * known events, a mismatched session ID or a second result without `origin`.
  * @remarks
  * Thinking blocks, tool inputs and tool results are discarded. Unknown event
  * types and `system` subtypes are tolerated with one warning per type. Answer
  * text is not passed through keyword redaction; only diagnostics are redacted.
  *
- * The answer is the first `result` without `origin`. Claude Code 2.1.332 keeps the
- * process alive while background tasks run and then runs an automatic turn for each
- * task notification, which ends in a `result` with `origin` (#231, #233). Such a
- * result is never the answer: before the answer it belongs to an earlier turn's task
- * and is skipped, after it it becomes a warning. After the answer, only task events
- * and results are read.
+ * The prompt turn's `result` (no `origin`) and every following task-notification turn's
+ * `result` (with `origin`, run by Claude Code 2.1.332 when a background task ends) belong
+ * to the same delegated turn (#245): the answer is the latest non-empty result text and
+ * usage sums every counted result. A notification `result` that arrives before the prompt
+ * turn's own result belongs to an earlier turn (#233), so it is skipped and named in a
+ * warning; a second `result` without `origin` fails with `PROTOCOL_ERROR`.
  */
 export function createClaudeStreamCollector(options: ClaudeStreamCollectorOptions) {
   const reducer = new StreamReducer({
@@ -109,6 +162,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   // Summaries of finished tasks by run ID, which a notification turn's `origin.runId` names.
   const summaries = new Map<string, string>();
   let finalText: string | null = null;
+  let latestResultMessage: string | null = null;
   let streamedBytes = 0;
   let category: string | null = null;
   let rateLimitResetsAt: number | null = null;
@@ -122,6 +176,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     warned.add(key);
     emit({ type: 'warning', message: redactDiagnostic(message, 512) });
   };
+  const runningTasks = () => [...tasks].map(([id, description]) => description || id);
 
   function ensureInitialized() {
     if (sessionId === null) fail('SANDBOX_UNAVAILABLE', 'Claude Code emitted events before its initialization.');
@@ -252,21 +307,18 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       if (streamedBytes <= reducer.maxTotalBytes) emit({ type: 'assistant_delta', messageId: currentMessageId, text: delta.text });
     }
   }
-  /**
-   * Handles the `result` of a notification turn, which Claude Code runs by itself when a
-   * background task ends (`origin.kind` `task-notification`, 2.1.332). It never fails the turn.
-   */
-  function acceptOriginResult(event: Record<string, unknown>, origin: Record<string, unknown>) {
-    // Before the answer it belongs to a task of an earlier turn (#233): the answer is still to come.
-    if (!terminal) return;
-    const runId = typeof origin.runId === 'string' ? origin.runId : null;
-    const summary = (runId && summaries.get(runId)) || taskText(event.result) || 'unnamed task';
-    emit({ type: 'warning', message: redactDiagnostic(`A background task finished after the answer: ${summary}`, 512) });
-  }
   function acceptResult(event: Record<string, unknown>) {
     const origin = record(event.origin);
-    if (origin) return acceptOriginResult(event, origin);
-    if (terminal) fail('PROTOCOL_ERROR', 'Claude Code emitted a second result event.');
+    if (origin && !terminal) {
+      // Before the prompt turn's answer it belongs to a task of an earlier turn (#233): skip it
+      // and reset latestMessageId so its text cannot leak into partialProgress().
+      latestMessageId = null;
+      const runId = typeof origin.runId === 'string' ? origin.runId : null;
+      const summary = (runId && summaries.get(runId)) || taskText(event.result) || runId || 'unnamed task';
+      emit({ type: 'warning', message: redactDiagnostic(`Skipped notification result from an earlier background task: ${summary}`, 512) });
+      return;
+    }
+    if (!origin && terminal) fail('PROTOCOL_ERROR', 'Claude Code emitted a second result event.');
     if (typeof event.session_id === 'string' && event.session_id.toLowerCase() !== options.expectedSessionId.toLowerCase()) {
       fail('PROTOCOL_ERROR', 'Claude Code result reported an unexpected session ID.');
     }
@@ -275,43 +327,17 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     if (!isError && sessionId === null) {
       fail('SANDBOX_UNAVAILABLE', 'Claude Code completed successfully without its initialization.');
     }
+    if (!isError) category = null;
     resultFields = {
       isError,
       subtype: typeof event.subtype === 'string' ? event.subtype : null,
       apiErrorStatus: typeof event.api_error_status === 'number' ? event.api_error_status : null,
       errors: Array.isArray(event.errors) ? event.errors.filter((entry): entry is string => typeof entry === 'string') : [],
     };
-    if (typeof event.result === 'string') finalText = event.result;
-    if (typeof event.stop_reason === 'string') stopReason = event.stop_reason;
-    const data = record(event.usage);
-    if (data) {
-      // Anthropic reports cached input separately; the sum is the input actually processed
-      // (AX-001c). Output includes extended thinking, reported as `output_tokens_details.thinking_tokens`.
-      // Each count is kept only when reported; a sum only when every part is known.
-      const known = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-      const uncached = data.input_tokens,
-        read = data.cache_read_input_tokens,
-        write = data.cache_creation_input_tokens;
-      const output = data.output_tokens,
-        thinking = record(data.output_tokens_details)?.thinking_tokens;
-      const input = known(uncached) && known(read) && known(write) ? uncached + read + write : undefined;
-      // Writes kept for an hour have their own list price; the split counts only when it adds up.
-      const classes = record(data.cache_creation),
-        short = classes?.ephemeral_5m_input_tokens,
-        long = classes?.ephemeral_1h_input_tokens;
-      const longWrite = known(write) && known(short) && known(long) && short + long === write ? long : undefined;
-      const counts: NonNullable<typeof usage> = {
-        source: 'provider',
-        ...(input !== undefined ? { inputTokens: input } : {}),
-        ...(known(read) ? { cachedInputTokens: read } : {}),
-        ...(known(write) ? { cacheWriteInputTokens: write } : {}),
-        ...(longWrite !== undefined ? { cacheWriteLongInputTokens: longWrite } : {}),
-        ...(known(output) ? { outputTokens: output } : {}),
-        ...(known(thinking) ? { reasoningTokens: thinking } : {}),
-        ...(input !== undefined && known(output) ? { totalTokens: input + output } : {}),
-      };
-      if (Object.keys(counts).length > 1) usage = counts;
-    }
+    latestResultMessage = typeof event.result === 'string' ? event.result : null;
+    if (latestResultMessage !== null && (latestResultMessage.trim().length > 0 || finalText === null)) finalText = latestResultMessage;
+    stopReason = typeof event.stop_reason === 'string' ? event.stop_reason : null;
+    usage = mergeUsage(usage, parseResultUsage(event.usage));
     const denials = Array.isArray(event.permission_denials)
       ? event.permission_denials.map(entry => record(entry)?.tool_name).filter(validEventIdentifier)
       : [];
@@ -320,6 +346,8 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
         type: 'warning',
         message: `Claude Code denied tool calls outside the requested profile: ${[...new Set(denials)].join(', ')}.`,
       });
+    const running = runningTasks();
+    if (running.length) emit({ type: 'status', message: redactDiagnostic(`Waiting for background tasks: ${running.join('; ')}`, 512) });
   }
   function line(raw: string) {
     if (!raw.trim()) return;
@@ -331,9 +359,6 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     }
     const event = record(parsed);
     if (!event || typeof event.type !== 'string') fail('PROTOCOL_ERROR', 'Invalid Claude Code event.');
-    // After the answer only task events and results matter: a notification turn's own
-    // init, messages and tool activity must not replace the answer or reach the caller.
-    if (terminal && event.type !== 'result' && !(event.type === 'system' && isTaskSubtype(event.subtype))) return;
     if (event.type === 'system') acceptSystem(event);
     else if (event.type === 'assistant') acceptAssistant(event);
     else if (event.type === 'user') acceptUser(event);
@@ -358,7 +383,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
           apiErrorStatus: resultFields.apiErrorStatus,
           subtype: resultFields.subtype,
           errors: resultFields.errors,
-          message: finalText,
+          message: latestResultMessage,
           rateLimitResetsAt,
         })
       : truncated
@@ -379,12 +404,18 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   }
   /**
    * The latest public assistant text, marked as partial progress, for a turn that ended
-   * without its answer (#231); bounded by the public byte budget. Empty when there is none.
+   * without completing (#231, #245), together with any background tasks still running;
+   * bounded by the public byte budget. Empty when there is neither text nor a running task.
    */
   function partialProgress(): string {
-    const text = latestMessageId === null ? '' : (reducer.getMessageMap().get(latestMessageId) ?? '');
-    if (!text.trim()) return '';
-    return truncateToByteLength(`${PARTIAL_PROGRESS_NOTICE}\n\n${text}`, reducer.maxTotalBytes);
+    const latest = latestMessageId === null ? (finalText ?? '') : (reducer.getMessageMap().get(latestMessageId) ?? finalText ?? '');
+    const text = latest.trim() ? latest : '';
+    const running = runningTasks();
+    if (!text && !running.length) return '';
+    const header = running.length
+      ? `${PARTIAL_PROGRESS_NOTICE}\nBackground tasks still running: ${running.join('; ')}.`
+      : PARTIAL_PROGRESS_NOTICE;
+    return truncateToByteLength(text ? `${header}\n\n${text}` : header, reducer.maxTotalBytes);
   }
   return {
     line,
@@ -392,6 +423,6 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     partialProgress,
     isTerminal: () => terminal,
     /** Descriptions (or IDs) of the background tasks still running. */
-    runningTasks: () => [...tasks].map(([id, description]) => description || id),
+    runningTasks,
   };
 }

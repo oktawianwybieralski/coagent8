@@ -228,14 +228,22 @@ test('AX-001c: partial Claude usage keeps the reported counts and sums only comp
   assert.equal(writes(undefined).cacheWriteLongInputTokens, undefined, 'no split reported');
 });
 
-// Background task events of Claude Code 2.1.332 (#231, #233).
+// Background task events of Claude Code 2.1.332 (#231, #233, #245).
 const TASK = { task_id: 'b7x2k9q4', run_id: 'run-1', tool_use_id: 'toolu_background_1', description: 'sleep 25' };
 const backgroundStarted = [
   { type: 'system', subtype: 'background_tasks_changed', tasks: [{ ...TASK, task_type: 'local_bash' }] },
   { type: 'system', subtype: 'task_started', ...TASK, is_backgrounded: true, task_type: 'local_bash' },
   { type: 'tool_progress', tool_use_id: TASK.tool_use_id, tool_name: 'Bash', elapsed_time_seconds: 1 },
 ];
-function notificationTurn(runId, text) {
+const NOTIFICATION_USAGE = {
+  input_tokens: 5,
+  cache_creation_input_tokens: 20,
+  cache_read_input_tokens: 100,
+  cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 20 },
+  output_tokens: 12,
+  output_tokens_details: { thinking_tokens: 3 },
+};
+function notificationTurn(runId, text, usage = NOTIFICATION_USAGE) {
   return [
     { type: 'system', subtype: 'task_updated', task_id: TASK.task_id, run_id: runId, patch: { status: 'completed', end_time: 1 } },
     {
@@ -248,53 +256,98 @@ function notificationTurn(runId, text) {
     },
     { type: 'system', subtype: 'background_tasks_changed', tasks: [] },
     { type: 'system', subtype: 'init', session_id: SESSION, tools: TOOLS, mcp_servers: [], permissionMode: 'dontAsk' },
-    { type: 'assistant', message: { id: 'msg_notification', content: [{ type: 'text', text }] } },
-    { type: 'result', subtype: 'success', session_id: SESSION, result: text, origin: { kind: 'task-notification', runId } },
+    { type: 'assistant', message: { id: `msg_notification_${runId}`, content: [{ type: 'text', text }] } },
+    {
+      type: 'result',
+      subtype: 'success',
+      session_id: SESSION,
+      result: text,
+      origin: { kind: 'task-notification', runId },
+      ...(usage ? { usage } : {}),
+    },
   ];
 }
 
-test('Claude collector keeps the answer when a background task notification turn follows it', () => {
+test('Claude collector takes the latest result, sums usage and emits waiting status for background notification turns (#245)', () => {
   const events = recording('success-partial');
-  const answer = events.pop();
+  const answer = { ...events.pop(), result: "I'll wait for the background run to finish." };
   const seen = [];
   const collector = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS, onEvent: e => seen.push(e) });
   for (const event of [...events, ...backgroundStarted, answer]) collector.line(JSON.stringify(event));
   assert.deepEqual(collector.runningTasks(), ['sleep 25'], 'the running task is tracked by description');
-  for (const event of notificationTurn('run-1', 'The task finished.')) collector.line(JSON.stringify(event));
+  assert.ok(seen.some(e => e.type === 'status' && e.message.includes('sleep 25') && /Waiting/.test(e.message)));
+  for (const event of notificationTurn('run-1', 'Final report: sleep 25 completed.')) collector.line(JSON.stringify(event));
   const snapshot = collector.snapshot();
-  assert.equal(snapshot.error, undefined, 'a result with origin is no second result');
-  assert.equal(snapshot.output, 'OK');
+  assert.equal(snapshot.error, undefined, 'a result with origin is counted as part of the same turn');
+  assert.equal(snapshot.output, 'Final report: sleep 25 completed.');
   assert.deepEqual(collector.runningTasks(), []);
-  assert.ok(seen.some(e => e.type === 'warning' && e.message === 'A background task finished after the answer: sleep 25 completed'));
-  assert.ok(!seen.some(e => e.type === 'assistant_message' && e.text === 'The task finished.'), 'the notification turn is not the answer');
-  assert.ok(!seen.some(e => e.type === 'warning' && /Ignoring unknown/.test(e.message)), 'task events and tool_progress are known');
+  assert.ok(seen.some(e => e.type === 'assistant_message' && e.text === 'Final report: sleep 25 completed.'));
+  assert.ok(!seen.some(e => e.type === 'warning'), 'no warning for a normal notification turn');
   assert.ok(seen.some(e => e.type === 'status' && e.message === 'Background task started: sleep 25'));
+  // Usage sums every counted result of the turn (6590 + 125 = 6715 input, 48 + 12 = 60 output).
+  assert.deepEqual(snapshot.usage, {
+    source: 'provider',
+    inputTokens: 6715,
+    cachedInputTokens: 4670,
+    cacheWriteInputTokens: 2030,
+    cacheWriteLongInputTokens: 2030,
+    outputTokens: 60,
+    reasoningTokens: 44,
+    totalTokens: 6775,
+  });
+  // An empty latest notification result keeps the latest non-empty result text and still sums usage.
+  for (const event of notificationTurn('run-2', '', {
+    input_tokens: 1,
+    cache_read_input_tokens: 2,
+    cache_creation_input_tokens: 3,
+    output_tokens: 4,
+  }))
+    collector.line(JSON.stringify(event));
+  const afterEmpty = collector.snapshot();
+  assert.equal(afterEmpty.output, 'Final report: sleep 25 completed.');
+  assert.equal(afterEmpty.usage.inputTokens, 6721);
+  assert.equal(afterEmpty.usage.outputTokens, 64);
 });
 
-test('Claude collector skips a notification result of an earlier task before the answer on resume (#233)', () => {
+test('Claude collector skips a notification result of an earlier task before the answer on resume and warns (#233)', () => {
   const events = recording('success-partial');
-  const { snapshot, seen } = collect([...notificationTurn('run-0', 'Earlier task done.').slice(3), ...events]);
+  const { snapshot, seen } = collect([...notificationTurn('run-0', 'Earlier sleep 25 done.').slice(3), ...events]);
   assert.equal(snapshot.error, undefined);
   assert.equal(snapshot.output, 'OK');
   assert.equal(snapshot.terminal, true);
-  assert.equal(seen.filter(e => e.type === 'warning').length, 0);
+  assert.equal(snapshot.usage.outputTokens, 48, 'skipped earlier notification usage is not counted');
+  assert.deepEqual(
+    seen.filter(e => e.type === 'warning').map(e => e.message),
+    ['Skipped notification result from an earlier background task: Earlier sleep 25 done.'],
+  );
 });
 
-test('Claude collector still rejects a second result without origin', () => {
+test('Claude collector still validates repeated init and rejects a second result without origin', () => {
   const events = recording('success-partial');
   assert.throws(
     () => collect([...events, ...notificationTurn('run-1', 'x').slice(0, 5), { ...events.at(-1) }]),
     err => err.code === 'PROTOCOL_ERROR' && /second result/.test(err.message),
   );
+  const badInit = notificationTurn('run-1', 'x');
+  badInit[3] = { ...badInit[3], tools: [...TOOLS, 'Bash'] };
+  assert.throws(
+    () => collect([...events, ...badInit]),
+    err => err.code === 'SANDBOX_UNAVAILABLE',
+  );
 });
 
-test('Claude collector offers the latest assistant text as marked partial progress (#231)', () => {
+test('Claude collector offers the latest assistant text as marked partial progress plus running tasks (#231, #245)', () => {
   const { PARTIAL_PROGRESS_NOTICE } = require('../../../src/backends/claude/collector.ts');
   const events = recording('success-partial').filter(e => e.type !== 'result');
   const collector = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS, maxTotalMessageBytes: 200 });
   assert.equal(collector.partialProgress(), '', 'nothing before any assistant text');
   for (const event of events) collector.line(JSON.stringify(event));
   assert.equal(collector.partialProgress(), `${PARTIAL_PROGRESS_NOTICE}\n\nOK`);
+  for (const event of backgroundStarted) collector.line(JSON.stringify(event));
+  const withTask = collector.partialProgress();
+  assert.ok(withTask.startsWith(PARTIAL_PROGRESS_NOTICE));
+  assert.ok(withTask.includes('sleep 25'), 'names running background task');
+  assert.ok(withTask.includes('OK'), 'retains latest public text');
   collector.line(JSON.stringify({ type: 'assistant', message: { id: 'msg_long', content: [{ type: 'text', text: 'y'.repeat(150) }] } }));
   assert.ok(Buffer.byteLength(collector.partialProgress()) <= 200, 'bounded by the public budget');
 });

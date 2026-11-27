@@ -82,6 +82,7 @@ const recordings = {
   'max-tokens': ['success-partial', 0],
   'background-task': ['success-partial', 0],
   'resume-notification': ['success-partial', 0],
+  'second-result': ['success-partial', 0],
 };
 const [file, exitCode] = recordings[scenario] || [];
 if (!file) {
@@ -160,6 +161,14 @@ function notificationTurn(task, text, index) {
       origin: { kind: 'task-notification', producer: 'session-task', runId: task.run_id },
       result_index: index,
       process_turn_index: index,
+      usage: {
+        input_tokens: 5,
+        cache_creation_input_tokens: 20,
+        cache_read_input_tokens: 100,
+        cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 20 },
+        output_tokens: 12,
+        output_tokens_details: { thinking_tokens: 3 },
+      },
     },
   ];
 }
@@ -179,12 +188,21 @@ function answer() {
     // `max-tokens`: the answer stopped at the output length limit (ENVELOPE-001).
     if (scenario === 'max-tokens' && event.type === 'result') event.stop_reason = 'max_tokens';
     if ((scenario === 'no-result' || scenario === 'interruptible' || scenario === 'ignore-interrupt') && event.type === 'result') continue;
-    // `background-task`: the answer arrives while a background task runs.
-    if (scenario === 'background-task' && event.type === 'result') out.push(...taskStarted());
+    // `background-task` (#245): the prompt turn answers "I'll wait..." while a background task runs,
+    // and the automatic notification turn later emits the real report.
+    if (scenario === 'background-task') {
+      const interim = "I'll wait for the background run to finish.";
+      if (event.type === 'stream_event' && event.event?.delta?.type === 'text_delta') event.event.delta.text = interim;
+      if (event.type === 'assistant' && event.message?.content?.[0]?.type === 'text') event.message.content[0].text = interim;
+      if (event.type === 'result') {
+        event.result = interim;
+        out.push(...taskStarted());
+      }
+    }
     // `resume-notification` (#233): a task of the timed-out earlier turn ends first, and its
     // notification turn runs before the resumed turn's own init and answer.
     if (scenario === 'resume-notification' && event.subtype === 'init')
-      out.push(...notificationTurn({ ...TASK, run_id: 'run-0' }, 'The earlier background command finished.', 0).slice(3));
+      out.push(...notificationTurn({ ...TASK, run_id: 'run-0' }, 'The earlier background command sleep 25 finished.', 0).slice(3));
     if (scenario === 'unknown-events' && event.type === 'result') {
       out.push(
         { type: 'future_event_type', payload: 1 },
@@ -193,6 +211,7 @@ function answer() {
       );
     }
     out.push(event);
+    if (scenario === 'second-result' && event.type === 'result') out.push({ ...event, result_index: 1 });
   }
   for (const event of out) send(event);
   if (scenario === 'background-task') {
@@ -200,7 +219,7 @@ function answer() {
     // CLAUDE_FIXTURE_TASK_MS sets how long the task runs.
     setTimeout(
       () => {
-        for (const event of notificationTurn(TASK, 'The background command sleep 25 finished.', 1)) send(event);
+        for (const event of notificationTurn(TASK, 'Final report: sleep 25 completed.', 1)) send(event);
       },
       Number(env.CLAUDE_FIXTURE_TASK_MS || 500),
     );
