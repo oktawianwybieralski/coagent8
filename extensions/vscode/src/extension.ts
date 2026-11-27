@@ -23,7 +23,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { withFileLock } from '../../../src/storage/lock.js';
-import { readGovernance, setBackendExecutable, setModelRule, setPriceRules, validateConfig } from '../../../src/config.js';
+import { readGovernance, setBackendExecutable, setDefaultModel, setModelRule, setPriceRules, validateConfig } from '../../../src/config.js';
+import { effortVariant, isValidModelIdentifier, namesModelOrVariant } from '../../../src/contracts/models.js';
 import { runCommand } from '../../../src/execution/process.js';
 import type { ModelReport } from '../../../src/diagnostics/doctor.js';
 import type { ModelCandidate } from '../../../src/models/selection.js';
@@ -1644,8 +1645,38 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     );
   }
   /**
-   * Lists one backend's models, most expensive first, and sets the rule of the chosen one;
-   * the list is read again after each change.
+   * Writes a backend's default model: updates a non-empty `coagent8.<id>.defaultModel` user
+   * setting (which wins over config.json), otherwise writes `backends.<id>.defaultModel` in
+   * config.json under its lock. Refuses any model on `governance.models.deny`.
+   */
+  async function writeDefaultModel(id: ProviderId, model: string): Promise<void> {
+    if (!isValidModelIdentifier(model)) {
+      throw new Error(`Invalid model identifier: '${redactDiagnostic(model, 64)}'`);
+    }
+    const file = configurationFile();
+    const configuration = vscode.workspace.getConfiguration('coagent8');
+    const settingKey = `${id}.defaultModel`;
+    const editorValue = configuration.inspect<string>(settingKey)?.globalValue;
+    if (typeof editorValue === 'string' && editorValue.trim() !== '') {
+      // A non-empty VS Code setting wins over config.json, so keep the deny guard consistent and update the setting.
+      if (readGovernance(file).models.deny.some(listed => namesModelOrVariant(listed, model))) {
+        throw new Error(`Model '${redactDiagnostic(model, 64)}' is denied by the user and cannot be set as the default.`);
+      }
+      await startTracked(() => Promise.resolve(configuration.update(settingKey, model, vscode.ConfigurationTarget.Global)));
+      void vscode.window.showInformationMessage(
+        `${backendLabel(id)} default model set to ${model} in VS Code setting coagent8.${settingKey}. New requests use it; running sessions keep theirs.`,
+      );
+      return;
+    }
+    await startTracked(() => setDefaultModel(id, model, file));
+    void vscode.window.showInformationMessage(
+      `${backendLabel(id)} default model set to ${model} in ${shownPath(file, os.homedir())}. New requests use it; running sessions keep theirs.`,
+    );
+  }
+  type ModelActionItem = vscode.QuickPickItem & { rule?: ApprovalRule | null; setDefault?: boolean };
+  /**
+   * Lists one backend's models, most expensive first, and sets the approval rule or default
+   * model of the chosen one; the list is read again after each change.
    * @returns `back` when the user went back to the first step.
    */
   async function manageModelsOf(id: ProviderId): Promise<'back' | void> {
@@ -1655,16 +1686,22 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         `${backendLabel(id)} Models`,
         async () => {
           report = await readModelReport();
+          const backendDefault = report.backends[id]?.defaultModel?.model;
           const rows = report.selection
             .filter(row => row.backend === id)
             .sort((a, b) => (b.price.outputUsdPerMTok ?? Infinity) - (a.price.outputUsdPerMTok ?? Infinity));
           return {
-            placeholder: 'Choose a model to set its rule',
+            placeholder: 'Choose a model to set its rule or default',
             items: rows.map(row => {
               const { icon, text } = approvalOf(row);
+              const defaultEffort =
+                row.defaultSource && row.effortRequired && backendDefault?.startsWith(`${row.model}-`)
+                  ? backendDefault.slice(row.model.length + 1)
+                  : undefined;
+              const defaultText = row.defaultSource ? (defaultEffort ? `default (${defaultEffort})` : 'default') : '';
               return {
                 label: `${icon} ${row.model}`,
-                description: [priceText(row), row.defaultSource ? 'default' : '', text].filter(Boolean).join(' - '),
+                description: [priceText(row), defaultText, text].filter(Boolean).join(' - '),
                 row,
               };
             }),
@@ -1677,23 +1714,84 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       if (!chosen?.row) return;
       const { row } = chosen,
         current = ruleOf(row);
-      const rule = await choose({
-        title: row.model,
-        step: [3, 3],
-        back: true,
-        placeholder: `${priceText(row)} per million output tokens - applies to every client that runs CoAgent8`,
-        items: RULE_ITEMS.map(item => ({
+      const backendDefault = report?.backends[id]?.defaultModel?.model;
+      const defaultEffort =
+        row.defaultSource && row.effortRequired && backendDefault?.startsWith(`${row.model}-`)
+          ? backendDefault.slice(row.model.length + 1)
+          : undefined;
+      const actionItems: ModelActionItem[] = [
+        separator('Approval'),
+        ...RULE_ITEMS.map(item => ({
           ...item,
           description: item.rule === current ? `current - ${item.description}` : item.description,
         })),
-      });
-      if (rule === 'back') continue;
-      if (!rule?.length) return;
-      if (rule[0].rule === current) continue;
-      // The entry that decides the model, such as the variant a default runs as, is the one changed.
-      const target = row.approval.ruleEntry ?? row.model;
-      await startTracked(() => setModelRule(target, rule[0].rule, configurationFile()));
-      vscode.window.setStatusBarMessage(`CoAgent8: ${target} - ${rule[0].rule ? RULE_TEXT[rule[0].rule] : 'price rules'}`, 5000);
+        ...(row.approval.denied
+          ? []
+          : [
+              separator<ModelActionItem>('Default'),
+              {
+                label: '$(star) Set as Default',
+                setDefault: true,
+                description: row.defaultSource
+                  ? row.effortRequired && row.efforts.length
+                    ? `current${defaultEffort ? ` (${defaultEffort})` : ''} - choose effort for ${backendLabel(id)}`
+                    : `current - default for ${backendLabel(id)}`
+                  : row.effortRequired && row.efforts.length
+                    ? `choose effort and use for ${backendLabel(id)}`
+                    : `use for ${backendLabel(id)}`,
+              },
+            ]),
+      ];
+      for (;;) {
+        const action = await choose<ModelActionItem>({
+          title: row.model,
+          step: [3, 3],
+          back: true,
+          placeholder: `${priceText(row)} per million output tokens - applies to every client that runs CoAgent8`,
+          items: actionItems,
+        });
+        if (action === 'back') break;
+        if (!action?.length) return;
+        const picked = action[0]!;
+        if (!picked.setDefault) {
+          if (picked.rule === current) break;
+          // The entry that decides the model, such as the variant a default runs as, is the one changed.
+          const target = row.approval.ruleEntry ?? row.model;
+          await startTracked(() => setModelRule(target, picked.rule ?? null, configurationFile()));
+          vscode.window.setStatusBarMessage(`CoAgent8: ${target} - ${picked.rule ? RULE_TEXT[picked.rule] : 'price rules'}`, 5000);
+          break;
+        }
+        let targetModel = row.model;
+        if (row.effortRequired && row.efforts.length) {
+          const deniedList = readGovernance(configurationFile()).models.deny;
+          const effortChoice = await choose({
+            title: `${row.model} - Default Effort`,
+            step: [4, 4],
+            back: true,
+            placeholder: `Choose the reasoning effort for ${row.model} when used as default`,
+            items: row.efforts.map(effort => {
+              const candidate = effortVariant(row.model, effort);
+              const isDenied = deniedList.some(listed => namesModelOrVariant(listed, candidate));
+              return {
+                label: effort,
+                description: isDenied ? 'denied - cannot be set as default' : effort === defaultEffort ? 'current' : undefined,
+              };
+            }),
+          });
+          if (effortChoice === 'back') continue;
+          if (!effortChoice?.length) return;
+          targetModel = effortVariant(row.model, effortChoice[0]!.label);
+        }
+        try {
+          await writeDefaultModel(id, targetModel);
+        } catch (error) {
+          if (isDeactivating) return;
+          void vscode.window.showErrorMessage(
+            `CoAgent8: ${redactDiagnostic(error instanceof Error ? error.message : 'Setting default model failed.')}`,
+          );
+        }
+        break;
+      }
     }
   }
   register('coagent8.manageModelApprovals', async () => {

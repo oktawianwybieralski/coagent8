@@ -346,3 +346,109 @@ test('answerLanguage takes a language name or null and stays unset by default', 
   }
   assert.throws(() => validateConfig({ answerLanguage: 42 }), /Invalid answerLanguage/);
 });
+
+test('setDefaultModel writes and replaces the backend default, rejects invalid or denied models, and doctor reports it', async () => {
+  const { setDefaultModel, recordDefaultModel, setModelRule, loadConfig } = require('../src/config.ts');
+  const { runDoctor, formatDoctorSummary } = require('../src/diagnostics/doctor.ts');
+  const { adapterRegistry } = require('../src/backends/registry.ts');
+  const { EDITOR_SETTINGS_ENV } = require('../src/config-overrides.ts');
+  const isolated = path.join(testTempDir, 'set-default-model.json');
+  const schema = 'file:///fixture-extension/schemas/config.schema.json';
+  fs.writeFileSync(isolated, JSON.stringify({ $schema: schema }));
+
+  // Writes initial value and preserves existing fields such as $schema.
+  await setDefaultModel('codex', 'gpt-6-luna', isolated);
+  assert.equal(JSON.parse(fs.readFileSync(isolated, 'utf8')).backends.codex.defaultModel, 'gpt-6-luna');
+  assert.equal(JSON.parse(fs.readFileSync(isolated, 'utf8')).$schema, schema);
+
+  // Unlike recordDefaultModel, setDefaultModel replaces an existing default.
+  await setDefaultModel('codex', 'gpt-6-astra', isolated);
+  assert.equal(JSON.parse(fs.readFileSync(isolated, 'utf8')).backends.codex.defaultModel, 'gpt-6-astra');
+  const savedEnv = process.env.coagent8_CONFIG;
+  process.env.coagent8_CONFIG = isolated;
+  try {
+    assert.equal(await recordDefaultModel('codex', 'gpt-7-nova'), false);
+    assert.equal(loadConfig().backends.codex.defaultModel, 'gpt-6-astra');
+  } finally {
+    if (savedEnv === undefined) delete process.env.coagent8_CONFIG;
+    else process.env.coagent8_CONFIG = savedEnv;
+  }
+
+  // Rejects invalid backend or model identifiers.
+  await assert.rejects(() => setDefaultModel('unknown', 'gpt-6-luna', isolated), { code: 'INPUT_LIMIT' });
+  await assert.rejects(() => setDefaultModel('codex', '--bad model', isolated), { code: 'INPUT_LIMIT' });
+
+  // Refuses models on governance.models.deny (exact match, base model covering effort variants, and specific variant).
+  await setModelRule('gpt-7-nova', 'deny', isolated);
+  await setModelRule('gemini-4-hydrogen', 'deny', isolated);
+  await setModelRule('gemini-3.8-flash-high', 'deny', isolated);
+  await assert.rejects(() => setDefaultModel('codex', 'gpt-7-nova', isolated), { code: 'POLICY_DENIED' });
+  await assert.rejects(() => setDefaultModel('agy', 'gemini-4-hydrogen-high', isolated), { code: 'POLICY_DENIED' });
+  await assert.rejects(() => setDefaultModel('agy', 'gemini-3.8-flash-high', isolated), { code: 'POLICY_DENIED' });
+  await setDefaultModel('agy', 'gemini-3.8-flash-low', isolated);
+  assert.equal(JSON.parse(fs.readFileSync(isolated, 'utf8')).backends.agy.defaultModel, 'gemini-3.8-flash-low');
+
+  // Doctor reports the configured default model (including required effort suffix) and its source.
+  const origAgy = adapterRegistry.agy;
+  const origCodex = adapterRegistry.codex;
+  const origClaude = adapterRegistry.claude;
+  const savedConfigEnv = process.env.coagent8_CONFIG;
+  const savedDirEnv = process.env.coagent8_DIR;
+  const savedPricesEnv = process.env.coagent8_PRICES_URL;
+  const savedEditorEnv = process.env[EDITOR_SETTINGS_ENV];
+  const isolatedDataDir = path.join(testTempDir, 'doctor-data');
+  const isolatedPrices = path.join(testTempDir, 'prices.json');
+  fs.writeFileSync(
+    isolatedPrices,
+    JSON.stringify({
+      data: [
+        { id: 'openai/gpt-6-astra', pricing: { completion: '0.000005' } },
+        { id: 'google/gemini-3.8-flash', pricing: { completion: '0.000003' } },
+      ],
+    }),
+  );
+  process.env.coagent8_CONFIG = isolated;
+  process.env.coagent8_DIR = isolatedDataDir;
+  process.env.coagent8_PRICES_URL = isolatedPrices;
+  delete process.env[EDITOR_SETTINGS_ENV];
+  adapterRegistry.codex = {
+    ...origCodex,
+    probe: async () => ({ id: 'codex', installed: true, executionSupported: true, authStatus: 'authenticated' }),
+    listModels: async () => ({ source: 'fixture', models: [{ id: 'gpt-6-astra', efforts: ['low', 'high'] }] }),
+  };
+  adapterRegistry.agy = {
+    ...origAgy,
+    probe: async () => ({ id: 'agy', installed: true, executionSupported: true, authStatus: 'authenticated' }),
+    listModels: async () => ({
+      source: 'fixture',
+      models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }],
+    }),
+  };
+  adapterRegistry.claude = {
+    ...origClaude,
+    probe: async () => ({ id: 'claude', installed: false }),
+  };
+  try {
+    const fileReport = await runDoctor({ quota: false });
+    assert.deepEqual(fileReport.defaultModels.agy, { model: 'gemini-3.8-flash-low', source: 'config' });
+    assert.deepEqual(fileReport.defaultModels.codex, { model: 'gpt-6-astra', source: 'config' });
+    assert.match(formatDoctorSummary(fileReport), /agy: [^\n]* - model gemini-3\.8-flash-low \(config\.json\)/);
+
+    process.env[EDITOR_SETTINGS_ENV] = JSON.stringify({ 'agy.defaultModel': 'gemini-3.8-flash-low' });
+    const editorReport = await runDoctor({ quota: false });
+    assert.deepEqual(editorReport.defaultModels.agy, { model: 'gemini-3.8-flash-low', source: 'config' });
+    assert.deepEqual(editorReport.configProvenance.overrides, ['agy.defaultModel']);
+  } finally {
+    adapterRegistry.agy = origAgy;
+    adapterRegistry.codex = origCodex;
+    adapterRegistry.claude = origClaude;
+    if (savedConfigEnv === undefined) delete process.env.coagent8_CONFIG;
+    else process.env.coagent8_CONFIG = savedConfigEnv;
+    if (savedDirEnv === undefined) delete process.env.coagent8_DIR;
+    else process.env.coagent8_DIR = savedDirEnv;
+    if (savedPricesEnv === undefined) delete process.env.coagent8_PRICES_URL;
+    else process.env.coagent8_PRICES_URL = savedPricesEnv;
+    if (savedEditorEnv === undefined) delete process.env[EDITOR_SETTINGS_ENV];
+    else process.env[EDITOR_SETTINGS_ENV] = savedEditorEnv;
+  }
+});

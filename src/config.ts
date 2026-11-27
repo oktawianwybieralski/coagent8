@@ -7,7 +7,7 @@ import { readBoundedFileSync } from './storage/read.js';
 import { atomicWrite, withFileLock, isAbortSignal, type FileLockOptions } from './storage/lock.js';
 import type { BackendReadContext } from './contracts/execution.js';
 import { redactDiagnostic } from './security/redaction.js';
-import { isValidModelIdentifier } from './contracts/models.js';
+import { isValidModelIdentifier, namesModelOrVariant } from './contracts/models.js';
 import { MODEL_RULES, type GovernanceSettings, type ModelRules } from './contracts/governance.js';
 import { applyEditorSetting, readEditorSettings, type EditorSettingKey } from './config-overrides.js';
 import { COAGENT_SKILL_NAME, type SkillSelection } from './contracts/skills.js';
@@ -748,6 +748,39 @@ export async function recordDefaultModel(id: ProviderId, model: string): Promise
       validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], defaultModel: model } } }),
     );
     return true;
+  });
+}
+
+/**
+ * Sets a backend's default model in the configuration file under its lease, replacing any
+ * earlier choice unless the model is on `governance.models.deny`.
+ * @param id - Backend.
+ * @param model - The model identifier (with its effort suffix when required).
+ * @param file - The configuration file; the VS Code extension passes the one it gives the runtime.
+ * @throws `ToolError` (`INPUT_LIMIT`) on an unknown backend or invalid model identifier.
+ * @throws `ToolError` (`POLICY_DENIED`) when `model` is on `governance.models.deny`.
+ * @throws When the configuration cannot be locked, read, validated or written.
+ */
+export async function setDefaultModel(id: ProviderId, model: string, file = getConfigFile()): Promise<void> {
+  if (!(PROVIDERS as readonly string[]).includes(id)) {
+    throw new ToolError('INPUT_LIMIT', `Invalid backend '${redactDiagnostic(String(id), 32)}'. Supported: ${PROVIDERS.join(', ')}.`);
+  }
+  if (!isValidModelIdentifier(model)) {
+    throw new ToolError('INPUT_LIMIT', `Invalid model identifier: '${redactDiagnostic(model, 64)}'`);
+  }
+  ensureConfigDir(file);
+  await withFileLock(file, async () => {
+    const current = loadFileConfig(file);
+    if (current.governance.models.deny.some(listed => namesModelOrVariant(listed, model))) {
+      throw new ToolError(
+        'POLICY_DENIED',
+        `Model '${redactDiagnostic(model, 64)}' is denied by the user and cannot be set as the default.`,
+      );
+    }
+    await writeConfig(
+      validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], defaultModel: model } } }),
+      file,
+    );
   });
 }
 

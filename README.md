@@ -441,7 +441,7 @@ choose a command:
 | Command | What it does |
 | --- | --- |
 | `CoAgent8: Manage Coding CLIs` | Shows each CLI's state and chat entry. Installs a CLI (VS Code extension or official standalone), signs in, chooses the installation CoAgent8 uses, adds, updates or removes CoAgent8 in a CLI's chat, manages its skills, and removes what CoAgent8 installed |
-| `CoAgent8: Manage Model Approvals` | Allows, asks for or denies individual models, and sets the price rules for asking |
+| `CoAgent8: Manage Model Approvals` | Allows, asks for or denies individual models, sets each backend's default model (with effort where required), and sets the price rules for asking |
 | `CoAgent8: Manage Skills` | Installs, updates, uninstalls, enables or disables skills per client |
 | `CoAgent8: Open Settings` | Opens CoAgent8's backend, model, configuration path and Node.js settings |
 | `CoAgent8: Open Configuration (config.json)` | Opens the configuration file (`~/.coagent8/config.json` unless `coagent8.configPath` or `coagent8_CONFIG` names another), creating it with defaults if missing, with completion and validation (a file in another location needs a `$schema` entry, which new files get) |
@@ -454,7 +454,9 @@ change. When VS Code offers **Restart Extensions** after an install, update or
 chat change, use it. VS Code restarts the CoAgent8 server by itself when its
 settings or bundle change. Settings you save in VS Code take precedence over
 `config.json`, except an empty model, which keeps the file's model; the CLIs
-and other hosts read only the file.
+and other hosts read only the file. `CoAgent8: Manage Model Approvals` updates
+a non-empty VS Code default model setting when one is set, or
+`backends.<id>.defaultModel` in `config.json` otherwise.
 
 Uninstalling the extension removes what it added: its chat entries, skills,
 runtime copies and storage, including its sessions and history. Your shared

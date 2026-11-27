@@ -117,6 +117,8 @@ async function runExtension({
   onWarning,
   onBeforeSkillApply,
   pathAdapter = new MockPathAdapter('C:\\Tools', 'REG_SZ'),
+  editorSettings = {},
+  extraAgyModels = [],
 } = {}) {
   const handlers = {},
     registrationsWritten = [],
@@ -133,7 +135,9 @@ async function runExtension({
   const inputBoxes = [],
     statusMessages = [],
     modelRuns = [],
-    openedUrls = [];
+    openedUrls = [],
+    settingUpdates = [];
+  const editorValues = { ...editorSettings };
   // Each prompt answers with the first scripted action it offers.
   const answer = offered => [].concat(action ?? []).find(choice => offered.includes(choice));
   const cleanupCalls = [];
@@ -161,6 +165,7 @@ async function runExtension({
     },
     QuickInputButtons: { Back: { tooltip: 'Back' } },
     QuickPickItemKind: { Separator: SEPARATOR, Default: 0 },
+    ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
     Uri: {
       file(file) {
         return {
@@ -231,8 +236,14 @@ async function runExtension({
           get(key, fallback) {
             return key === 'nodePath' ? 'node' : key === 'configPath' ? configPath : fallback;
           },
-          inspect() {
-            return {};
+          inspect(key) {
+            return Object.hasOwn(editorValues, key) ? { globalValue: editorValues[key] } : {};
+          },
+          async update(key, value, target) {
+            settingUpdates.push({ key, value, target });
+            if (value === undefined) delete editorValues[key];
+            else editorValues[key] = value;
+            if (configurationListener) await configurationListener(affects(`coagent8.${key}`));
           },
         };
       },
@@ -536,8 +547,17 @@ async function runExtension({
       events.push(name);
     },
     async runModels(command, args, options) {
-      modelRuns.push({ args: Array.from(args).slice(1), config: options.env.coagent8_CONFIG });
-      return { status: 'completed', exitCode: 0, stdout: JSON.stringify(fixtureModelReport(options.env.coagent8_CONFIG)), stderr: '' };
+      modelRuns.push({
+        args: Array.from(args).slice(1),
+        config: options.env.coagent8_CONFIG,
+        editorSettings: options.env.coagent8_EDITOR_SETTINGS ? JSON.parse(options.env.coagent8_EDITOR_SETTINGS) : {},
+      });
+      return {
+        status: 'completed',
+        exitCode: 0,
+        stdout: JSON.stringify(fixtureModelReport(options.env.coagent8_CONFIG, options.env.coagent8_EDITOR_SETTINGS, extraAgyModels)),
+        stderr: '',
+      };
     },
   };
   vm.runInNewContext(output.outputFiles[0].text, {
@@ -716,6 +736,8 @@ async function runExtension({
       storageFiles,
       pathAdapter,
       openedUrls,
+      settingUpdates,
+      editorValues,
     };
   } finally {
     if (typeof module.exports.setPathAdapterForTest === 'function') {
@@ -744,11 +766,24 @@ async function runExtension({
  * The model view `coagent8 models --json` returns for a configuration file: two Codex models
  * and one agy model, tagged by the file's lists, else by a 20 USD price rule.
  */
-function fixtureModelReport(configFile) {
-  const governance = fs.existsSync(configFile) ? (JSON.parse(fs.readFileSync(configFile, 'utf8')).governance ?? {}) : {};
+function fixtureModelReport(configFile, editorSettingsRaw, extraAgyModels = []) {
+  const parsed = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, 'utf8')) : {};
+  const governance = parsed.governance ?? {};
+  const editor = editorSettingsRaw ? JSON.parse(editorSettingsRaw) : {};
   const models = { allow: [], ask: [], deny: [], ...governance.models };
+  const configuredDefault = id => {
+    const fromEditor = editor[`${id}.defaultModel`];
+    if (typeof fromEditor === 'string' && fromEditor !== '') return fromEditor;
+    return parsed.backends?.[id]?.defaultModel;
+  };
+  const codexDefault = configuredDefault('codex');
+  const agyDefault = configuredDefault('agy');
+  const agyCatalog = [{ model: 'gemini-3.8-flash', output: 3.75, defaultRuns: 'gemini-3.8-flash-low' }, ...extraAgyModels];
+  const agyMatched = agyDefault
+    ? agyCatalog.find(item => agyDefault === item.model || agyDefault.startsWith(`${item.model}-`))
+    : agyCatalog[0];
   // `runs`: the name a default model runs as (agy's `<id>-<effort>`), which its rules see.
-  const row = (backend, model, output, { runs, ...extra } = {}) => {
+  const row = (backend, model, output, { runs, efforts = [], effortRequired = false, ...extra } = {}) => {
     const names = [runs ?? model, model];
     const rule = ['deny', 'ask', 'allow'].find(name => models[name].some(listed => names.includes(listed)));
     const ruleEntry = rule && models[rule].find(listed => names.includes(listed));
@@ -759,7 +794,8 @@ function fixtureModelReport(configFile) {
     return {
       backend,
       model,
-      efforts: [],
+      efforts,
+      ...(effortRequired ? { effortRequired } : {}),
       price: { outputUsdPerMTok: output, match: output === null ? 'unknown' : 'exact' },
       approval: { required, denied: rule === 'deny', basis, reason: 'fixture', rememberable: false, ...(ruleEntry ? { ruleEntry } : {}) },
       ...extra,
@@ -770,15 +806,36 @@ function fixtureModelReport(configFile) {
     prices: null,
     recommendations: [],
     backends: {
-      codex: { installed: true, allowed: true },
+      codex: {
+        installed: true,
+        allowed: true,
+        defaultModel: { model: codexDefault ?? 'gpt-6-luna', source: codexDefault ? 'config' : 'catalog' },
+      },
       claude: { installed: false, allowed: true },
-      agy: { installed: true, allowed: true },
+      agy: {
+        installed: true,
+        allowed: true,
+        defaultModel: { model: agyDefault ?? 'gemini-3.8-flash-low', source: agyDefault ? 'config' : 'catalog' },
+      },
     },
     selection: [
-      row('codex', 'gpt-6-luna', 0.5, { defaultSource: 'catalog' }),
-      row('codex', 'gpt-6-astra', 50),
-      row('codex', 'gpt-7-nova', null),
-      row('agy', 'gemini-3.8-flash', 3.75, { defaultSource: 'catalog', runs: 'gemini-3.8-flash-low' }),
+      row(
+        'codex',
+        'gpt-6-luna',
+        0.5,
+        codexDefault ? (codexDefault === 'gpt-6-luna' ? { defaultSource: 'config' } : {}) : { defaultSource: 'catalog' },
+      ),
+      row('codex', 'gpt-6-astra', 50, codexDefault === 'gpt-6-astra' ? { defaultSource: 'config' } : {}),
+      row('codex', 'gpt-7-nova', null, codexDefault === 'gpt-7-nova' ? { defaultSource: 'config' } : {}),
+      ...agyCatalog.map(item => {
+        const isDefault = item === agyMatched;
+        const runs = isDefault ? (agyDefault ?? item.defaultRuns) : undefined;
+        return row('agy', item.model, item.output, {
+          efforts: item.efforts ?? [],
+          effortRequired: item.effortRequired ?? false,
+          ...(isDefault ? { defaultSource: agyDefault ? 'config' : 'catalog', ...(runs ? { runs } : {}) } : {}),
+        });
+      }),
     ],
   };
 }
@@ -1677,10 +1734,14 @@ test('Manage Model Approvals lists price rules and backends, then models by pric
   );
   assert.deepEqual([rule.title, rule.step], ['gpt-6-astra', '3/3']);
   assert.deepEqual(
-    rule.items.map(item => item.label),
-    ['$(pass-filled) Allow', '$(question) Ask Every Time', '$(circle-slash) Deny', '$(law) Price Rules'],
+    rule.items.filter(item => !item.separator).map(item => item.label),
+    ['$(pass-filled) Allow', '$(question) Ask Every Time', '$(circle-slash) Deny', '$(law) Price Rules', '$(star) Set as Default'],
   );
-  assert.equal(rule.items[3].description, 'current - Asks only when the price rules say so', 'the rule in force is marked');
+  assert.equal(
+    rule.items.find(item => item.label === '$(law) Price Rules').description,
+    'current - Asks only when the price rules say so',
+    'the rule in force is marked',
+  );
   assert.deepEqual(allowed.config.governance.models, { allow: ['gpt-6-astra'], ask: [], deny: [] });
   assert.equal(again.title, 'Codex CLI Models', 'the list of models reopens, read again');
   assert.equal(again.items.find(item => item.label.endsWith('gpt-6-astra')).description, '50 USD - allow');
@@ -1699,7 +1760,7 @@ test('Manage Model Approvals lists price rules and backends, then models by pric
     steps: [{ label: /Codex CLI$/ }, { label: /gpt-6-astra$/ }, { label: '$(circle-slash) Deny' }],
   });
   assert.deepEqual(denied.config.governance.models, { allow: [], ask: [], deny: ['gpt-6-astra'] });
-  assert.equal(denied.menus[2].items[0].description, 'current - Runs without asking');
+  assert.equal(denied.menus[2].items.find(item => item.label === '$(pass-filled) Allow').description, 'current - Runs without asking');
   assert.equal(denied.menus[3].items.find(item => item.label.endsWith('gpt-6-astra')).label, '$(circle-slash) gpt-6-astra');
   const priced = await runExtension({
     home,
@@ -1739,12 +1800,124 @@ test('Manage Model Approvals lists price rules and backends, then models by pric
   });
   assert.deepEqual(variant.errors, []);
   assert.equal(
-    variant.menus[2].items[0].description,
+    variant.menus[2].items.find(item => item.label === '$(pass-filled) Allow').description,
     'current - Runs without asking',
     'the rule on the variant is shown as the rule in force',
   );
   assert.deepEqual(variant.config.governance.models, { allow: [], ask: [], deny: [] }, 'Price Rules removes the rule that decided it');
   assert.deepEqual(variant.statusMessages, ['CoAgent8: gemini-3.8-flash-low - price rules']);
+});
+
+test('Manage Model Approvals sets default models in config.json or VS Code settings, picks required efforts, and blocks denied models', async t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-default-models-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const command = 'coagent8.manageModelApprovals';
+
+  // 1. Without a VS Code setting (or with an empty one), setting a default writes config.json and refreshes the list.
+  const fileDefault = await runExtension({
+    home,
+    command,
+    editorSettings: { 'codex.defaultModel': '' },
+    steps: [{ label: /Codex CLI$/ }, { label: /gpt-6-astra$/ }, { label: '$(star) Set as Default' }],
+  });
+  assert.deepEqual(fileDefault.errors, []);
+  assert.equal(fileDefault.config.backends.codex.defaultModel, 'gpt-6-astra');
+  assert.deepEqual(fileDefault.settingUpdates, [], 'empty VS Code setting leaves the write in config.json');
+  assert.equal(fileDefault.notifications.length, 1);
+  assert.match(fileDefault.notifications[0].message, /gpt-6-astra/);
+  assert.match(fileDefault.notifications[0].message, /config\.json/);
+  assert.match(fileDefault.notifications[0].message, /New requests use it; running sessions keep theirs\./);
+  const reopenedCodex = fileDefault.menus[3];
+  assert.equal(reopenedCodex.title, 'Codex CLI Models');
+  assert.equal(reopenedCodex.items.find(item => item.label.endsWith('gpt-6-astra')).description, '50 USD - default - asks: above price');
+  assert.equal(reopenedCodex.items.find(item => item.label.endsWith('gpt-6-luna')).description, '0.5 USD - runs without asking');
+
+  // 2. When coagent8.<backend>.defaultModel is non-empty, it updates the global VS Code setting instead of config.json.
+  const configBefore = fs.readFileSync(path.join(home, '.coagent8/config.json'), 'utf8');
+  const editorDefault = await runExtension({
+    home,
+    command,
+    editorSettings: { 'codex.defaultModel': 'gpt-6-luna' },
+    steps: [{ label: /Codex CLI$/ }, { label: /gpt-6-astra$/ }, { label: '$(star) Set as Default' }],
+  });
+  assert.deepEqual(editorDefault.errors, []);
+  assert.deepEqual(editorDefault.settingUpdates, [{ key: 'codex.defaultModel', value: 'gpt-6-astra', target: 1 }]);
+  assert.equal(editorDefault.editorValues['codex.defaultModel'], 'gpt-6-astra');
+  assert.equal(fs.readFileSync(path.join(home, '.coagent8/config.json'), 'utf8'), configBefore, 'config.json is untouched');
+  assert.match(editorDefault.notifications[0].message, /gpt-6-astra/);
+  assert.match(editorDefault.notifications[0].message, /coagent8\.codex\.defaultModel/);
+  assert.equal(
+    editorDefault.menus[3].items.find(item => item.label.endsWith('gpt-6-astra')).description,
+    '50 USD - default - asks: above price',
+  );
+
+  // 3. Models requiring an effort open an effort picker, Back returns one step, and picking an effort stores <id>-<effort>.
+  const extraAgyModels = [{ model: 'gemini-4-hydrogen', output: 10, efforts: ['high', 'xhigh', 'medium', 'low'], effortRequired: true }];
+  const effortPick = await runExtension({
+    home,
+    command,
+    extraAgyModels,
+    steps: [
+      { label: /Antigravity CLI$/ },
+      { label: /gemini-4-hydrogen$/ },
+      { label: '$(star) Set as Default' },
+      { button: 'Back' },
+      { label: '$(star) Set as Default' },
+      { label: 'high' },
+    ],
+  });
+  assert.deepEqual(effortPick.errors, []);
+  assert.equal(effortPick.config.backends.agy.defaultModel, 'gemini-4-hydrogen-high');
+  assert.deepEqual(
+    [effortPick.menus[3].title, effortPick.menus[3].step, effortPick.menus[3].buttons.includes('Back')],
+    ['gemini-4-hydrogen - Default Effort', '4/4', true],
+  );
+  assert.equal(effortPick.menus[4].title, 'gemini-4-hydrogen', 'Back from effort picker returns to the model action menu');
+  assert.equal(
+    effortPick.menus[6].items.find(item => item.label.endsWith('gemini-4-hydrogen')).description,
+    '10 USD - default (high) - runs without asking',
+  );
+
+  // 4. Denied models do not offer Set as Default, and denied effort variants are refused before writing.
+  fs.writeFileSync(
+    path.join(home, '.coagent8/config.json'),
+    JSON.stringify({
+      backends: { codex: { defaultModel: 'gpt-6-luna' }, agy: { defaultModel: 'gemini-3.8-flash-low' } },
+      governance: { models: { allow: [], ask: [], deny: ['gpt-6-astra', 'gemini-4-hydrogen-high'] } },
+    }),
+  );
+  const deniedModel = await runExtension({
+    home,
+    command,
+    steps: [{ label: /Codex CLI$/ }, { label: /gpt-6-astra$/ }],
+  });
+  assert.deepEqual(deniedModel.errors, []);
+  assert.equal(
+    deniedModel.menus[2].items.some(item => item.label === '$(star) Set as Default'),
+    false,
+    'a denied model is not offered Set as Default',
+  );
+
+  const deniedEffort = await runExtension({
+    home,
+    command,
+    extraAgyModels,
+    steps: [{ label: /Antigravity CLI$/ }, { label: /gemini-4-hydrogen$/ }, { label: '$(star) Set as Default' }, { label: 'high' }],
+  });
+  assert.equal(deniedEffort.errors.length, 1);
+  assert.match(deniedEffort.errors[0], /denied by the user and cannot be set as the default/);
+  assert.equal(deniedEffort.config.backends.agy.defaultModel, 'gemini-3.8-flash-low');
+
+  const deniedEffortEditor = await runExtension({
+    home,
+    command,
+    extraAgyModels,
+    editorSettings: { 'agy.defaultModel': 'gemini-3.8-flash-low' },
+    steps: [{ label: /Antigravity CLI$/ }, { label: /gemini-4-hydrogen$/ }, { label: '$(star) Set as Default' }, { label: 'high' }],
+  });
+  assert.equal(deniedEffortEditor.errors.length, 1);
+  assert.match(deniedEffortEditor.errors[0], /denied by the user and cannot be set as the default/);
+  assert.deepEqual(deniedEffortEditor.settingUpdates, [], 'denied variant is refused before updating VS Code setting');
 });
 test('Manage Model Approvals opens in a multi-root window, where setup asks for one workspace', async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-approvals-roots-'));
