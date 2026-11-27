@@ -477,3 +477,40 @@ test('manageSkills exposes removable dropped catalog packages and reports edited
   assert.equal(fs.readFileSync(file(p.home, 'agy', names[1]), 'utf8'), 'user edited dropped skill');
   assert.deepEqual(applied.preserved, [{ name: names[1], location: 'enabled', message: 'Dropped catalog package was edited; preserved.' }]);
 });
+
+test('manageSkills expectedSelection refuses stale selections and flags outdated foreign packages', async t => {
+  const p = profile(t);
+  await apply(p.options, 'install', [names[0], names[1]]);
+  const initial = await manageSkills(p.options);
+
+  // Token binds expectedSelection and refuses when current selection changes before preview or apply.
+  const preview = await manageSkills({
+    ...p.options,
+    selection: initial.selection,
+    expectedSelection: initial.selection,
+  });
+  const disabledOne = skillSelectionForAction(initial.selection, [names[1]], 'disable');
+  await setBackendSkills('agy', disabledOne, p.env.coagent8_CONFIG);
+  await assert.rejects(
+    manageSkills({ ...p.options, selection: initial.selection, expectedSelection: initial.selection }),
+    /Skill selection changed/,
+  );
+  await assert.rejects(
+    manageSkills({ ...p.options, selection: initial.selection, expectedSelection: initial.selection, apply: preview.token }),
+    /Skill selection changed/,
+  );
+  assert.deepEqual(JSON.parse(fs.readFileSync(p.env.coagent8_CONFIG)).backends.agy.skills, disabledOne);
+
+  // Foreign copy (extra file) marks updateAvailable only when the catalog digest differs from recorded ownership.
+  fs.writeFileSync(path.join(skillRoot('agy', p.home), names[0], 'extra.txt'), 'foreign');
+  const sameCatalog = await manageSkills(p.options);
+  assert.equal(sameCatalog.skills.find(item => item.name === names[0]).state, 'conflict');
+  assert.equal(sameCatalog.skills.find(item => item.name === names[0]).updateAvailable, false);
+
+  const nextCatalog = path.join(p.home, 'next-catalog-foreign');
+  fs.cpSync(catalog, nextCatalog, { recursive: true });
+  fs.appendFileSync(path.join(nextCatalog, names[0], 'SKILL.md'), '\nForeign catalog revision.\n');
+  const updatedCatalog = await manageSkills({ ...p.options, skillsSource: nextCatalog });
+  assert.equal(updatedCatalog.skills.find(item => item.name === names[0]).state, 'conflict');
+  assert.equal(updatedCatalog.skills.find(item => item.name === names[0]).updateAvailable, true);
+});

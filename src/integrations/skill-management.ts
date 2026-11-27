@@ -83,6 +83,16 @@ export interface SkillManagementOptions {
   apply?: string;
   /** Confirmed per-root observations for packages to rewrite in their desired location. */
   overwrite?: SkillOverwrite[];
+  /** When set, preview and apply require the client's current selection to match this snapshot. */
+  expectedSelection?: SkillSelection;
+}
+
+function sameSkillSelection(a: SkillSelection, b: SkillSelection): boolean {
+  const normalize = (value: SkillSelection) => ({
+    installed: [...value.installed].sort(),
+    disabled: [...value.disabled].sort(),
+  });
+  return JSON.stringify(normalize(a)) === JSON.stringify(normalize(b));
 }
 
 function observeRootState(seen: SkillObserved): SkillRootObservation {
@@ -128,12 +138,19 @@ function inventory(
       (disabled.state === 'file' && disabled.digest !== saved.disabledSkills?.[client]?.[item.name]);
     const state = conflict ? 'conflict' : active.state === 'file' ? 'enabled' : disabled.state === 'file' ? 'disabled' : 'absent';
     const desired = !selection.installed.includes(item.name) ? 'absent' : selection.disabled.includes(item.name) ? 'disabled' : 'enabled';
+    const savedActive = saved.skills[client]?.[item.name];
+    const savedDisabled = saved.disabledSkills?.[client]?.[item.name];
+    const foreignOutdated =
+      (active.state === 'foreign' && savedActive !== undefined && savedActive !== item.digest) ||
+      (disabled.state === 'foreign' && savedDisabled !== undefined && savedDisabled !== item.digest);
     return {
       name: item.name,
       state,
       desired,
       updateAvailable:
-        (active.state === 'file' && active.digest !== item.digest) || (disabled.state === 'file' && disabled.digest !== item.digest),
+        (active.state === 'file' && active.digest !== item.digest) ||
+        (disabled.state === 'file' && disabled.digest !== item.digest) ||
+        foreignOutdated,
       message: conflict
         ? 'Edited, foreign, linked or duplicate package; preserved.'
         : state === 'enabled'
@@ -453,6 +470,17 @@ export async function manageSkills(options: SkillManagementOptions): Promise<Ski
       new Set(selection.disabled).size !== selection.disabled.length)
   )
     throw new Error('Invalid skill selection; choose catalog names and a unique disabled subset.');
+  const expectedSelection = options.expectedSelection;
+  if (
+    expectedSelection &&
+    (!Array.isArray(expectedSelection.installed) ||
+      !Array.isArray(expectedSelection.disabled) ||
+      expectedSelection.installed.some(name => !catalog.some(item => item.name === name)) ||
+      new Set(expectedSelection.installed).size !== expectedSelection.installed.length ||
+      expectedSelection.disabled.some(name => !expectedSelection.installed.includes(name)) ||
+      new Set(expectedSelection.disabled).size !== expectedSelection.disabled.length)
+  )
+    throw new Error('Invalid expected skill selection; choose catalog names and a unique disabled subset.');
   const overwrite = options.overwrite;
   if (
     overwrite !== undefined &&
@@ -495,6 +523,9 @@ export async function manageSkills(options: SkillManagementOptions): Promise<Ski
           disabled: catalog.filter(item => saved.disabledSkills?.[client]?.[item.name]).map(item => item.name),
         };
     const desired = selection ?? current;
+    if (expectedSelection && !sameSkillSelection(expectedSelection, current)) {
+      throw new Error('Skill selection changed; run it again.');
+    }
     const skills = inventory(client, home, catalog, saved, desired);
     const rawObservations = catalog.map(pkg => ({
       name: pkg.name,
@@ -541,6 +572,14 @@ export async function manageSkills(options: SkillManagementOptions): Promise<Ski
         state: stateSnapshot,
         catalog: catalog.map(pkg => [pkg.name, pkg.digest]),
         desired,
+        ...(expectedSelection
+          ? {
+              expectedSelection: {
+                installed: [...expectedSelection.installed].sort(),
+                disabled: [...expectedSelection.disabled].sort(),
+              },
+            }
+          : {}),
         ...(overwriteList.length ? { overwrite: overwriteList } : {}),
         observations: rawObservations.map(obs => [obs.name, obs.enabled, obs.disabled]),
         ...(droppedObservations.length ? { droppedObservations } : {}),

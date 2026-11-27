@@ -658,7 +658,9 @@ Bulk updates in VS Code apply each client's current selection unchanged via
 `removable`), while bulk reinstalls pass user-confirmed per-root observations in
 `overwrite` (bound to the preview token and re-checked immediately before each
 write or removal) so `reconcileSkills` replaces only confirmed conflicting or
-current copies in their desired enabled or disabled root. On activation, VS Code
+current copies in their desired enabled or disabled root; both bulk actions pass
+`expectedSelection` to refuse applying a stale selection if `backends.<client>.skills`
+changed since inspection. On activation, VS Code
 hashes the sorted catalog names and digests and offers **Update Skills** (or
 **Manage Skills** when only edited copies are affected) once per client and
 fingerprint in `setup-state.json` (`skillsOffered`) when any installed package

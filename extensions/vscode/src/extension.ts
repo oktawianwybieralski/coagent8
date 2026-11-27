@@ -1294,12 +1294,19 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     });
   }
   /** Applies each client's current skill selection unchanged to refresh outdated non-conflict packages and catalog removals. */
-  async function updateAllSkills(): Promise<void> {
+  async function updateAllSkills(expectedSelections?: Partial<Record<SetupClient, SkillManagementResult['selection']>>): Promise<void> {
     const outcome: BulkSkillOutcome = { succeeded: [], preserved: [], failed: [], skipped: [] };
     for (const client of SETUP_CLIENTS) {
       const skillOptions = skillOptionsFor(client);
       try {
         const current = await startTracked(() => manageSkills(skillOptions));
+        const expected = expectedSelections?.[client] ?? current.selection;
+        if (
+          JSON.stringify({ installed: [...expected.installed].sort(), disabled: [...expected.disabled].sort() }) !==
+          JSON.stringify({ installed: [...current.selection.installed].sort(), disabled: [...current.selection.disabled].sort() })
+        ) {
+          throw new Error('Skill selection changed; run it again.');
+        }
         const outdatedCount = updateCountOf(current);
         if (!outdatedCount) {
           outcome.skipped.push(current);
@@ -1307,8 +1314,12 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
           if (copies.length) outcome.preserved.push({ client, copies });
           continue;
         }
-        const preview = await startTracked(() => manageSkills({ ...skillOptions, selection: current.selection }));
-        const result = await startTracked(() => manageSkills({ ...skillOptions, selection: current.selection, apply: preview.token }));
+        const preview = await startTracked(() =>
+          manageSkills({ ...skillOptions, selection: current.selection, expectedSelection: expected }),
+        );
+        const result = await startTracked(() =>
+          manageSkills({ ...skillOptions, selection: current.selection, expectedSelection: expected, apply: preview.token }),
+        );
         outcome.succeeded.push({ client, count: outdatedCount, result });
         const copies = preservedCopiesOf(result);
         if (copies.length) outcome.preserved.push({ client, copies });
@@ -1322,13 +1333,21 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     announceBulkSkillsResult('update', outcome);
   }
   /** Rewrites every installed CoAgent8 package across clients after modal confirmation bound to each conflict root. */
-  async function reinstallAllSkills(): Promise<void> {
+  async function reinstallAllSkills(expectedSelections?: Partial<Record<SetupClient, SkillManagementResult['selection']>>): Promise<void> {
     const outcome: BulkSkillOutcome = { succeeded: [], preserved: [], failed: [], skipped: [] };
     const targets: { client: SetupClient; status: SkillManagementResult; conflictCopies: PreservedSkill[] }[] = [];
     for (const client of SETUP_CLIENTS) {
       const skillOptions = skillOptionsFor(client);
       try {
         const current = await startTracked(() => manageSkills(skillOptions));
+        const expected = expectedSelections?.[client];
+        if (
+          expected &&
+          JSON.stringify({ installed: [...expected.installed].sort(), disabled: [...expected.disabled].sort() }) !==
+            JSON.stringify({ installed: [...current.selection.installed].sort(), disabled: [...current.selection.disabled].sort() })
+        ) {
+          throw new Error('Skill selection changed; run it again.');
+        }
         if (!current.selection.installed.length) {
           outcome.skipped.push(current);
           const copies = preservedCopiesOf(current);
@@ -1366,7 +1385,14 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         return obs;
       });
       try {
-        const preview = await startTracked(() => manageSkills({ ...skillOptions, selection: entry.status.selection, overwrite }));
+        const preview = await startTracked(() =>
+          manageSkills({
+            ...skillOptions,
+            selection: entry.status.selection,
+            expectedSelection: entry.status.selection,
+            overwrite,
+          }),
+        );
         // Verify every targeted package's enabled and disabled roots match what the user confirmed.
         const changedRoots = findChangedRoots(overwrite, preview.observations);
         if (changedRoots.length) {
@@ -1375,7 +1401,13 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         let result: SkillManagementResult;
         try {
           result = await startTracked(() =>
-            manageSkills({ ...skillOptions, selection: entry.status.selection, overwrite, apply: preview.token }),
+            manageSkills({
+              ...skillOptions,
+              selection: entry.status.selection,
+              expectedSelection: entry.status.selection,
+              overwrite,
+              apply: preview.token,
+            }),
           );
         } catch (applyError) {
           // If a package changed between preview and apply, inspect fresh observations to name the changed roots.
@@ -1445,9 +1477,9 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       const preview = await startTracked(() => manageSkills({ ...skillOptions, selection }));
       const result = await startTracked(() => manageSkills({ ...skillOptions, selection, apply: preview.token }));
       report(result);
-      const conflicts = result.skills.filter(item => item.state === 'conflict').length;
-      const message = `${LABELS[client]} skill selection applied.${conflicts ? ` ${conflicts} conflicting packages were preserved; see details.` : ''} Start a new chat to refresh its skills. Native client visibility settings and other discovered copies still apply.`;
-      const notice = conflicts
+      const preserved = preservedCopiesOf(result);
+      const message = `${LABELS[client]} skill selection applied.${preserved.length ? ` Left alone because changed outside CoAgent8: ${formatPreservedCopies(preserved)}.` : ''} Start a new chat to refresh its skills. Native client visibility settings and other discovered copies still apply.`;
+      const notice = preserved.length
         ? vscode.window.showWarningMessage(message, 'Show Details')
         : vscode.window.showInformationMessage(message, 'Show Details');
       void notice.then(choice => {
@@ -1500,12 +1532,13 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       const chosen = await choose({ title: 'Manage Skills', placeholder: 'Choose a CLI', items, step: [1, 3] });
       if (!chosen || chosen === 'back') return;
       const selected = chosen[0];
+      const expectedSelections = Object.fromEntries(healthy.map(entry => [entry.client, entry.result.selection]));
       if (selected.bulk === 'updateAll') {
-        await updateAllSkills();
+        await updateAllSkills(expectedSelections);
         return;
       }
       if (selected.bulk === 'reinstallAll') {
-        await reinstallAllSkills();
+        await reinstallAllSkills(expectedSelections);
         return;
       }
       if (!selected.client) continue;
