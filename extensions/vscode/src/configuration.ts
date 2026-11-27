@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readBoundedFileSync } from '../../../src/storage/read.js';
 import { withFileLock } from '../../../src/storage/lock.js';
+import { SETUP_CLIENTS, type SetupClient } from '../../../src/integrations/setup-clients.js';
 
 /** Writes `content` to `file` through a temporary file in the same directory. */
 function replaceFile(file: string, content: string): void {
@@ -45,8 +46,8 @@ export interface SetupState {
   welcomed?: boolean;
   /** The runtime (`<version>#<sha-256>`) whose outdated CLI chat registrations were last offered for update. */
   updateOffered?: string;
-  /** The bundled skill catalog digest whose outdated packages were last offered for update. */
-  skillsOffered?: string;
+  /** The bundled skill catalog digest whose changes were last offered for update, per client. */
+  skillsOffered?: Partial<Record<SetupClient, string>>;
   /** Vendor extensions whose removal the user started from a CLI menu, finished once VS Code has removed them. */
   removingExtensions?: string[];
   /** State of the PATH opt-in prompt. */
@@ -106,7 +107,14 @@ export function readSetupState(storage: string): SetupState {
   const record = readObject(setupStateFile(storage));
   const state: SetupState = record.welcomed === true ? { welcomed: true } : {};
   if (typeof record.updateOffered === 'string') state.updateOffered = record.updateOffered;
-  if (typeof record.skillsOffered === 'string') state.skillsOffered = record.skillsOffered;
+  if (record.skillsOffered && typeof record.skillsOffered === 'object' && !Array.isArray(record.skillsOffered)) {
+    const offered: Partial<Record<SetupClient, string>> = {};
+    for (const client of SETUP_CLIENTS) {
+      const value = (record.skillsOffered as Record<string, unknown>)[client];
+      if (typeof value === 'string') offered[client] = value;
+    }
+    if (Object.keys(offered).length) state.skillsOffered = offered;
+  }
   const removing = strings(record.removingExtensions);
   if (removing?.length) state.removingExtensions = removing;
   if (
@@ -172,6 +180,9 @@ export async function updateSetupState(storage: string, changes: SetupState): Pr
   const file = setupStateFile(storage);
   fs.mkdirSync(storage, { recursive: true });
   await withFileLock(file, async () => {
-    replaceFile(file, JSON.stringify({ ...readSetupState(storage), ...changes }, null, 2) + '\n');
+    const previous = readSetupState(storage);
+    const next: SetupState = { ...previous, ...changes };
+    if (changes.skillsOffered) next.skillsOffered = { ...previous.skillsOffered, ...changes.skillsOffered };
+    replaceFile(file, JSON.stringify(next, null, 2) + '\n');
   });
 }

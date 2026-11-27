@@ -1180,9 +1180,9 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     return createHash('sha256').update(JSON.stringify(entries)).digest('hex');
   }
   type ClientSkillInspection = { client: SetupClient; result: SkillManagementResult } | { client: SetupClient; error: string };
-  async function inspectAllClientSkills(): Promise<ClientSkillInspection[]> {
+  async function inspectAllClientSkills(clients: readonly SetupClient[] = SETUP_CLIENTS): Promise<ClientSkillInspection[]> {
     return Promise.all(
-      SETUP_CLIENTS.map(async (client): Promise<ClientSkillInspection> => {
+      clients.map(async (client): Promise<ClientSkillInspection> => {
         try {
           const result = await startTracked(() => manageSkills(skillOptionsFor(client)));
           return { client, result };
@@ -1197,6 +1197,31 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
   }
   const updateCountOf = (result: SkillManagementResult): number =>
     result.skills.filter(item => item.state !== 'conflict' && item.updateAvailable).length + result.removable.length;
+  /** Compares confirmed per-root overwrite expectations against fresh observations and names any changed root. */
+  function findChangedRoots(overwrite: SkillOverwrite[], observations: SkillOverwrite[]): string[] {
+    const changed: string[] = [];
+    for (const expected of overwrite) {
+      const seen = observations.find(item => item.name === expected.name);
+      if (!seen || seen.enabled !== expected.enabled) changed.push(`${expected.name} (enabled)`);
+      if (!seen || seen.disabled !== expected.disabled) changed.push(`${expected.name} (disabled)`);
+    }
+    return changed;
+  }
+  /** Preserved copies affected by a catalog update (selected conflicts with a digest difference and edited dropped packages). */
+  function affectedPreservedOf(result: SkillManagementResult): PreservedSkill[] {
+    const updatedConflictNames = new Set(
+      result.skills
+        .filter(item => item.state === 'conflict' && item.updateAvailable && result.selection.installed.includes(item.name))
+        .map(item => item.name),
+    );
+    const copies = preservedCopiesOf(result, updatedConflictNames);
+    for (const dropped of result.preserved ?? []) {
+      if (!copies.some(entry => entry.name === dropped.name && entry.location === dropped.location)) {
+        copies.push(dropped);
+      }
+    }
+    return copies;
+  }
   /** Lists each preserved copy by package name and root (`enabled` or `disabled`). */
   function preservedCopiesOf(result: SkillManagementResult, names?: Set<string>): PreservedSkill[] {
     const copies: PreservedSkill[] = [];
@@ -1343,18 +1368,26 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       try {
         const preview = await startTracked(() => manageSkills({ ...skillOptions, selection: entry.status.selection, overwrite }));
         // Verify every targeted package's enabled and disabled roots match what the user confirmed.
-        const changedRoots: string[] = [];
-        for (const expected of overwrite) {
-          const seen = preview.observations.find(item => item.name === expected.name);
-          if (!seen || seen.enabled !== expected.enabled) changedRoots.push(`${expected.name} (enabled)`);
-          if (!seen || seen.disabled !== expected.disabled) changedRoots.push(`${expected.name} (disabled)`);
-        }
+        const changedRoots = findChangedRoots(overwrite, preview.observations);
         if (changedRoots.length) {
           throw new Error(`Changed after confirmation: ${changedRoots.join(', ')}; run Reinstall all again.`);
         }
-        const result = await startTracked(() =>
-          manageSkills({ ...skillOptions, selection: entry.status.selection, overwrite, apply: preview.token }),
-        );
+        let result: SkillManagementResult;
+        try {
+          result = await startTracked(() =>
+            manageSkills({ ...skillOptions, selection: entry.status.selection, overwrite, apply: preview.token }),
+          );
+        } catch (applyError) {
+          // If a package changed between preview and apply, inspect fresh observations to name the changed roots.
+          if (applyError instanceof Error && /Skill preview changed/.test(applyError.message)) {
+            const fresh = await startTracked(() => manageSkills(skillOptions));
+            const changedBetween = findChangedRoots(overwrite, fresh.observations);
+            if (changedBetween.length) {
+              throw new Error(`Changed after confirmation: ${changedBetween.join(', ')}; run Reinstall all again.`);
+            }
+          }
+          throw applyError;
+        }
         outcome.succeeded.push({ client: entry.client, count: entry.status.selection.installed.length, result });
         const remainingCopies = preservedCopiesOf(result);
         if (remainingCopies.length) outcome.preserved.push({ client: entry.client, copies: remainingCopies });
@@ -2178,22 +2211,39 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     )
       return;
     const fingerprint = skillCatalogFingerprint();
-    if (readSetupState(storage).skillsOffered === fingerprint || isDeactivating) return;
-    const inspections = await inspectAllClientSkills();
+    const offered = readSetupState(storage).skillsOffered ?? {};
+    const pendingClients = SETUP_CLIENTS.filter(client => offered[client] !== fingerprint);
+    if (!pendingClients.length || isDeactivating) return;
+    const inspections = await inspectAllClientSkills(pendingClients);
     if (isDeactivating) return;
-    const outdated = inspections
-      .filter((entry): entry is { client: SetupClient; result: SkillManagementResult } => 'result' in entry)
-      .filter(({ result }) => updateCountOf(result) > 0)
-      .map(({ client }) => client);
-    if (!outdated.length || isDeactivating) return;
-    await startTracked(() => updateSetupState(storage, { skillsOffered: fingerprint }));
+    const healthy = inspections.filter((entry): entry is { client: SetupClient; result: SkillManagementResult } => 'result' in entry);
+    if (!healthy.length) return;
+    const updatable = healthy.filter(({ result }) => updateCountOf(result) > 0).map(({ client }) => client);
+    const preserved = healthy
+      .map(({ client, result }) => ({ client, copies: affectedPreservedOf(result) }))
+      .filter(entry => entry.copies.length > 0);
+    if (!updatable.length && !preserved.length) return;
+    // Record only clients whose inspection succeeded so a failing client is retried on the next activation.
+    const newlyOffered: Partial<Record<SetupClient, string>> = {};
+    for (const { client } of healthy) newlyOffered[client] = fingerprint;
+    await startTracked(() => updateSetupState(storage, { skillsOffered: newlyOffered }));
     if (isDeactivating) return;
-    const next = await vscode.window.showInformationMessage(
-      `Newer CoAgent8 skills are available for ${labels(outdated)}.`,
-      'Update Skills',
-    );
-    if (isDeactivating) return;
-    if (next === 'Update Skills') await trackTask(updateAllSkills());
+    const preservedSummary = preserved.map(entry => `${LABELS[entry.client]} (${formatPreservedCopies(entry.copies)})`).join('; ');
+    if (updatable.length) {
+      const message = preserved.length
+        ? `Newer CoAgent8 skills are available for ${labels(updatable)}. Left alone: ${preservedSummary}.`
+        : `Newer CoAgent8 skills are available for ${labels(updatable)}.`;
+      const next = await vscode.window.showInformationMessage(message, 'Update Skills');
+      if (isDeactivating) return;
+      if (next === 'Update Skills') await trackTask(updateAllSkills());
+    } else {
+      const next = await vscode.window.showInformationMessage(
+        `CoAgent8 skills changed; edited copies left alone: ${preservedSummary}.`,
+        'Manage Skills',
+      );
+      if (isDeactivating) return;
+      if (next === 'Manage Skills') await vscode.commands.executeCommand('coagent8.manageSkills');
+    }
   }
   void offerSkillsUpdate().catch(error => {
     if (!isDeactivating)
