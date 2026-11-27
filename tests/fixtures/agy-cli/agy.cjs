@@ -11,6 +11,9 @@ if (process.env.coagent8_FIXTURE_LAUNCH_LOG) {
     }) + '\n',
   );
 }
+if (process.env.coagent8_FIXTURE_CWD_LOG) {
+  fs.appendFileSync(process.env.coagent8_FIXTURE_CWD_LOG, JSON.stringify({ args, cwd: process.cwd() }) + '\n');
+}
 const mode = process.env.AGY_FIXTURE_MODE || process.env.coagent8_FIXTURE_MODE || 'success';
 if (args.includes('--version')) {
   if (mode === 'hang-probe' || mode === 'hang-version') {
@@ -29,6 +32,10 @@ if (args[0] === 'mcp' && args[1] === 'list') {
     console.error('mcp list failed');
     process.exit(1);
   }
+  if (mode === 'garbled-mcp') {
+    console.log('Loading MCP configuration...');
+    process.exit(0);
+  }
   // `agy mcp list` of agy 1.3.1 (2026-10-07); coagent8_FIXTURE_AGY_MCP lists [name, status] rows.
   const rows = JSON.parse(process.env.coagent8_FIXTURE_AGY_MCP || '[]');
   if (!rows.length) {
@@ -44,6 +51,18 @@ if (args[0] === 'mcp' && args[1] === 'list') {
   process.exit(0);
 }
 if (args[0] === 'plugin' && args[1] === 'list') {
+  if (mode === 'hang-plugins') {
+    setInterval(() => {}, 1000);
+    return;
+  }
+  if (mode === 'fail-plugins') {
+    console.error('plugin list failed');
+    process.exit(1);
+  }
+  if (mode === 'garbled-plugins') {
+    console.log('No plugins installed.');
+    process.exit(0);
+  }
   // `agy plugin list --json` of agy 1.5.18 (2026-11-27); coagent8_FIXTURE_AGY_PLUGINS lists names.
   const names = JSON.parse(process.env.coagent8_FIXTURE_AGY_PLUGINS || '[]');
   console.log(

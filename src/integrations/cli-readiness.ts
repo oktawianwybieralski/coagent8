@@ -7,6 +7,7 @@ import type { CliCommand } from '../execution/cli-resolver.js';
 import type { SetupClient } from './setup-clients.js';
 import { object, withStdioRpc } from './rpc.js';
 import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from '../backends/claude/version.js';
+import { agyEnvironment } from '../backends/agy/adapter.js';
 
 /** CLI evidence is distinct from runtime/host calls and per-turn sandbox verification. */
 export interface CliReadiness {
@@ -20,8 +21,9 @@ export interface CliReadiness {
 /** Reads bounded version/help/login metadata; token validity still needs a user-authorized turn. */
 export async function inspectCli(client: SetupClient, cli: CliCommand, env: NodeJS.ProcessEnv, cwd: string): Promise<CliReadiness> {
   const result: CliReadiness = { version: null, compatibility: 'unknown', authentication: 'unknown', ready: false, diagnostic: '' };
-  // agy's background updater opens a console window on Windows; probes never need it.
-  const probeEnv = client === 'agy' ? { ...env, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' } : env;
+  // Like every agy call: no background updater (its console window takes the focus on Windows)
+  // and, on Windows, CoAgent8's agy profile (#224); the sign-in lives in Credential Manager.
+  const probeEnv = client === 'agy' ? agyEnvironment(process.platform, env) : env;
   const command = (args: string[], extraEnv: NodeJS.ProcessEnv = {}) =>
     runCommand(cli.command, [...cli.argsPrefix, ...args], {
       env: { ...probeEnv, ...extraEnv },

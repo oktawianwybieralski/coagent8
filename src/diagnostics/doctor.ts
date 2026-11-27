@@ -129,7 +129,7 @@ export interface DoctorReport {
   /**
    * Windows only, agy installed: whether CoAgent8's own agy profile was verified to offer no MCP
    * servers or plugins (#224). `refused`: it contains some, and agy turns do not start;
-   * `unverified`: agy could not list them, and the first turn checks again.
+   * `unverified`: agy could not list them. Every agy turn checks again before it starts.
    */
   agyProfile?: { path: string; state: 'verified' | 'refused' | 'unverified' };
   /** Optional call-level execution trace measuring diagnostic phases. */
@@ -273,7 +273,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
       const tools = inherited[index];
       if (tools && (tools.mcpServers.length || tools.plugins.length)) inheritedTools[id] = tools;
     });
-    // On Windows agy runs with CoAgent8's own profile; the same check gates its first turn (#224).
+    // On Windows agy runs with CoAgent8's own profile; the same check runs before every agy turn (#224).
     const agyIndex = selected.indexOf('agy');
     const agyProfilePath = redactDiagnostic(getAgyProfileDir());
     const agyProfile: DoctorReport['agyProfile'] =
@@ -345,7 +345,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
       );
     if (agyProfile?.state === 'unverified') {
       inheritedNotes.push(
-        `agy: CoAgent8 could not list the MCP servers and plugins of its agy profile ${agyProfile.path}; the first agy turn checks again and does not start unless the profile has none.`,
+        `agy: CoAgent8 could not list the MCP servers and plugins of its agy profile ${agyProfile.path}; every agy turn checks again and does not start unless the profile has none.`,
       );
     }
 

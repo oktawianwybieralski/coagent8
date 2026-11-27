@@ -149,20 +149,28 @@ plugins itself (`--settings` cannot, agy 1.5.18), so CoAgent8 gives it another
 profile (`CUR-002`, owner decision 2026-11-27, #224):
 
 * **Windows.** Every agy call (turns, resume, `/usage`, `models`, `mcp list`,
-  `plugin list`) gets `USERPROFILE` set to `<data directory>/agy-profile`, created
-  for the user only; agy 1.5.18 finds its configuration there, not through `HOME`.
-  Before the first agy turn of a server process, CoAgent8 runs `agy mcp list` and
-  `agy plugin list --json` there and also reads the profile's plugin directory; a
-  configured MCP server (disabled ones included) or a plugin other than agy's
-  built-ins refuses the turn with `POLICY_DENIED` naming them, and so does a check
-  that cannot run. A passing check is kept for the process; a refusal is checked
-  again on the next turn. Doctor runs the same check and reports the profile as
-  verified, refusing or unverified. agy's built-in skills and its built-in plugin
-  `swarm` stay. The sign-in carries over (Windows Credential Manager), and the
-  user's own agy `settings.json` does not apply to CoAgent8 turns. Commands run
-  inside an agy turn see the profile as `USERPROFILE`, so `os.homedir()` in Node
-  and what is found through it (`~/.npmrc`, `~/.ssh` for tools that read
-  `USERPROFILE`) differ from the user's; git and bash use `HOME`, which stays.
+  `plugin list`, and setup's version, help and sign-in checks) gets `USERPROFILE`
+  set to `<data directory>/agy-profile`; agy 1.5.18 finds its configuration there,
+  not through `HOME`. The profile lives in the CoAgent8 data directory and has its
+  permissions, like CoAgent8's sessions there (on Windows `mode` sets no ACL).
+  Before every agy turn, CoAgent8 runs `agy mcp list` and `agy plugin list --json`
+  there, in the turn's directory (so workspace-scoped agy configuration counts),
+  and also reads the profile's plugin directory; a configured MCP server or plugin,
+  disabled ones included (a turn could enable either), refuses the turn with
+  `POLICY_DENIED` naming them, and so does a check that cannot run, fails, times
+  out or prints output CoAgent8 does not recognize. Nothing is cached: commands of
+  a turn can add a server or plugin to the profile (`agy mcp add`), and the next
+  turn is refused. Doctor runs the same check and reports the profile as verified,
+  refusing or unverified. agy's built-in skills stay, and so does the `swarm` entry
+  agy itself writes into the profile's `config.json` plugins section; a listed
+  plugin or a plugin directory named `swarm` is refused like any other. The
+  sign-in carries over (Windows Credential Manager), and the user's own agy
+  `settings.json` does not apply to CoAgent8 turns. Commands run inside an agy
+  turn see the profile as `USERPROFILE`, so `os.homedir()` in Node and what is
+  found through it (`~/.npmrc`, `~/.ssh` for tools that read `USERPROFILE`) differ
+  from the user's. git and bash keep using `HOME` only where `HOME` is set; without
+  it Git for Windows falls back to `HOMEDRIVE`/`HOMEPATH` or `USERPROFILE`, which
+  is then the profile.
   A conversation started in the user's own profile before #224 cannot be resumed
   there: its continuation is refused with `SESSION_INVALID` and a request to start
   a new session, never resumed without its context. CoAgent8 marks each

@@ -166,10 +166,11 @@ export function resolveModelAndEffort(model?: string, reasoningEffort?: string):
  * On Windows `USERPROFILE` is CoAgent8's own agy profile ({@link usesAgyProfile}); `HOME`
  * stays, because git and bash read it and agy does not (agy 1.5.18, 2026-11-27, #224).
  * @param platform - The platform whose rules apply; the running one by default.
- * @returns A copy of this process's environment for one agy launch.
+ * @param base - The environment to start from; this process's by default.
+ * @returns A copy of `base` for one agy launch.
  */
-export function agyEnvironment(platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' };
+export function agyEnvironment(platform: NodeJS.Platform = process.platform, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' };
   if (!usesAgyProfile(platform)) return env;
   // Windows environment names ignore case: a second spelling would leave two values for the child.
   for (const key of Object.keys(env)) if (key.toUpperCase() === 'USERPROFILE') delete env[key];
@@ -188,7 +189,11 @@ export function usesAgyProfile(platform: NodeJS.Platform = process.platform): bo
   return platform === 'win32';
 }
 
-/** Creates CoAgent8's agy profile, readable by the user only, and returns its path. */
+/**
+ * Creates CoAgent8's agy profile in the data directory and returns its path.
+ * @remarks It has the data directory's permissions, like CoAgent8's sessions there: `mode` limits
+ * it to the user on POSIX and sets no ACL on Windows.
+ */
 function ensureAgyProfile(): string {
   const dir = getAgyProfileDir();
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -224,9 +229,6 @@ function recordProfileConversation(conversationId: string): void {
   }
 }
 
-/** Plugins agy ships itself; agy 1.5.18 lists none of them, `swarm` is kept should one be listed. */
-const AGY_BUILTIN_PLUGINS = new Set(['swarm']);
-
 /** What the profile offers agy's model: configured MCP servers and plugins beyond agy's built-ins. */
 export interface AgyProfileContents {
   mcpServers: string[];
@@ -235,44 +237,50 @@ export interface AgyProfileContents {
 
 /**
  * Reads every MCP server and plugin configured in the profile that a CoAgent8 agy call loads.
+ * @param cwd - The turn's working directory, so workspace-scoped agy configuration counts too.
  * @returns The contents, or the reason they could not be read.
  * @remarks `agy plugin list --json` names imported and discovered plugins (agy 1.5.18); the
- * directory scan also covers an agy that cannot list them as JSON.
+ * directory scan also counts a plugin directory agy does not list, a disabled one included,
+ * because a turn could enable it. Output that is not one of agy's known shapes fails the read.
+ * agy's built-in `swarm` is only an entry in the profile's `config.json` plugins section, which
+ * is no plugin of its own and is not counted; a listed plugin or directory named `swarm` is.
  */
 async function readAgyProfileContents(
   resolved: ReturnType<typeof resolveCliCommand>,
   timeoutMs: number,
   abortSignal: AbortSignal | undefined,
+  cwd?: string,
 ): Promise<{ contents: AgyProfileContents } | { failure: string; aborted?: boolean }> {
   const run = (args: string[]) =>
-    runCommand(resolved.command, [...resolved.argsPrefix, ...args], { timeoutMs, abortSignal, env: agyEnvironment() });
+    runCommand(resolved.command, [...resolved.argsPrefix, ...args], {
+      timeoutMs,
+      abortSignal,
+      env: agyEnvironment(),
+      ...(cwd ? { cwd } : {}),
+    });
   const [mcp, plugins] = await Promise.all([run(['mcp', 'list']), run(['plugin', 'list', '--json'])]);
-  if (abortSignal?.aborted || mcp.status === 'cancelled') return { failure: 'cancelled', aborted: true };
-  if (mcp.status !== 'completed' || mcp.exitCode !== 0) {
-    return { failure: `agy mcp list ended with status ${mcp.status} (exit code ${mcp.exitCode})` };
+  if (abortSignal?.aborted || mcp.status === 'cancelled' || plugins.status === 'cancelled') {
+    return { failure: 'cancelled', aborted: true };
   }
-  let listed: string[] = [];
-  if (plugins.status === 'completed' && plugins.exitCode === 0) listed = parseAgyPluginList(plugins.stdout) ?? [];
+  for (const [label, res] of [
+    ['agy mcp list', mcp],
+    ['agy plugin list --json', plugins],
+  ] as const) {
+    if (res.status !== 'completed' || res.exitCode !== 0) {
+      return { failure: `${label} ended with status ${res.status} (exit code ${res.exitCode})` };
+    }
+  }
+  const mcpServers = configuredAgyMcpServers(mcp.stdout);
+  if (!mcpServers) return { failure: 'agy mcp list printed output CoAgent8 does not recognize' };
+  const listed = parseAgyPluginList(plugins.stdout);
+  if (!listed) return { failure: 'agy plugin list --json printed output CoAgent8 does not recognize' };
   let discovered: string[];
   try {
-    discovered = listAgyPlugins();
+    discovered = listAgyPlugins(path.join(agyConfigDir(), 'config'), { includeDisabled: true });
   } catch (err) {
     return { failure: `the profile's plugin directory could not be read: ${redactDiagnostic((err as Error).message, 256)}` };
   }
-  return {
-    contents: {
-      mcpServers: configuredAgyMcpServers(mcp.stdout),
-      plugins: [...new Set([...listed, ...discovered])].filter(plugin => !AGY_BUILTIN_PLUGINS.has(plugin)),
-    },
-  };
-}
-
-/** Profiles and agy commands verified empty in this server process; a refusal is checked again. */
-const verifiedProfiles = new Set<string>();
-
-/** Forgets the verified profiles, so the next turn checks again; for tests. */
-export function resetAgyProfileVerification(): void {
-  verifiedProfiles.clear();
+  return { contents: { mcpServers, plugins: [...new Set([...listed, ...discovered])] } };
 }
 
 /** Names what the profile contains, for an error or a doctor note. */
@@ -286,19 +294,21 @@ export function describeAgyProfileContents(contents: AgyProfileContents): string
 }
 
 /**
- * Requires that CoAgent8's agy profile configures no MCP server and no plugin beyond agy's own,
- * once per server process and profile, before the first turn (#224).
+ * Requires that CoAgent8's agy profile configures no MCP server and no plugin (agy's own `swarm`
+ * entry in `config.json` aside), before every agy turn (#224).
+ * @param cwd - The turn's working directory; the check runs there, as the turn does.
  * @returns The refusal, or undefined when the profile is verified.
- * @remarks Not at server start: the first launch stays fast and starts no agy process.
+ * @remarks Nothing is cached: commands of a turn see the profile as `USERPROFILE` and can add a
+ * server or plugin to it (`agy mcp add`), which the next turn would offer. Doctor reads the same
+ * state through {@link inheritedTools}.
  */
 async function verifyAgyProfile(
   resolved: ReturnType<typeof resolveCliCommand>,
   timeoutMs: number,
   abortSignal: AbortSignal | undefined,
+  cwd: string | undefined,
 ): Promise<TerminalExecutionResult | undefined> {
-  const key = `${getAgyProfileDir()}\n${resolved.command}\n${resolved.argsPrefix.join('\n')}`;
-  if (verifiedProfiles.has(key)) return undefined;
-  const read = await readAgyProfileContents(resolved, Math.min(timeoutMs, DEFAULT_MODEL_LIST_TIMEOUT_MS), abortSignal);
+  const read = await readAgyProfileContents(resolved, Math.min(timeoutMs, DEFAULT_MODEL_LIST_TIMEOUT_MS), abortSignal, cwd);
   if ('failure' in read) {
     if (read.aborted) return { ...failed({ code: 'ABORTED', message: 'Cancelled before launch.', retryable: false }), status: 'cancelled' };
     return failed({
@@ -317,7 +327,6 @@ async function verifyAgyProfile(
       retryable: false,
     });
   }
-  verifiedProfiles.add(key);
   return undefined;
 }
 
@@ -519,7 +528,12 @@ export async function execute(
     });
   }
   const refusal = usesAgyProfile()
-    ? await verifyAgyProfile(resolved, options.timeoutMs ?? DEFAULT_TIMEOUT_MS, options.abortSignal)
+    ? await verifyAgyProfile(
+        resolved,
+        options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        options.abortSignal,
+        options.cwd ? path.resolve(options.cwd) : process.cwd(),
+      )
     : undefined;
   if (refusal) return refusal;
 
@@ -814,13 +828,22 @@ export function parseAgyMcpList(stdout: string): string[] {
     .map(columns => columns[0]);
 }
 
-/** Names of every server in an `agy mcp list` table, a disabled one included: agy or the user can enable it. */
-export function configuredAgyMcpServers(stdout: string): string[] {
-  return stdout
+/**
+ * Names of every server in an `agy mcp list` table, a disabled one included: a turn can enable it.
+ * @returns The names; undefined unless the output is agy's empty message (`No MCP servers
+ * configured.`) or a table under a `NAME ... STATUS` header (agy 1.3.1 to 1.5.18).
+ */
+export function configuredAgyMcpServers(stdout: string): string[] | undefined {
+  const lines = stdout
     .split(/\r?\n/)
-    .map(line => line.trim().split(/\s{2,}/))
-    .filter(columns => columns.length >= 3 && columns[0] !== 'NAME')
-    .map(columns => columns[0]);
+    .map(line => line.trim())
+    .filter(Boolean);
+  if (lines.length === 1 && lines[0] === 'No MCP servers configured.') return [];
+  const header = lines[0]?.split(/\s{2,}/);
+  if (!header || header[0] !== 'NAME' || header[2] !== 'STATUS') return undefined;
+  const rows = lines.slice(1).map(line => line.split(/\s{2,}/));
+  if (rows.some(columns => columns.length < 3)) return undefined;
+  return rows.map(columns => columns[0]);
 }
 
 /**
@@ -835,7 +858,9 @@ export function parseAgyPluginList(stdout: string): string[] | undefined {
     return undefined;
   }
   if (!Array.isArray(parsed)) return undefined;
-  return parsed.map(entry => asRecord(entry)?.name).filter((plugin): plugin is string => typeof plugin === 'string');
+  const names = parsed.map(entry => asRecord(entry)?.name);
+  // An entry without a name is a shape CoAgent8 does not know, not a missing plugin.
+  return names.every((plugin): plugin is string => typeof plugin === 'string' && plugin.length > 0) ? names : undefined;
 }
 
 function readJsonObject(file: string): Record<string, unknown> | undefined {
@@ -850,9 +875,11 @@ function readJsonObject(file: string): Record<string, unknown> | undefined {
 /**
  * Plugin directories agy discovers in the global customization root and keeps enabled: a
  * `plugins` entry in `config.json` wins, otherwise the plugin's own `disabled` declaration.
+ * @param configDir - agy's `config` directory; the one a CoAgent8 call loads by default.
+ * @param options - `includeDisabled` also names disabled plugins, which a turn could enable (#224).
  * @remarks `agy plugin list` names only imported plugins, not discovered ones (agy 1.3.1).
  */
-export function listAgyPlugins(configDir = path.join(agyConfigDir(), 'config')): string[] {
+export function listAgyPlugins(configDir = path.join(agyConfigDir(), 'config'), options: { includeDisabled?: boolean } = {}): string[] {
   const root = path.join(configDir, 'plugins');
   let entries: fs.Dirent[];
   try {
@@ -868,6 +895,7 @@ export function listAgyPlugins(configDir = path.join(agyConfigDir(), 'config')):
     .filter(dir => {
       const manifest = readJsonObject(path.join(root, dir, 'plugin.json'));
       if (!manifest) return false;
+      if (options.includeDisabled) return true;
       const enabled = asRecord(settings?.[dir])?.enabled;
       return typeof enabled === 'boolean' ? enabled : manifest.disabled !== true;
     });
@@ -877,7 +905,7 @@ export function listAgyPlugins(configDir = path.join(agyConfigDir(), 'config')):
  * Reads the MCP servers and plugins agy would offer its model in a CoAgent8 turn, without a
  * model call; doctor names them (CUR-002).
  * @returns The inherited tools, or undefined when agy cannot be run or read.
- * @remarks On Windows this is the check that gates the first turn ({@link usesAgyProfile}):
+ * @remarks On Windows this is the check that gates every turn ({@link usesAgyProfile}):
  * anything listed there refuses agy turns. Elsewhere they are the user's own servers and
  * plugins, which turns offer and CoAgent8 cannot disable.
  */
@@ -890,10 +918,12 @@ export async function inheritedTools(context?: BackendReadContext): Promise<Inhe
     return undefined;
   }
   if (usesAgyProfile()) {
+    // In this process's directory: a turn's own directory is checked again before it starts.
     const read = await readAgyProfileContents(
       resolved,
       boundReadTimeout(context, DEFAULT_MODEL_LIST_TIMEOUT_MS),
       effectiveAbortSignal(context),
+      process.cwd(),
     );
     const status = 'contents' in read ? 'completed' : read.aborted ? 'cancelled' : 'failed';
     checkPostRun({ status }, context, 'Gemini inherited tools read');
