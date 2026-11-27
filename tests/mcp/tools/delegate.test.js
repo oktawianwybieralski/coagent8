@@ -789,3 +789,143 @@ test('turn limits: async defaults to 60m and caps at 4h, sync keeps 15m/30m, roo
     adapterRegistry.codex = originalCodex;
   }
 });
+
+test('deducts post-reservation elapsed time from root remaining duration and refuses with ROOT_LIMIT when exhausted (#246)', async () => {
+  const { adapterRegistry } = require('../../../src/backends/registry.ts');
+  const { stopActiveDelegations } = require('../../../src/execution/delegation.ts');
+  const { readTask } = require('../../../src/sessions/tasks.ts');
+  const { createRoot, readRoot } = require('../../../src/sessions/roots.ts');
+  const { atomicWrite } = require('../../../src/storage/lock.ts');
+  const { setTimeout: delay } = require('node:timers/promises');
+
+  const originalCodex = adapterRegistry.codex;
+  const recordedTimeouts = [];
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'fixture',
+    probe: async () => ({ id: 'codex', installed: true, executionSupported: true, config: { defaultModel: MODEL } }),
+    execute: async (_prompt, options) => {
+      recordedTimeouts.push(options.timeoutMs);
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'Done.',
+        nativeSessionId: `post-res-${recordedTimeouts.length}`,
+        model: MODEL,
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
+
+  const waitTask = async taskHandle => {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const task = readTask(taskHandle);
+      if (task && task.state !== 'running') return task;
+      assert.ok(Date.now() < deadline, 'async task finished in time');
+      await delay(25);
+    }
+  };
+
+  try {
+    const { repo } = fixtureRepo();
+    await saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+    });
+
+    const root = await createRoot({ maxMinutes: 10, graceMinutes: 5 });
+    const rootFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${root.rootHandle}.json`);
+    const seed = await startDelegate(
+      { task: 'Seed', backend: 'codex', model: MODEL, root_handle: root.rootHandle },
+      repo,
+      null,
+      null,
+      approve,
+    );
+    const seedDone = await waitTask(seed.structuredContent.taskHandle);
+
+    // 1. Seed 8m used (2m = 120_000 ms left), request timeout_ms 100_000 ms, advance injected clock 30_000 ms after reservation.
+    const atMsAgo = ms => new Date(Date.now() - ms).toISOString();
+    const seeded = readRoot(root.rootHandle);
+    seeded.tasks[0].startedAt = atMsAgo(20 * 60_000);
+    seeded.tasks[0].endedAt = atMsAgo(12 * 60_000); // 8m used -> 120_000 ms left
+    await atomicWrite(rootFile, JSON.stringify(seeded));
+
+    let now = 1_000;
+    let clockCalls = 0;
+    const advanceAfterReservation = ms => () => {
+      clockCalls++;
+      if (clockCalls === 2) now += ms;
+      return now;
+    };
+
+    const deducted = await startDelegate(
+      { task: 'Deducted root budget', backend: 'codex', model: MODEL, root_handle: root.rootHandle, timeout_ms: 100_000 },
+      repo,
+      null,
+      null,
+      { ...approve, clock: advanceAfterReservation(30_000) },
+    );
+    assert.equal(deducted.structuredContent.timeoutBound, 'root_remaining', 'deduction flips tighter bound to root_remaining');
+    assert.ok(
+      deducted.structuredContent.timeoutMs <= 90_000 && deducted.structuredContent.timeoutMs > 85_000,
+      `expected <= 90000 ms after 30000 ms deduction, got ${deducted.structuredContent.timeoutMs}`,
+    );
+    assert.ok(recordedTimeouts.at(-1) <= 90_000);
+    await waitTask(deducted.structuredContent.taskHandle);
+
+    // 2. Continuation starting just inside maxMinutes (10_000 ms base left + 5m grace) flips into root_grace after 20_000 ms elapses.
+    const nearGrace = readRoot(root.rootHandle);
+    nearGrace.tasks[0].startedAt = atMsAgo(20 * 60_000);
+    nearGrace.tasks[0].endedAt = atMsAgo(19 * 60_000); // 1m
+    nearGrace.tasks[1].startedAt = atMsAgo(15 * 60_000);
+    nearGrace.tasks[1].endedAt = atMsAgo(6 * 60_000 + 10_000); // 8m 50s -> total 9m 50s (10_000 ms base left, 310_000 ms with grace)
+    await atomicWrite(rootFile, JSON.stringify(nearGrace));
+
+    clockCalls = 0;
+    const graceDeducted = await startDelegate(
+      { task: 'Deducted grace', backend: 'codex', model: MODEL, session_handle: seedDone.sessionHandle },
+      repo,
+      null,
+      null,
+      { ...approve, clock: advanceAfterReservation(20_000) },
+    );
+    assert.equal(graceDeducted.structuredContent.timeoutBound, 'root_grace');
+    assert.ok(
+      graceDeducted.structuredContent.timeoutMs <= 290_000 && graceDeducted.structuredContent.timeoutMs > 280_000,
+      `expected <= 290000 ms after 20000 ms deduction, got ${graceDeducted.structuredContent.timeoutMs}`,
+    );
+    await waitTask(graceDeducted.structuredContent.taskHandle);
+
+    // 3. When elapsed time since reservation exhausts the root's remaining time, refuse with ROOT_LIMIT and refund the call.
+    const almostEmpty = readRoot(root.rootHandle);
+    almostEmpty.tasks[0].startedAt = atMsAgo(30 * 60_000);
+    almostEmpty.tasks[0].endedAt = atMsAgo(20 * 60_000 + 30_000); // 9m 30s
+    almostEmpty.tasks[1].startedAt = atMsAgo(25 * 60_000);
+    almostEmpty.tasks[1].endedAt = atMsAgo(25 * 60_000); // 0m
+    almostEmpty.tasks[2].startedAt = atMsAgo(24 * 60_000);
+    almostEmpty.tasks[2].endedAt = atMsAgo(24 * 60_000); // 0m -> 30_000 ms left before maxMinutes
+    await atomicWrite(rootFile, JSON.stringify(almostEmpty));
+
+    const callsBeforeRefusal = readRoot(root.rootHandle).calls;
+    const executedBeforeRefusal = recordedTimeouts.length;
+    clockCalls = 0;
+    await assert.rejects(
+      startDelegate(
+        { task: 'Exhausted after reservation', backend: 'codex', model: MODEL, root_handle: root.rootHandle },
+        repo,
+        null,
+        null,
+        { ...approve, clock: advanceAfterReservation(35_000) },
+      ),
+      err => err.code === 'ROOT_LIMIT',
+    );
+    assert.equal(recordedTimeouts.length, executedBeforeRefusal, 'no model turn may start when root time is exhausted');
+    assert.equal(readRoot(root.rootHandle).calls, callsBeforeRefusal, 'refused start must refund its root call');
+  } finally {
+    await stopActiveDelegations();
+    adapterRegistry.codex = originalCodex;
+  }
+});

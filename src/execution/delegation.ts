@@ -57,6 +57,8 @@ import {
   refundRootTask,
   removeUnusedRoot,
   reserveRootCall,
+  rootGraceMinutes,
+  rootTimeLimitError,
   touchRootTask,
   reserveRootTask,
   ROOT_SEEN_TICKS,
@@ -634,6 +636,13 @@ async function launchTask(start: BackgroundTaskStart, taskHandle: string, finger
   }
 
   const joined = requestedRoot(start);
+  try {
+    pruneTasks();
+    pruneRoots();
+  } catch (err) {
+    // Old records are housekeeping; a new task does not depend on removing them.
+    process.stderr.write(`CoAgent8: old tasks were not removed: ${redactDiagnostic((err as Error).message, 512)}\n`);
+  }
   const rootHandle = joined ?? (await createRoot(start.root?.limits)).rootHandle;
   const giveUpNewRoot = async () => {
     if (!joined) await removeUnusedRoot(rootHandle);
@@ -649,9 +658,10 @@ async function launchTask(start: BackgroundTaskStart, taskHandle: string, finger
     await giveUpNewRoot();
     throw err;
   }
+  const clock = start.options.clock ?? (() => performance.now());
   // Measured here, monotonically, so a clock set back while the task runs cannot shorten its time in the root.
-  const reservedAt = performance.now();
-  const elapsedMs = () => Math.max(0, performance.now() - reservedAt);
+  const reservedAt = clock();
+  const elapsedMs = () => Math.max(0, clock() - reservedAt);
   /** Returns the charge of a start that never reached a turn; a failure here must not hide its reason. */
   const refund = async () => {
     try {
@@ -661,13 +671,6 @@ async function launchTask(start: BackgroundTaskStart, taskHandle: string, finger
       process.stderr.write(`CoAgent8: root ${rootHandle} was not updated: ${redactDiagnostic((err as Error).message, 512)}\n`);
     }
   };
-  try {
-    pruneTasks();
-    pruneRoots();
-  } catch (err) {
-    // Old records are housekeeping; a new task does not depend on removing them.
-    process.stderr.write(`CoAgent8: old tasks were not removed: ${redactDiagnostic((err as Error).message, 512)}\n`);
-  }
 
   const controller = new AbortController();
   const abortStart = () => controller.abort();
@@ -698,12 +701,26 @@ async function launchTask(start: BackgroundTaskStart, taskHandle: string, finger
     throw new ToolError('TIMEOUT', `Execution deadline exceeded (${requestedTimeoutMs} ms).`);
   }
 
-  // The root's running time is shared: no task runs past what is left of it, whatever it asked for.
-  const rootRemainingMs = Math.max(1, reservation.remainingMs);
+  // The root's running time is shared: deduct time elapsed since reservation before creating the budget.
+  const sinceReservedMs = Math.floor(elapsedMs());
+  const rootRemainingMs = Math.floor(reservation.remainingMs) - sinceReservedMs;
+  const rootBaseRemainingMs = Math.floor(reservation.baseRemainingMs) - sinceReservedMs;
+  if (rootRemainingMs <= 0) {
+    const root = readRoot(rootHandle);
+    await refund();
+    detachCallerAbort();
+    throw root
+      ? rootTimeLimitError(
+          root,
+          root.limits.maxMinutes * 60_000 + (reservation.continuation ? rootGraceMinutes(root) * 60_000 : 0),
+          reservation.continuation,
+        )
+      : new ToolError('ROOT_LIMIT', `Root ${rootHandle} has no remaining running time.`);
+  }
   const effectiveBudgetMs = Math.min(callerRemainingMs, rootRemainingMs);
   let timeoutBound: TimeoutBound;
   if (rootRemainingMs < callerRemainingMs) {
-    timeoutBound = reservation.continuation && reservation.baseRemainingMs < callerRemainingMs ? 'root_grace' : 'root_remaining';
+    timeoutBound = reservation.continuation && rootBaseRemainingMs < callerRemainingMs ? 'root_grace' : 'root_remaining';
   } else {
     timeoutBound = hasExplicitTimeout ? 'timeout_ms' : 'async_default';
   }
@@ -713,7 +730,7 @@ async function launchTask(start: BackgroundTaskStart, taskHandle: string, finger
   const budget = createExecutionBudget({
     totalBudgetMs: effectiveBudgetMs,
     parentSignal: controller.signal,
-    clock: start.options.clock,
+    clock,
   });
   const context = { abortSignal: budget.executionSignal, budget, timeoutMs: budget.remainingExecutionMs() };
 

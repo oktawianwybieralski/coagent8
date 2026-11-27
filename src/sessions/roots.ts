@@ -305,6 +305,29 @@ export function rootRunningMs(root: RootRecord, now = rootNow(root)): number {
 }
 
 /**
+ * Builds the `ROOT_LIMIT` error for a root whose running time (and optional grace) is exhausted.
+ * @param record - Root record whose limits were reached.
+ * @param usedMs - Running time counted against the root in milliseconds.
+ * @param continuation - Whether the refused task continues a session of this root.
+ */
+export function rootTimeLimitError(record: Pick<RootRecord, 'rootHandle' | 'limits'>, usedMs: number, continuation = false): ToolError {
+  const grace = rootGraceMinutes(record as RootRecord);
+  const counted = 'counted while its tasks run, not between calls';
+  const raise = `For more, raise rootLimits.maxMinutes (up to ${ROOT_LIMIT_BOUNDS.maxMinutes}) or rootLimits.graceMinutes in ${getConfigFile()}; it applies to new roots.`;
+  // Past the grace too, a continuation would be refused as well, so the advice to continue is left out.
+  if (continuation || grace === 0 || usedMs >= (record.limits.maxMinutes + grace) * 60_000) {
+    return new ToolError(
+      'ROOT_LIMIT',
+      `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes of running time${grace ? ` and the ${grace} more minutes a continued session gets` : ''} (${counted})${grace ? '' : '; rootLimits.graceMinutes is 0, so a continued session gets no more minutes'}. ${raise} Or start a new task without root_handle and session_handle, restating the work.`,
+    );
+  }
+  return new ToolError(
+    'ROOT_LIMIT',
+    `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes of running time (${counted}). To finish a task, continue its session with session_handle: a continued session gets ${grace} more minutes. ${raise} Or start a new root without root_handle.`,
+  );
+}
+
+/**
  * Refuses a root that is cancelled or out of running time.
  * @param now - Now on the root's timeline.
  * @param continuation - The task continues a session of this root, which may use the grace minutes.
@@ -317,19 +340,7 @@ function assertUsable(record: RootRecord, now: number, continuation = false): { 
   const baseRemainingMs = record.limits.maxMinutes * 60_000 - usedMs;
   const remainingMs = baseRemainingMs + (continuation ? grace : 0) * 60_000;
   if (remainingMs > 0) return { remainingMs, baseRemainingMs };
-  const counted = 'counted while its tasks run, not between calls';
-  const raise = `For more, raise rootLimits.maxMinutes (up to ${ROOT_LIMIT_BOUNDS.maxMinutes}) or rootLimits.graceMinutes in ${getConfigFile()}; it applies to new roots.`;
-  // Past the grace too, a continuation would be refused as well, so the advice to continue is left out.
-  if (continuation || grace === 0 || usedMs >= (record.limits.maxMinutes + grace) * 60_000) {
-    throw new ToolError(
-      'ROOT_LIMIT',
-      `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes of running time${grace ? ` and the ${grace} more minutes a continued session gets` : ''} (${counted})${grace ? '' : '; rootLimits.graceMinutes is 0, so a continued session gets no more minutes'}. ${raise} Or start a new task without root_handle and session_handle, restating the work.`,
-    );
-  }
-  throw new ToolError(
-    'ROOT_LIMIT',
-    `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes of running time (${counted}). To finish a task, continue its session with session_handle: a continued session gets ${grace} more minutes. ${raise} Or start a new root without root_handle.`,
-  );
+  throw rootTimeLimitError(record, usedMs, continuation);
 }
 
 function assertFreeSlot(record: RootRecord): void {
