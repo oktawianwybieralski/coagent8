@@ -166,9 +166,9 @@ export function resolveModelAndEffort(model?: string, reasoningEffort?: string):
  * focus for about half a second (WINDOWS-001, measured 2026-10-07). agy honours only `true`.
  * On Windows `USERPROFILE` is CoAgent8's own agy profile ({@link usesAgyProfile}); `HOME`
  * stays, because git and bash read it and agy does not (agy 1.5.18, 2026-11-27, #224).
- * It creates nothing: only a turn creates the profile ({@link ensureAgyProfile}). Setup's checks,
+ * It creates nothing: only a turn creates the profile (`ensureAgyProfile`). Setup's checks,
  * {@link probe}'s `--version`, `agy models` and `/usage` read no turn tools and use
- * {@link userAgyEnvironment}, so a read-only setup status or doctor creates no profile.
+ * `userAgyEnvironment`, so a read-only setup status or doctor creates no profile.
  * @param platform - The platform whose rules apply; the running one by default.
  * @returns A copy of this process's environment for one agy launch.
  */
