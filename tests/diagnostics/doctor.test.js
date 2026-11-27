@@ -327,28 +327,40 @@ test('doctor names the MCP servers and plugins agy turns inherit on macOS and Li
 test('doctor reports the verified CoAgent8 agy profile on Windows (#224)', async () => {
   const { getAgyProfileDir } = require('../../src/paths.ts');
   const { report, summary } = await doctorWithAgyTools('win32', async () => ({ mcpServers: [], plugins: [] }));
-  assert.deepEqual(report.agyProfile, { path: getAgyProfileDir(), state: 'verified' });
+  // The state as checked from this process's directory; a turn checks its own again.
+  assert.deepEqual(report.agyProfile, { path: getAgyProfileDir(), checkedFrom: process.cwd(), state: 'verified' });
   assert.deepEqual(report.inheritedTools, {});
   assert.ok(!report.recommendations.some(text => text.startsWith('agy:')), JSON.stringify(report.recommendations));
-  assert.match(
+  assert.ok(
+    summary.includes(
+      `commands and network on the host, no MCP servers or plugins of yours (CoAgent8 agy profile, none as checked from ${process.cwd()}; every turn checks again in its own directory)`,
+    ),
     summary,
-    /agy: .* - commands and network on the host, no MCP servers or plugins of yours in a turn \(CoAgent8 agy profile\)/,
   );
 });
 
 test('doctor reports a CoAgent8 agy profile with MCP servers or plugins as refusing agy turns on Windows (#224)', async () => {
   const { getAgyProfileDir } = require('../../src/paths.ts');
   const { report, summary } = await doctorWithAgyTools('win32', async () => ({ mcpServers: ['context7'], plugins: ['team-kit'] }));
-  assert.deepEqual(report.agyProfile, { path: getAgyProfileDir(), state: 'refused' });
+  assert.deepEqual(report.agyProfile, { path: getAgyProfileDir(), checkedFrom: process.cwd(), state: 'refused' });
   const refusal = report.recommendations.filter(text => text.startsWith('agy:'));
   assert.equal(refusal.length, 1, JSON.stringify(report.recommendations));
-  assert.match(refusal[0], /agy profile .* contains MCP servers context7 and plugins team-kit, so agy turns do not start/);
+  assert.match(
+    refusal[0],
+    /agy profile .*, as checked from .*, contains MCP servers context7 and plugins team-kit, so agy turns do not start/,
+  );
   assert.equal(report.status, 'partially_configured', 'a refused backend is a problem to fix');
-  assert.match(summary, /turns refused: CoAgent8 agy profile has MCP servers or plugins/);
+  assert.ok(summary.includes(`turns refused: CoAgent8 agy profile has MCP servers or plugins as checked from ${process.cwd()}`), summary);
 
   const unread = await doctorWithAgyTools('win32', async () => undefined);
   assert.equal(unread.report.agyProfile.state, 'unverified');
-  assert.ok(unread.report.recommendations.some(text => /could not list the MCP servers and plugins of its agy profile/.test(text)));
+  assert.ok(
+    unread.report.recommendations.some(text =>
+      /could not list the MCP servers and plugins of its agy profile .* from .*; every agy turn checks again in its own directory/.test(
+        text,
+      ),
+    ),
+  );
 });
 
 test('doctor reports an unwritable quota cache as a recommendation instead of failing (CUR-004)', async t => {
@@ -898,7 +910,7 @@ test('AX-005b: a completed agy turn turns an unverified sign-in into ready, with
     // On Windows the fixture's empty agy profile is verified through its `mcp list` and `plugin list` (#224).
     const reach =
       process.platform === 'win32'
-        ? 'commands and network on the host, no MCP servers or plugins of yours in a turn \\(CoAgent8 agy profile\\)'
+        ? 'commands and network on the host, no MCP servers or plugins of yours \\(CoAgent8 agy profile, none as checked from .*; every turn checks again in its own directory\\)'
         : 'commands, network and its own MCP servers on the host in a turn';
     assert.match(
       summary,

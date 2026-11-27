@@ -1000,7 +1000,8 @@ test(
       ['failed MCP check', mode('fail-mcp'), /could not verify .*agy mcp list ended/],
       ['unrecognized MCP list', mode('garbled-mcp'), /could not verify .*agy mcp list printed output CoAgent8 does not recognize/],
       ['failed plugin check', mode('fail-plugins'), /could not verify .*agy plugin list --json ended/],
-      ['timed-out plugin check', mode('hang-plugins'), /could not verify .*agy plugin list --json ended with status timed_out/],
+      // A check that outlasts the turn's own deadline times the turn out; it does not start either.
+      ['timed-out plugin check', mode('hang-plugins'), /time ran out while CoAgent8 verified its agy profile/],
       [
         'unparseable plugin list',
         mode('garbled-plugins'),
@@ -1012,8 +1013,8 @@ test(
         arrange();
         const timeoutMs = label === 'timed-out plugin check' ? 1500 : undefined;
         const refused = await execute('refused', { model: MODEL, cwd: tempDir, ...(timeoutMs ? { timeoutMs } : {}) });
-        assert.equal(refused.status, 'failed', label);
-        assert.equal(refused.error.code, 'POLICY_DENIED', label);
+        assert.equal(refused.status, timeoutMs ? 'timed_out' : 'failed', label);
+        assert.equal(refused.error.code, timeoutMs ? 'TIMEOUT' : 'POLICY_DENIED', label);
         assert.match(refused.error.message, message, label);
         assert.equal(launches().filter(isTurn).length, 0, `${label}: no turn started`);
 
@@ -1040,6 +1041,47 @@ test(
       fs.writeFileSync(path.join(config, 'config.json'), JSON.stringify({ plugins: { swarm: { enabled: true } } }));
       const accepted = await execute('accepted', { model: MODEL, cwd: tempDir });
       assert.equal(accepted.status, 'completed', JSON.stringify(accepted.error));
+    });
+  },
+);
+
+test(
+  'agy profile (#224): the recovery turn after an empty denial is verified again and not started when the first turn added a server',
+  { skip: process.platform !== 'win32' && 'the profile is used on Windows only' },
+  async () => {
+    await withFreshProfile(async ({ dataDir, launches }) => {
+      process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-recover';
+      process.env.coagent8_FIXTURE_MCP_STATE = path.join(dataDir, 'mcp-state.json');
+      try {
+        const result = await execute('denied', { model: MODEL, cwd: tempDir });
+        assert.equal(result.status, 'failed', JSON.stringify(result));
+        assert.equal(result.error.code, 'POLICY_DENIED');
+        assert.match(result.error.message, /^The automatic recovery turn did not start\. .*MCP servers added-in-turn/);
+        const args = launches();
+        assert.equal(args.filter(isTurn).length, 1, 'only the first turn ran');
+        assert.equal(args.filter(isCheck).length, 4, 'checked before the first turn and before the recovery');
+      } finally {
+        delete process.env.coagent8_FIXTURE_MCP_STATE;
+      }
+    });
+  },
+);
+
+test(
+  'agy profile (#224): a profile directory that cannot be created refuses the turn and names it',
+  { skip: process.platform !== 'win32' && 'the profile is used on Windows only' },
+  async () => {
+    await withFreshProfile(async ({ dataDir, launches }) => {
+      // The data directory is a file, so `<data directory>/agy-profile` cannot be created.
+      const blocked = path.join(dataDir, 'not-a-directory');
+      fs.writeFileSync(blocked, '');
+      process.env.coagent8_DIR = blocked;
+      const refused = await execute('refused', { model: MODEL, cwd: tempDir });
+      assert.equal(refused.status, 'failed');
+      assert.equal(refused.error.code, 'POLICY_DENIED');
+      assert.ok(refused.error.message.includes(path.join(blocked, 'agy-profile')), refused.error.message);
+      assert.match(refused.error.message, /the profile directory could not be created/);
+      assert.equal(launches().length, 0, 'no agy process started');
     });
   },
 );

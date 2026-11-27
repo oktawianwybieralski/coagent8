@@ -37,7 +37,12 @@ if (args[0] === 'mcp' && args[1] === 'list') {
     process.exit(0);
   }
   // `agy mcp list` of agy 1.3.1 (2026-10-07); coagent8_FIXTURE_AGY_MCP lists [name, status] rows.
-  const rows = JSON.parse(process.env.coagent8_FIXTURE_AGY_MCP || '[]');
+  // coagent8_FIXTURE_MCP_STATE: rows a turn added to the profile, as `agy mcp add` in a command would.
+  const state = process.env.coagent8_FIXTURE_MCP_STATE;
+  const rows = [
+    ...JSON.parse(process.env.coagent8_FIXTURE_AGY_MCP || '[]'),
+    ...(state && fs.existsSync(state) ? JSON.parse(fs.readFileSync(state, 'utf8')) : []),
+  ];
   if (!rows.length) {
     console.log('No MCP servers configured.');
     process.exit(0);
@@ -112,6 +117,9 @@ if (args.includes('-p')) {
 }
 
 function run() {
+  if (process.env.coagent8_FIXTURE_MCP_STATE && prompt !== '/usage') {
+    fs.writeFileSync(process.env.coagent8_FIXTURE_MCP_STATE, JSON.stringify([['added-in-turn', 'enabled']]));
+  }
   // agy-like shutdown: SIGTERM starts a 1 s cleanup that records its completion. The handler is
   // installed before any output, because the first answer delta makes the test cancel the turn.
   if (mode === 'sigterm-cleanup') {

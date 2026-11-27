@@ -40,8 +40,8 @@ and workspace-write profiles of earlier versions (owner decision 2026-11-21).
   hooks off and an allow rule for each tool; each run is rejected unless the CLI
   reports at startup only these tools, no MCP server and `dontAsk`.
 * **agy** runs `--dangerously-skip-permissions`; it keeps its subagents, which no
-  limit of the server sees (#200). On Windows every agy call runs with CoAgent8's
-  own agy profile, which must configure no MCP server or plugin (#224, see the
+  limit of the server sees (#200). On Windows every agy call that can run a turn
+  or reads what a turn loads runs with CoAgent8's own agy profile, which must configure no MCP server or plugin (#224, see the
   current enforcement limits); elsewhere it keeps the user's.
 * **Roles that answer** (consult, review) are told to leave the workspace as they
   found it. A review is bound to its snapshot, which the server checks again after
@@ -148,20 +148,25 @@ Codex disables and verifies them per thread. agy cannot disable MCP servers or
 plugins itself (`--settings` cannot, agy 1.5.18), so CoAgent8 gives it another
 profile (`CUR-002`, owner decision 2026-11-27, #224):
 
-* **Windows.** Every agy call (turns, resume, `/usage`, `models`, `mcp list`,
-  `plugin list`, and setup's version, help and sign-in checks) gets `USERPROFILE`
-  set to `<data directory>/agy-profile`; agy 1.5.18 finds its configuration there,
-  not through `HOME`. The profile lives in the CoAgent8 data directory and has its
+* **Windows.** Every agy call that can run a model turn or reads what a turn
+  loads (turns, recovery, resume, `/usage`, `models`, `mcp list`, `plugin list`)
+  gets `USERPROFILE` set to `<data directory>/agy-profile`; agy 1.5.18 finds its
+  configuration there, not through `HOME`. Setup's version, help and sign-in
+  checks (`AGY_CLI_CDE_AUTH_ACTION=check`) start no turn and offer no tools, so
+  they keep the user's own environment and a read-only status creates no profile. The profile lives in the CoAgent8 data directory and has its
   permissions, like CoAgent8's sessions there (on Windows `mode` sets no ACL).
-  Before every agy turn, CoAgent8 runs `agy mcp list` and `agy plugin list --json`
+  Before every agy launch of a turn (its automatic recovery turn after an empty
+  denial included), CoAgent8 runs `agy mcp list` and `agy plugin list --json`
   there, in the turn's directory (so workspace-scoped agy configuration counts),
   and also reads the profile's plugin directory; a configured MCP server or plugin,
   disabled ones included (a turn could enable either), refuses the turn with
   `POLICY_DENIED` naming them, and so does a check that cannot run, fails, times
   out or prints output CoAgent8 does not recognize. Nothing is cached: commands of
   a turn can add a server or plugin to the profile (`agy mcp add`), and the next
-  turn is refused. Doctor runs the same check and reports the profile as verified,
-  refusing or unverified. agy's built-in skills stay, and so does the `swarm` entry
+  turn is refused; a profile directory that cannot be created refuses the turn
+  too. Doctor runs the same check from its own directory and reports the profile
+  as verified, refusing or unverified as checked from there; every turn checks
+  again in its own directory. agy's built-in skills stay, and so does the `swarm` entry
   agy itself writes into the profile's `config.json` plugins section; a listed
   plugin or a plugin directory named `swarm` is refused like any other. The
   sign-in carries over (Windows Credential Manager), and the user's own agy

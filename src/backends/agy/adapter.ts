@@ -159,22 +159,27 @@ export function resolveModelAndEffort(model?: string, reasoningEffort?: string):
 }
 
 /**
- * Environment of every agy launch, with agy's auto-updater disabled.
+ * Environment of every agy launch that can run a model turn or reads what a turn loads (turns,
+ * recovery, resume, `/usage`, `models`, `mcp list`, `plugin list`), with agy's auto-updater disabled.
  * @remarks agy 1.3.1 starts a background updater on its first launch after 15 minutes. On
  * Windows that updater starts another agy with a new console window, which takes the keyboard
  * focus for about half a second (WINDOWS-001, measured 2026-10-07). agy honours only `true`.
  * On Windows `USERPROFILE` is CoAgent8's own agy profile ({@link usesAgyProfile}); `HOME`
  * stays, because git and bash read it and agy does not (agy 1.5.18, 2026-11-27, #224).
+ * Setup's version, help and sign-in checks (`cli-readiness.ts`) do not use it: they start no
+ * model turn and read nothing a turn loads, so they keep the user's own environment and a
+ * read-only status creates no profile.
  * @param platform - The platform whose rules apply; the running one by default.
- * @param base - The environment to start from; this process's by default.
- * @returns A copy of `base` for one agy launch.
+ * @returns A copy of this process's environment for one agy launch.
+ * @throws When the profile directory cannot be created; a turn checks that first and refuses.
  */
-export function agyEnvironment(platform: NodeJS.Platform = process.platform, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...base, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' };
+export function agyEnvironment(platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' };
   if (!usesAgyProfile(platform)) return env;
+  const profile = ensureAgyProfile();
   // Windows environment names ignore case: a second spelling would leave two values for the child.
   for (const key of Object.keys(env)) if (key.toUpperCase() === 'USERPROFILE') delete env[key];
-  env.USERPROFILE = ensureAgyProfile();
+  env.USERPROFILE = profile;
   return env;
 }
 
@@ -250,12 +255,18 @@ async function readAgyProfileContents(
   timeoutMs: number,
   abortSignal: AbortSignal | undefined,
   cwd?: string,
-): Promise<{ contents: AgyProfileContents } | { failure: string; aborted?: boolean }> {
+): Promise<{ contents: AgyProfileContents } | { failure: string; aborted?: boolean; timedOut?: boolean }> {
+  let env: NodeJS.ProcessEnv;
+  try {
+    env = agyEnvironment();
+  } catch (err) {
+    return { failure: `the profile directory could not be created: ${redactDiagnostic((err as Error).message, 256)}` };
+  }
   const run = (args: string[]) =>
     runCommand(resolved.command, [...resolved.argsPrefix, ...args], {
       timeoutMs,
       abortSignal,
-      env: agyEnvironment(),
+      env,
       ...(cwd ? { cwd } : {}),
     });
   const [mcp, plugins] = await Promise.all([run(['mcp', 'list']), run(['plugin', 'list', '--json'])]);
@@ -267,7 +278,10 @@ async function readAgyProfileContents(
     ['agy plugin list --json', plugins],
   ] as const) {
     if (res.status !== 'completed' || res.exitCode !== 0) {
-      return { failure: `${label} ended with status ${res.status} (exit code ${res.exitCode})` };
+      return {
+        failure: `${label} ended with status ${res.status} (exit code ${res.exitCode})`,
+        ...(res.status === 'timed_out' ? { timedOut: true } : {}),
+      };
     }
   }
   const mcpServers = configuredAgyMcpServers(mcp.stdout);
@@ -297,7 +311,8 @@ export function describeAgyProfileContents(contents: AgyProfileContents): string
  * Requires that CoAgent8's agy profile configures no MCP server and no plugin (agy's own `swarm`
  * entry in `config.json` aside), before every agy turn (#224).
  * @param cwd - The turn's working directory; the check runs there, as the turn does.
- * @returns The refusal, or undefined when the profile is verified.
+ * @returns The refusal (`timed_out` when the turn's own deadline ends during the check), or
+ * undefined when the profile is verified.
  * @remarks Nothing is cached: commands of a turn see the profile as `USERPROFILE` and can add a
  * server or plugin to it (`agy mcp add`), which the next turn would offer. Doctor reads the same
  * state through {@link inheritedTools}.
@@ -311,6 +326,17 @@ async function verifyAgyProfile(
   const read = await readAgyProfileContents(resolved, Math.min(timeoutMs, DEFAULT_MODEL_LIST_TIMEOUT_MS), abortSignal, cwd);
   if ('failure' in read) {
     if (read.aborted) return { ...failed({ code: 'ABORTED', message: 'Cancelled before launch.', retryable: false }), status: 'cancelled' };
+    // The turn's own deadline ran out during the check: the turn timed out, it did not start.
+    if (read.timedOut && timeoutMs <= DEFAULT_MODEL_LIST_TIMEOUT_MS) {
+      return {
+        ...failed({
+          code: 'TIMEOUT',
+          message: `The turn's time ran out while CoAgent8 verified its agy profile ${getAgyProfileDir()}, so agy did not start.`,
+          retryable: true,
+        }),
+        status: 'timed_out',
+      };
+    }
     return failed({
       code: 'POLICY_DENIED',
       message: `CoAgent8 could not verify that its agy profile ${getAgyProfileDir()} has no MCP servers or plugins (${read.failure}), so the turn did not start.`,
@@ -649,6 +675,22 @@ export async function execute(
           }
         : undefined;
       const recoveryPrompt = writes ? writeDenialRecoveryPrompt(resolvedCwd, s.deniedActions) : SANDBOX_DENIAL_RECOVERY_PROMPT;
+      // The recovery is another agy launch: the first turn's commands may have added a server or
+      // plugin to the profile, so it is verified again and not started when it refuses (#224).
+      const recoveryRefusal = usesAgyProfile()
+        ? await verifyAgyProfile(resolved, remainingTimeoutMs, options.abortSignal, resolvedCwd)
+        : undefined;
+      if (recoveryRefusal) {
+        // The first turn's conversation lives in the profile and can be continued once it is clean.
+        if (UUID.test(retrySessionId)) recordProfileConversation(retrySessionId);
+        return recoveryRefusal.error
+          ? {
+              ...recoveryRefusal,
+              error: { ...recoveryRefusal.error, message: `The automatic recovery turn did not start. ${recoveryRefusal.error.message}` },
+              errorDetail: `The automatic recovery turn did not start. ${recoveryRefusal.errorDetail ?? recoveryRefusal.error.message}`,
+            }
+          : recoveryRefusal;
+      }
       const second = await runTurn(recoveryPrompt, retrySessionId, remainingTimeoutMs, retryOnEvent);
       processResult = second.processResult;
       const s2 = second.snapshot;

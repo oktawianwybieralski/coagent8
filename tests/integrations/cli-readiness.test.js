@@ -78,10 +78,10 @@ test('Antigravity-only installation checks controls and sign-in silently without
     calls.every(call => call.autoUpdate === 'true'),
     'every agy probe disables its console-opening updater',
   );
-  // #224: on Windows the probes run with CoAgent8's agy profile, like every agy call.
-  const { getAgyProfileDir } = require('../../src/paths.ts');
+  // #224: these checks start no model turn and read nothing a turn loads, so they keep the
+  // user's own profile, and a read-only status creates no CoAgent8 agy profile.
   assert.ok(
-    calls.every(call => call.userProfile === (process.platform === 'win32' ? getAgyProfileDir() : p.home)),
+    calls.every(call => call.userProfile === p.home),
     JSON.stringify(calls),
   );
   assert.deepEqual(

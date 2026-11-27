@@ -127,11 +127,13 @@ export interface DoctorReport {
    */
   inheritedTools: Partial<Record<ProviderId, InheritedTools>>;
   /**
-   * Windows only, agy installed: whether CoAgent8's own agy profile was verified to offer no MCP
-   * servers or plugins (#224). `refused`: it contains some, and agy turns do not start;
-   * `unverified`: agy could not list them. Every agy turn checks again before it starts.
+   * Windows only, agy installed: the state of CoAgent8's own agy profile as checked from
+   * `checkedFrom`, this process's directory (#224). `verified`: no MCP servers or plugins there;
+   * `refused`: it contains some, and agy turns do not start; `unverified`: agy could not list
+   * them. Workspace-scoped agy configuration can differ, so every agy turn checks again in its own
+   * directory before it starts.
    */
-  agyProfile?: { path: string; state: 'verified' | 'refused' | 'unverified' };
+  agyProfile?: { path: string; checkedFrom: string; state: 'verified' | 'refused' | 'unverified' };
   /** Optional call-level execution trace measuring diagnostic phases. */
   trace?: ExecutionTrace;
 }
@@ -280,6 +282,8 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
       agyIndex >= 0 && probes.agy!.installed && usesAgyProfile()
         ? {
             path: agyProfilePath,
+            // The adapter reads the profile in this process's directory; a turn checks its own.
+            checkedFrom: redactDiagnostic(process.cwd()),
             state: !inherited[agyIndex] ? 'unverified' : inheritedTools.agy ? 'refused' : 'verified',
           }
         : undefined;
@@ -332,7 +336,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     // agy turns do not start until the profile is empty again: a problem to fix.
     if (agyProfile?.state === 'refused') {
       recommendations.push(
-        `agy: CoAgent8's agy profile ${agyProfile.path} contains ${describeAgyProfileContents(inheritedTools.agy!)}, so agy turns do not start. ` +
+        `agy: CoAgent8's agy profile ${agyProfile.path}, as checked from ${agyProfile.checkedFrom}, contains ${describeAgyProfileContents(inheritedTools.agy!)}, so agy turns do not start. ` +
           "Remove them with 'agy mcp remove <name>' and 'agy plugin uninstall <name>' run with USERPROFILE set to that directory.",
       );
     }
@@ -345,7 +349,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
       );
     if (agyProfile?.state === 'unverified') {
       inheritedNotes.push(
-        `agy: CoAgent8 could not list the MCP servers and plugins of its agy profile ${agyProfile.path}; every agy turn checks again and does not start unless the profile has none.`,
+        `agy: CoAgent8 could not list the MCP servers and plugins of its agy profile ${agyProfile.path} from ${agyProfile.checkedFrom}; every agy turn checks again in its own directory and does not start unless the profile has none.`,
       );
     }
 
@@ -610,11 +614,13 @@ const TURN_REACH: Record<ProviderId, string> = {
 /** {@link TURN_REACH}, for agy as its verified profile allows (#224). */
 function turnReach(id: ProviderId, report: DoctorReport): string {
   if (id !== 'agy' || !report.agyProfile) return TURN_REACH[id];
-  return report.agyProfile.state === 'verified'
-    ? 'commands and network on the host, no MCP servers or plugins of yours in a turn (CoAgent8 agy profile)'
-    : report.agyProfile.state === 'refused'
-      ? 'turns refused: CoAgent8 agy profile has MCP servers or plugins'
-      : 'CoAgent8 agy profile not verified yet';
+  const { state, checkedFrom } = report.agyProfile;
+  const recheck = 'every turn checks again in its own directory';
+  return state === 'verified'
+    ? `commands and network on the host, no MCP servers or plugins of yours (CoAgent8 agy profile, none as checked from ${checkedFrom}; ${recheck})`
+    : state === 'refused'
+      ? `turns refused: CoAgent8 agy profile has MCP servers or plugins as checked from ${checkedFrom}`
+      : `CoAgent8 agy profile not verified from ${checkedFrom}; ${recheck}`;
 }
 
 function formatQuota(quota: DoctorQuota | undefined): string {
