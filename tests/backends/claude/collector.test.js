@@ -131,7 +131,15 @@ test('Claude collector accepts uppercase session ID in init and result case-inse
 
 test('Claude collector tolerates unknown event types and system subtypes with one warning each', () => {
   const events = recording('success-partial');
-  events.splice(-1, 0, { type: 'future_event_type' }, { type: 'future_event_type' }, { type: 'system', subtype: 'future_subtype' });
+  events.splice(
+    -1,
+    0,
+    { type: 'system', subtype: 'thinking_tokens' },
+    { type: 'system', subtype: 'compact_boundary' },
+    { type: 'future_event_type' },
+    { type: 'future_event_type' },
+    { type: 'system', subtype: 'future_subtype' },
+  );
   const { snapshot, seen } = collect(events);
   assert.equal(snapshot.output, 'OK');
   assert.equal(snapshot.error, undefined);
@@ -268,9 +276,14 @@ function notificationTurn(runId, text, usage = NOTIFICATION_USAGE) {
   ];
 }
 
-test('Claude collector takes the latest result, sums usage and emits waiting status for background notification turns (#245)', () => {
+test('Claude collector composes prompt and notification answers in order, sums usage and warns on failed notifications (#245)', () => {
   const events = recording('success-partial');
-  const answer = { ...events.pop(), result: "I'll wait for the background run to finish." };
+  const answer = {
+    ...events.pop(),
+    result: "I'll wait for the background run to finish.",
+    total_cost_usd: 0.5,
+    modelUsage: { 'claude-haiku-4-5-20251001': { costUSD: 0.5 } },
+  };
   const seen = [];
   const collector = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS, onEvent: e => seen.push(e) });
   for (const event of [...events, ...backgroundStarted, answer]) collector.line(JSON.stringify(event));
@@ -279,12 +292,12 @@ test('Claude collector takes the latest result, sums usage and emits waiting sta
   for (const event of notificationTurn('run-1', 'Final report: sleep 25 completed.')) collector.line(JSON.stringify(event));
   const snapshot = collector.snapshot();
   assert.equal(snapshot.error, undefined, 'a result with origin is counted as part of the same turn');
-  assert.equal(snapshot.output, 'Final report: sleep 25 completed.');
+  assert.equal(snapshot.output, "I'll wait for the background run to finish.\n\nFinal report: sleep 25 completed.");
   assert.deepEqual(collector.runningTasks(), []);
   assert.ok(seen.some(e => e.type === 'assistant_message' && e.text === 'Final report: sleep 25 completed.'));
   assert.ok(!seen.some(e => e.type === 'warning'), 'no warning for a normal notification turn');
   assert.ok(seen.some(e => e.type === 'status' && e.message === 'Background task started: sleep 25'));
-  // Usage sums every counted result of the turn (6590 + 125 = 6715 input, 48 + 12 = 60 output).
+  // Per-result usage sums across counted results (6590 + 125 = 6715 input, 48 + 12 = 60 output).
   assert.deepEqual(snapshot.usage, {
     source: 'provider',
     inputTokens: 6715,
@@ -295,18 +308,68 @@ test('Claude collector takes the latest result, sums usage and emits waiting sta
     reasoningTokens: 44,
     totalTokens: 6775,
   });
-  // An empty latest notification result keeps the latest non-empty result text and still sums usage.
-  for (const event of notificationTurn('run-2', '', {
-    input_tokens: 1,
-    cache_read_input_tokens: 2,
-    cache_creation_input_tokens: 3,
-    output_tokens: 4,
-  }))
-    collector.line(JSON.stringify(event));
-  const afterEmpty = collector.snapshot();
-  assert.equal(afterEmpty.output, 'Final report: sleep 25 completed.');
-  assert.equal(afterEmpty.usage.inputTokens, 6721);
-  assert.equal(afterEmpty.usage.outputTokens, 64);
+  // A short notification after a full report does not replace the report; an empty one adds no blank lines.
+  const fullEvents = recording('success-partial');
+  fullEvents[fullEvents.length - 1] = { ...fullEvents.at(-1), result: 'Full report: all 10 checks passed.' };
+  const full = collect([
+    ...fullEvents,
+    ...notificationTurn('run-2', 'All done.'),
+    ...notificationTurn('run-3', '', { input_tokens: 1, cache_read_input_tokens: 2, cache_creation_input_tokens: 3, output_tokens: 4 }),
+  ]);
+  assert.equal(full.snapshot.output, 'Full report: all 10 checks passed.\n\nAll done.');
+  assert.equal(full.snapshot.usage.inputTokens, 6721);
+  assert.equal(full.snapshot.usage.outputTokens, 64);
+
+  // A notification result with is_error keeps the delivered answer and warns with the task and error.
+  const errorNotif = notificationTurn('run-4', 'Reached max turns');
+  errorNotif[errorNotif.length - 1] = {
+    type: 'result',
+    subtype: 'error_max_turns',
+    is_error: true,
+    session_id: SESSION,
+    errors: ['Reached max turns'],
+    origin: { kind: 'task-notification', runId: 'run-4' },
+    usage: { input_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 5, output_tokens: 7 },
+  };
+  const withError = collect([...fullEvents, ...errorNotif]);
+  assert.equal(withError.snapshot.error, undefined, 'failed notification does not fail a delivered answer');
+  assert.equal(withError.snapshot.output, 'Full report: all 10 checks passed.');
+  assert.equal(withError.snapshot.usage.outputTokens, 55);
+  const errorWarnings = withError.seen.filter(e => e.type === 'warning').map(e => e.message);
+  assert.equal(errorWarnings.length, 1);
+  assert.match(errorWarnings[0], /sleep 25 completed/);
+  assert.match(errorWarnings[0], /Reached max turns/);
+});
+
+test('Claude collector warns once for an unexpected origin kind and never treats it as a protocol error or sole answer', () => {
+  const events = recording('success-partial');
+  const unexpectedBefore = {
+    type: 'result',
+    subtype: 'success',
+    session_id: SESSION,
+    result: 'Cron message',
+    origin: { kind: 'cron-tick', runId: 'c-1' },
+  };
+  const preOnly = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS });
+  preOnly.line(JSON.stringify(events[0]));
+  preOnly.line(JSON.stringify(unexpectedBefore));
+  assert.equal(preOnly.isTerminal(), false, 'never becomes the only answer');
+  assert.equal(preOnly.snapshot().output, '');
+
+  const unexpectedAfter = {
+    type: 'result',
+    subtype: 'success',
+    session_id: SESSION,
+    result: 'Follow-up note',
+    origin: { kind: 'cron-tick', runId: 'c-2' },
+    usage: NOTIFICATION_USAGE,
+  };
+  const { snapshot, seen } = collect([...events, unexpectedAfter, { ...unexpectedAfter, result: 'Second note' }]);
+  assert.equal(snapshot.error, undefined);
+  assert.equal(snapshot.output, 'OK\n\nFollow-up note\n\nSecond note');
+  const warnings = seen.filter(e => e.type === 'warning').map(e => e.message);
+  assert.equal(warnings.length, 1, 'unexpected origin kind warned once');
+  assert.match(warnings[0], /cron-tick/);
 });
 
 test('Claude collector skips a notification result of an earlier task before the answer on resume and warns (#233)', () => {

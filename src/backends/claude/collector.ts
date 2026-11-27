@@ -24,12 +24,14 @@ const KNOWN_TYPES = new Set([
 /**
  * `system` subtypes the collector understands; others produce one warning each.
  * `permission_denied` (2.1.300) repeats a denial that the denied tool's result already reports.
+ * `thinking_tokens` and `compact_boundary` (2.1.332) are internal progress/compaction markers.
  * The task subtypes (2.1.332) describe background tasks, such as a Bash command run in the background.
  */
 const KNOWN_SYSTEM_SUBTYPES = new Set([
   'init',
   'status',
   'thinking_tokens',
+  'compact_boundary',
   'api_retry',
   'permission_denied',
   'task_started',
@@ -135,12 +137,14 @@ function mergeUsage(current: TokenUsage | undefined, next: TokenUsage | undefine
  * types and `system` subtypes are tolerated with one warning per type. Answer
  * text is not passed through keyword redaction; only diagnostics are redacted.
  *
- * The prompt turn's `result` (no `origin`) and every following task-notification turn's
- * `result` (with `origin`, run by Claude Code 2.1.332 when a background task ends) belong
- * to the same delegated turn (#245): the answer is the latest non-empty result text and
- * usage sums every counted result. A notification `result` that arrives before the prompt
- * turn's own result belongs to an earlier turn (#233), so it is skipped and named in a
- * warning; a second `result` without `origin` fails with `PROTOCOL_ERROR`.
+ * The prompt turn's `result` (no `origin`) and every following successful `result` with
+ * `origin` (such as task-notification turns run by Claude Code 2.1.332 when a background
+ * task ends) compose the delegated turn's answer in order, separated by blank lines (#245),
+ * and per-result `usage` sums every counted result. A notification `result` with `is_error`
+ * keeps the delivered answer and warns with the task and error; an unexpected `origin.kind`
+ * warns once and behaves like a notification. A notification `result` that arrives before the
+ * prompt turn's own result belongs to an earlier turn (#233), so it is skipped and named in
+ * a warning; a second `result` without `origin` fails with `PROTOCOL_ERROR`.
  */
 export function createClaudeStreamCollector(options: ClaudeStreamCollectorOptions) {
   const reducer = new StreamReducer({
@@ -161,7 +165,8 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   const tasks = new Map<string, string>();
   // Summaries of finished tasks by run ID, which a notification turn's `origin.runId` names.
   const summaries = new Map<string, string>();
-  let finalText: string | null = null;
+  // Prompt turn answer text followed in order by each successful notification result text.
+  const answerParts: string[] = [];
   let latestResultMessage: string | null = null;
   let streamedBytes = 0;
   let category: string | null = null;
@@ -309,11 +314,15 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   }
   function acceptResult(event: Record<string, unknown>) {
     const origin = record(event.origin);
+    if (origin && origin.kind !== 'task-notification') {
+      const kind = typeof origin.kind === 'string' && origin.kind.trim() ? origin.kind.slice(0, 64) : 'unknown';
+      warnOnce(`origin/${kind}`, `Received Claude Code result with unexpected origin kind '${kind}'.`);
+    }
+    const runId = origin && typeof origin.runId === 'string' ? origin.runId : null;
     if (origin && !terminal) {
       // Before the prompt turn's answer it belongs to a task of an earlier turn (#233): skip it
       // and reset latestMessageId so its text cannot leak into partialProgress().
       latestMessageId = null;
-      const runId = typeof origin.runId === 'string' ? origin.runId : null;
       const summary = (runId && summaries.get(runId)) || taskText(event.result) || runId || 'unnamed task';
       emit({ type: 'warning', message: redactDiagnostic(`Skipped notification result from an earlier background task: ${summary}`, 512) });
       return;
@@ -327,17 +336,33 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     if (!isError && sessionId === null) {
       fail('SANDBOX_UNAVAILABLE', 'Claude Code completed successfully without its initialization.');
     }
-    if (!isError) category = null;
-    resultFields = {
-      isError,
-      subtype: typeof event.subtype === 'string' ? event.subtype : null,
-      apiErrorStatus: typeof event.api_error_status === 'number' ? event.api_error_status : null,
-      errors: Array.isArray(event.errors) ? event.errors.filter((entry): entry is string => typeof entry === 'string') : [],
-    };
-    latestResultMessage = typeof event.result === 'string' ? event.result : null;
-    if (latestResultMessage !== null && (latestResultMessage.trim().length > 0 || finalText === null)) finalText = latestResultMessage;
-    stopReason = typeof event.stop_reason === 'string' ? event.stop_reason : null;
+    const resultMessage = typeof event.result === 'string' ? event.result : null;
+    const errors = Array.isArray(event.errors) ? event.errors.filter((entry): entry is string => typeof entry === 'string') : [];
+    const subtype = typeof event.subtype === 'string' ? event.subtype : null;
+    const apiErrorStatus = typeof event.api_error_status === 'number' ? event.api_error_status : null;
     usage = mergeUsage(usage, parseResultUsage(event.usage));
+    if (origin) {
+      if (isError) {
+        const taskName = (runId && summaries.get(runId)) || runId || 'unnamed task';
+        const failure = classifyClaudeFailure({ category, apiErrorStatus, subtype, errors, message: resultMessage, rateLimitResetsAt });
+        category = null;
+        rateLimitResetsAt = null;
+        emit({
+          type: 'warning',
+          message: redactDiagnostic(`Background task notification failed (${taskName}): ${failure.message}`, 512),
+        });
+      } else {
+        category = null;
+        if (resultMessage !== null && resultMessage.trim().length > 0) answerParts.push(resultMessage);
+        if (typeof event.stop_reason === 'string' && stopReason !== 'max_tokens') stopReason = event.stop_reason;
+      }
+    } else {
+      if (!isError) category = null;
+      resultFields = { isError, subtype, apiErrorStatus, errors };
+      latestResultMessage = resultMessage;
+      if (resultMessage !== null && resultMessage.trim().length > 0) answerParts.push(resultMessage);
+      stopReason = typeof event.stop_reason === 'string' ? event.stop_reason : null;
+    }
     const denials = Array.isArray(event.permission_denials)
       ? event.permission_denials.map(entry => record(entry)?.tool_name).filter(validEventIdentifier)
       : [];
@@ -374,7 +399,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     } else if (!KNOWN_TYPES.has(event.type)) warnOnce(event.type, `Ignoring unknown Claude Code event type '${event.type.slice(0, 64)}'.`);
   }
   function snapshot() {
-    const text = finalText ?? '';
+    const text = answerParts.join('\n\n');
     const output = truncateToByteLength(text, reducer.maxTotalBytes);
     const truncated = output !== text || reducer.isTruncated();
     const error: ExecutionError | undefined = resultFields?.isError
@@ -408,7 +433,8 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
    * bounded by the public byte budget. Empty when there is neither text nor a running task.
    */
   function partialProgress(): string {
-    const latest = latestMessageId === null ? (finalText ?? '') : (reducer.getMessageMap().get(latestMessageId) ?? finalText ?? '');
+    const fallback = answerParts.join('\n\n');
+    const latest = latestMessageId === null ? fallback : (reducer.getMessageMap().get(latestMessageId) ?? fallback);
     const text = latest.trim() ? latest : '';
     const running = runningTasks();
     if (!text && !running.length) return '';

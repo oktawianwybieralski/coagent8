@@ -176,7 +176,7 @@ consent (`"hostExecution": "accepted"` in the configuration, or the form).
 | Backend | Execution |
 | --- | --- |
 | **Codex** | `app-server` with `sandbox_mode="danger-full-access"` and `approval_policy="never"`; the thread's access is verified, every inherited MCP server is disabled and verified per thread, server approval requests are rejected, interrupt via `turn/interrupt` |
-| **Claude Code** (2.1.289+) | `-p --restricted --tools Read,Glob,Grep,Edit,Write,Bash,WebFetch,WebSearch --permission-mode dontAsk`, hooks disabled, strict empty MCP configuration; startup tools, MCP and permission mode verified before any content; native session resume and control interrupt |
+| **Claude Code** (2.1.289+) | `-p --restricted --tools Read,Glob,Grep,Edit,Write,Bash,WebFetch,WebSearch --permission-mode dontAsk`, hooks disabled, strict empty MCP configuration; startup tools, MCP and permission mode verified before any content; native session resume and control interrupt. Background tasks are disabled for turns (`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, with `BASH_DEFAULT_TIMEOUT_MS=600000` and `BASH_MAX_TIMEOUT_MS` bounded to the turn's remaining time), and any wait after the answer is bounded by the turn deadline before stopping the owned process tree. |
 | **Antigravity** (`agy`) | Headless `--dangerously-skip-permissions --output-format stream-json`, prompt on stdin, explicit model, native `--conversation` resume; on Windows runs with CoAgent8's own agy profile and starts only when it has no MCP servers or plugins, elsewhere inherits yours (see [known limitations](#known-limitations)); recursion into CoAgent8 refused |
 
 ### Routing

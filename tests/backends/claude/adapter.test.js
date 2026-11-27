@@ -5,8 +5,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {
+  CLAUDE_BASH_DEFAULT_TIMEOUT_MS,
   CLAUDE_TOOLS: CLAUDE_HOST_TOOLS,
   CLAUDE_TURN_SYSTEM_PROMPT,
+  claudeTurnEnvironment,
   executeClaude,
   probe,
 } = require('../../../src/backends/claude/adapter.ts');
@@ -44,9 +46,19 @@ test('Claude runs restricted print mode with the host tools, streaming, a pinned
     assert.equal(result.status, 'completed');
     assert.equal(result.output, 'OK');
     assert.equal(result.model, 'claude-haiku-4-5-20251001', 'the model reported by system/init, not the requested alias');
-    const { argv, stdin, records, nested } = captured();
+    const { argv, stdin, records, nested, env } = captured();
     assert.equal(stdin, 'Reply with OK');
     assert.equal(nested, '1', 'the turn carries the nested-turn guard');
+    assert.deepEqual(env, {
+      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
+      BASH_DEFAULT_TIMEOUT_MS: String(CLAUDE_BASH_DEFAULT_TIMEOUT_MS),
+      BASH_MAX_TIMEOUT_MS: '900000',
+    });
+    assert.equal(claudeTurnEnvironment(300).BASH_MAX_TIMEOUT_MS, String(CLAUDE_BASH_DEFAULT_TIMEOUT_MS), 'at least default');
+    assert.equal(claudeTurnEnvironment(1_200_000).BASH_MAX_TIMEOUT_MS, '1200000');
+    assert.equal(claudeTurnEnvironment(9_999_999).BASH_MAX_TIMEOUT_MS, '1800000', 'bounded to max execution timeout');
+    assert.match(CLAUDE_TURN_SYSTEM_PROMPT, /nohup/i);
+    assert.match(CLAUDE_TURN_SYSTEM_PROMPT, /servers or watchers/i);
     assert.equal(argv[argv.indexOf('--model') + 1], MODEL, 'the model the controller selected');
     assert.deepEqual(
       records,
@@ -696,7 +708,7 @@ test('#231 #233 #245: Claude waits for background notification turns, sums usage
     let events = [];
     const finished = await executeClaude('x', { cwd: dir, model: MODEL, onEvent: e => events.push(e) });
     assert.equal(finished.status, 'completed', finished.error?.message);
-    assert.equal(finished.output, 'Final report: sleep 25 completed.');
+    assert.equal(finished.output, "I'll wait for the background run to finish.\n\nFinal report: sleep 25 completed.");
     assert.equal(finished.continuationAvailable, true);
     assert.equal(events.filter(e => e.type === 'warning').length, 0);
     assert.ok(

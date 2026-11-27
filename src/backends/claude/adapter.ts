@@ -16,7 +16,13 @@ import {
   type TerminalExecutionResult,
   type CliAdapter,
 } from '../types.js';
-import { ToolError, type ExecutionError, type ExecutionProfile } from '../../contracts/index.js';
+import {
+  DEFAULT_EXECUTION_TIMEOUT_MS,
+  MAX_EXECUTION_TIMEOUT_MS,
+  ToolError,
+  type ExecutionError,
+  type ExecutionProfile,
+} from '../../contracts/index.js';
 import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from './version.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
 import { configuredBackendCommand, probeCommand } from '../executable.js';
@@ -35,11 +41,30 @@ export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const claudeCommand = () => configuredBackendCommand('claude');
 /**
- * Appended to every turn's system prompt so Claude waits for or stops background commands
- * before answering instead of ending a turn just to wait (#245).
+ * Appended to every turn's system prompt so Claude runs commands and servers synchronously
+ * instead of detaching processes or ending a turn just to wait (#245).
  */
 export const CLAUDE_TURN_SYSTEM_PROMPT =
-  'Do not leave commands running in the background when you answer; wait for them in the same turn or stop them, and never end a turn only to wait for a background task.';
+  'Do not leave commands, servers or watchers running when you answer, and do not detach processes (no &, nohup or start). Run a server only inside one command that also runs its checks and stops it, and never end a turn only to wait for something.';
+/** Default foreground Bash timeout (10 min) when background tasks are disabled (#245). */
+export const CLAUDE_BASH_DEFAULT_TIMEOUT_MS = 600_000;
+
+/**
+ * Builds the environment for one Claude Code turn (#245): disables background tasks so
+ * shell commands stay in the foreground, and raises the Bash timeouts so long builds and
+ * test suites can finish within the turn's remaining time (bounded, at least the default).
+ */
+export function claudeTurnEnvironment(timeoutMs?: number, base?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const remaining =
+    timeoutMs !== undefined && Number.isFinite(timeoutMs) && timeoutMs > 0 ? Math.trunc(timeoutMs) : DEFAULT_EXECUTION_TIMEOUT_MS;
+  const maxTimeoutMs = Math.max(CLAUDE_BASH_DEFAULT_TIMEOUT_MS, Math.min(MAX_EXECUTION_TIMEOUT_MS, remaining));
+  return {
+    ...turnEnvironment(base),
+    CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
+    BASH_DEFAULT_TIMEOUT_MS: String(CLAUDE_BASH_DEFAULT_TIMEOUT_MS),
+    BASH_MAX_TIMEOUT_MS: String(maxTimeoutMs),
+  };
+}
 /** User settings, which can choose the default model; a change invalidates cached probes and observed models. */
 const claudeSettingsPath = () => path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json');
 
@@ -521,7 +546,7 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
   };
   const result = await runCommand(claudeCommand(), args, {
     cwd: options.cwd,
-    env: turnEnvironment(),
+    env: claudeTurnEnvironment(options.timeoutMs),
     stdinInput: prompt,
     session,
     abortSignal: options.abortSignal,

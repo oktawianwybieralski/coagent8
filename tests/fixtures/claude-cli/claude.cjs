@@ -105,7 +105,17 @@ function capture() {
   const user = records.find(record => record.type === 'user');
   fs.writeFileSync(
     env.CLAUDE_FIXTURE_CAPTURE,
-    JSON.stringify({ argv, stdin: user ? user.message.content : '', records, nested: env.COAGENT8_NESTED_TURN ?? null }),
+    JSON.stringify({
+      argv,
+      stdin: user ? user.message.content : '',
+      records,
+      nested: env.COAGENT8_NESTED_TURN ?? null,
+      env: {
+        CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS ?? null,
+        BASH_DEFAULT_TIMEOUT_MS: env.BASH_DEFAULT_TIMEOUT_MS ?? null,
+        BASH_MAX_TIMEOUT_MS: env.BASH_MAX_TIMEOUT_MS ?? null,
+      },
+    }),
   );
 }
 // Background task events (shapes of Claude Code 2.1.332, recorded 2026-11-27): a Bash command
