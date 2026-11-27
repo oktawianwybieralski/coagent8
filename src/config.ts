@@ -184,12 +184,23 @@ function isInsideTempDir(file: string): boolean {
   return !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
+const TEST_ENTRY_SCRIPT_PATTERN = /\.test\.(?:[cm]?js|ts)$/i;
+
+function isRunningUnderTest(): boolean {
+  if (process.env.NODE_TEST_CONTEXT) return true;
+  if (process.argv[1] && TEST_ENTRY_SCRIPT_PATTERN.test(process.argv[1])) return true;
+  const loaded = (process as NodeJS.Process & { moduleLoadList?: readonly string[] }).moduleLoadList;
+  // Built-in `node:test` does not enter require.cache; Node records it in process.moduleLoadList.
+  return Array.isArray(loaded) && loaded.includes('NativeModule test');
+}
+
 /**
- * Refuses configuration writes outside `os.tmpdir()` when running under Node's test runner
- * (`NODE_TEST_CONTEXT`), so an isolated or hand-run test cannot mutate the user's file (#248).
+ * Refuses configuration writes outside `os.tmpdir()` when running under Node's test runner,
+ * a test entrypoint script, or with `node:test` loaded, so an isolated or hand-run test cannot
+ * mutate the user's file (#248).
  */
 function assertWritableConfigPath(file: string): void {
-  if (process.env.NODE_TEST_CONTEXT && !isInsideTempDir(file)) {
+  if (isRunningUnderTest() && !isInsideTempDir(file)) {
     throw new ToolError(
       'POLICY_DENIED',
       `Refusing to write CoAgent8 configuration outside os.tmpdir() while running under Node's test runner (${file}). Run tests through tests/run.cjs or point coagent8_CONFIG / coagent8_DIR inside os.tmpdir().`,

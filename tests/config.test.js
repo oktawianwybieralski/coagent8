@@ -540,4 +540,48 @@ test('refuses writing user home config outside os.tmpdir()', async () => {
   assert.equal(run.status, 0, `standalone refusal test failed:\nstdout: ${run.stdout}\nstderr: ${run.stderr}`);
   assert.match(run.stdout, /pass 1\b/, `expected standalone refusal test to execute:\nstdout: ${run.stdout}\nstderr: ${run.stderr}`);
   assert.equal(fs.readFileSync(fakeUserConfig, 'utf8'), seeded, 'user config file remains untouched');
+
+  // Also refuse when a test file is run directly with `node <file>.test.js` (NODE_TEST_CONTEXT unset).
+  const directRun = spawnSync(process.execPath, ['--require', 'tsx/cjs', standaloneTest], {
+    env: childEnv,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  assert.equal(
+    directRun.status,
+    0,
+    `direct node <file>.test.js refusal test failed:\nstdout: ${directRun.stdout}\nstderr: ${directRun.stderr}`,
+  );
+  assert.match(
+    directRun.stdout,
+    /pass 1\b/,
+    `expected direct node test to execute:\nstdout: ${directRun.stdout}\nstderr: ${directRun.stderr}`,
+  );
+  assert.equal(fs.readFileSync(fakeUserConfig, 'utf8'), seeded, 'user config file remains untouched after direct node run');
+
+  // Also refuse when `node:test` is loaded in a non-*.test.* script without NODE_TEST_CONTEXT.
+  const loadedModuleScript = path.join(scratch, 'inline-check.cjs');
+  fs.writeFileSync(
+    loadedModuleScript,
+    `
+require('node:test');
+const assert = require('node:assert/strict');
+const { saveConfig } = require(${JSON.stringify(configModule)});
+saveConfig({ defaultBackend: 'agy' }).then(
+  () => { console.error('expected refusal'); process.exitCode = 1; },
+  err => {
+    assert.equal(err.code, 'POLICY_DENIED');
+    assert.match(err.message, /outside os\\.tmpdir\\(\\)/);
+  },
+);
+`,
+    'utf8',
+  );
+  const loadedRun = spawnSync(process.execPath, ['--require', 'tsx/cjs', loadedModuleScript], {
+    env: childEnv,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  assert.equal(loadedRun.status, 0, `loaded node:test refusal test failed:\nstdout: ${loadedRun.stdout}\nstderr: ${loadedRun.stderr}`);
+  assert.equal(fs.readFileSync(fakeUserConfig, 'utf8'), seeded, 'user config file remains untouched after loaded node:test run');
 });

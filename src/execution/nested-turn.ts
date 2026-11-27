@@ -33,12 +33,20 @@ export const TURN_ISOLATED_PATH_ENV_VARS = [
   'coagent8_END_NOTES_DIR',
 ] as const;
 
+/**
+ * CoAgent8 path overrides stripped without replacement in every backend turn (`#248`).
+ * Unlike data paths, removing them does not fall back to `~/.coagent8`.
+ */
+export const TURN_STRIPPED_PATH_ENV_VARS = ['coagent8_EXTENSION_PATHS'] as const;
+
 const TURN_DIR_PREFIX = 'coagent8-turn-';
+const TURN_DIR_PATTERN = /^coagent8-turn-(\d+)-/;
 const STALE_TURN_DIR_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 const TURN_ENV_KEYS_TO_STRIP = new Set<string>([
   NESTED_TURN_ENV.toLowerCase(),
   ...TURN_ISOLATED_PATH_ENV_VARS.map(name => name.toLowerCase()),
+  ...TURN_STRIPPED_PATH_ENV_VARS.map(name => name.toLowerCase()),
 ]);
 
 const createdTurnDirs = new Set<string>();
@@ -46,14 +54,29 @@ let sharedTurnDir: { tmpdir: string; dir: string } | undefined;
 let stalePruned = false;
 let exitCleanupRegistered = false;
 
+function isPidDead(pid: number): boolean {
+  if (pid === process.pid) return false;
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (err) {
+    // Only ESRCH confirms no live process owns that PID; EPERM means it is still running.
+    return (err as NodeJS.ErrnoException).code === 'ESRCH';
+  }
+}
+
 function pruneStaleTurnDirs(tmpdir: string, now = Date.now()): void {
   try {
     for (const entry of fs.readdirSync(tmpdir, { withFileTypes: true })) {
       if (!entry.isDirectory() || !entry.name.startsWith(TURN_DIR_PREFIX)) continue;
+      const match = TURN_DIR_PATTERN.exec(entry.name);
+      if (!match) continue;
+      const pid = Number(match[1]);
+      if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) continue;
       const candidate = path.join(tmpdir, entry.name);
       try {
         const stat = fs.lstatSync(candidate);
-        if (stat.isDirectory() && now - stat.mtimeMs > STALE_TURN_DIR_MAX_AGE_MS) {
+        if (stat.isDirectory() && now - stat.mtimeMs > STALE_TURN_DIR_MAX_AGE_MS && isPidDead(pid)) {
           fs.rmSync(candidate, { recursive: true, force: true });
         }
       } catch {
@@ -88,7 +111,8 @@ function getOrCreateTurnDir(): string {
     stalePruned = true;
     pruneStaleTurnDirs(tmpdir);
   }
-  const dir = fs.mkdtempSync(path.join(tmpdir, TURN_DIR_PREFIX));
+  // Embed the owning PID so another process never deletes a long-running live server's directory.
+  const dir = fs.mkdtempSync(path.join(tmpdir, `${TURN_DIR_PREFIX}${process.pid}-`));
   sharedTurnDir = { tmpdir, dir };
   createdTurnDirs.add(dir);
   registerExitCleanup();

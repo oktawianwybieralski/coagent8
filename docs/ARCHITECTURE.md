@@ -180,7 +180,8 @@ only to the file. Other hosts/CLI read the file, not VS Code settings. Unknown
 file properties are ignored and dropped on write; malformed/unreadable/invalid
 existing config blocks execution with POLICY_DENIED. Discovery remains available.
 Configuration writers refuse paths outside `os.tmpdir()` when running under Node's
-test runner (`NODE_TEST_CONTEXT`) (#248).
+test runner (`NODE_TEST_CONTEXT`, a `*.test.*` entry script, or with `node:test` loaded)
+(#248).
 
 Core fields are schemaVersion: 1, defaultBackend, routing.strategy
 (fixed or smart_quota), routing.allowedBackends (codex/claude/agy), per-backend
@@ -534,12 +535,14 @@ No turn starts before the user accepted host execution (`hostExecution: "accepte
 one-time form, `src/execution/host-consent.ts`); the earlier read-only and workspace-write
 profiles are gone, and a session's role decides who may continue it (#210).
 
-Every turn sets COAGENT8_NESTED_TURN and points every CoAgent8 path variable
-(`coagent8_CONFIG`, `coagent8_DIR`, `coagent8_QUOTA_CACHE`, `coagent8_SESSIONS_DIR`,
-`coagent8_SESSIONS`, `coagent8_END_NOTES_DIR`) at one per-process disposable directory
-under `os.tmpdir()` (created lazily on the first turn and removed best-effort on exit)
-while keeping backend profile variables (`USERPROFILE`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`)
-intact (`src/execution/nested-turn.ts`, #248); nested CoAgent8 refuses execution before probes. Codex verifies isolation; agy's inherited-tool limitation was accepted by
+Every turn sets COAGENT8_NESTED_TURN, strips `coagent8_EXTENSION_PATHS`, and points
+every CoAgent8 path variable (`coagent8_CONFIG`, `coagent8_DIR`, `coagent8_QUOTA_CACHE`,
+`coagent8_SESSIONS_DIR`, `coagent8_SESSIONS`, `coagent8_END_NOTES_DIR`) at one
+per-process disposable directory under `os.tmpdir()` (created lazily on the first turn
+and removed best-effort on exit; stale directories older than a day are pruned only for
+dead PIDs) while keeping backend profile variables (`USERPROFILE`, `CLAUDE_CONFIG_DIR`,
+`CODEX_HOME`) intact (`src/execution/nested-turn.ts`, #248); nested CoAgent8 refuses
+execution before probes. Codex verifies isolation; agy's inherited-tool limitation was accepted by
 the owner on 2026-10-08 and is named by doctor. It is not permission to claim
 isolation or remove the recursion guard. User hooks/plugins in Claude need further
 native acceptance. Security requirements belong to

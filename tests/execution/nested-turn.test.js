@@ -2,12 +2,17 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { NESTED_TURN_ENV, TURN_ISOLATED_PATH_ENV_VARS, turnEnvironment } = require('../../src/execution/nested-turn.ts');
+const {
+  NESTED_TURN_ENV,
+  TURN_ISOLATED_PATH_ENV_VARS,
+  TURN_STRIPPED_PATH_ENV_VARS,
+  turnEnvironment,
+} = require('../../src/execution/nested-turn.ts');
 const { agyEnvironment, execute: executeAgy } = require('../../src/backends/agy/adapter.ts');
 const { claudeTurnEnvironment, executeClaude } = require('../../src/backends/claude/adapter.ts');
 const { codexLaunchEnvironment } = require('../../src/backends/codex/app-server.ts');
@@ -44,6 +49,14 @@ function assertDisposableTurnEnv(env, serverEnv, label) {
     assert.ok(env[key], `${label}: ${key} is explicitly set`);
     assert.notEqual(env[key], serverEnv[key], `${label}: ${key} does not inherit server value`);
   }
+  for (const key of TURN_STRIPPED_PATH_ENV_VARS) {
+    assert.equal(env[key], undefined, `${label}: ${key} is stripped`);
+    assert.equal(
+      Object.keys(env).filter(candidate => candidate.toLowerCase() === key.toLowerCase()).length,
+      0,
+      `${label}: case variants of ${key} are stripped`,
+    );
+  }
   assert.ok(isInsideDir(env.coagent8_DIR, os.tmpdir()), `${label}: coagent8_DIR lives inside os.tmpdir()`);
   for (const key of ['coagent8_CONFIG', 'coagent8_QUOTA_CACHE', 'coagent8_SESSIONS_DIR', 'coagent8_SESSIONS', 'coagent8_END_NOTES_DIR']) {
     assert.ok(isInsideDir(env[key], env.coagent8_DIR), `${label}: ${key} lives inside disposable turn dir`);
@@ -67,6 +80,9 @@ test('turnEnvironment replaces every CoAgent8 path variable with a shared per-pr
     coagent8_SESSIONS_DIR: '/fake/user/.coagent8/sessions',
     coagent8_SESSIONS: '/fake/user/.coagent8/sessions.json',
     coagent8_END_NOTES_DIR: '/fake/user/.coagent8/end-notes',
+    coagent8_EXTENSION_PATHS: '{"claude":"/fake/user/ext"}',
+    COAGENT8_EXTENSION_PATHS: '{"codex":"/fake/user/ext-upper"}',
+    CoAgent8_Extension_Paths: '{"agy":"/fake/user/ext-mixed"}',
   };
 
   const first = turnEnvironment(serverBase);
@@ -93,43 +109,64 @@ test('turnEnvironment replaces every CoAgent8 path variable with a shared per-pr
   assert.equal(first.GEMINI_CLI_HOME, serverBase.GEMINI_CLI_HOME);
 });
 
-test('turnEnvironment removes its disposable directory on process exit and prunes stale coagent8-turn-* directories (#248)', t => {
+test('turnEnvironment removes its disposable directory on process exit and prunes stale coagent8-turn-* directories only for dead PIDs (#248)', t => {
   const scratchTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-turn-cleanup-'));
-  const staleDir = path.join(scratchTmp, 'coagent8-turn-stale');
-  const freshDir = path.join(scratchTmp, 'coagent8-turn-fresh');
-  fs.mkdirSync(staleDir, { recursive: true });
-  fs.mkdirSync(freshDir, { recursive: true });
+  const liveChild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000);'], {
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  const exitedChild = spawnSync(process.execPath, ['-e', ''], { windowsHide: true });
+  const deadPid = exitedChild.pid;
+  assert.ok(deadPid && liveChild.pid, 'expected valid child PIDs');
+
+  const deadStaleDir = path.join(scratchTmp, `coagent8-turn-${deadPid}-stale`);
+  const deadFreshDir = path.join(scratchTmp, `coagent8-turn-${deadPid}-fresh`);
+  const liveStaleDir = path.join(scratchTmp, `coagent8-turn-${liveChild.pid}-live`);
+  fs.mkdirSync(deadStaleDir, { recursive: true });
+  fs.mkdirSync(deadFreshDir, { recursive: true });
+  fs.mkdirSync(liveStaleDir, { recursive: true });
   const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-  fs.utimesSync(staleDir, twoDaysAgo, twoDaysAgo);
+  fs.utimesSync(deadStaleDir, twoDaysAgo, twoDaysAgo);
+  fs.utimesSync(liveStaleDir, twoDaysAgo, twoDaysAgo);
 
   t.after(() => {
+    try {
+      liveChild.kill();
+    } catch {
+      // Already exited.
+    }
     fs.rmSync(scratchTmp, { recursive: true, force: true });
   });
 
   const nestedTurnModule = path.resolve(__dirname, '../../src/execution/nested-turn.ts');
-  const run = spawnSync(
-    process.execPath,
-    [
-      '--require',
-      'tsx/cjs',
-      '-e',
-      'const { turnEnvironment } = require(process.argv[1]); const a = turnEnvironment(); const b = turnEnvironment(); console.log(JSON.stringify({ a: a.coagent8_DIR, b: b.coagent8_DIR }));',
-      nestedTurnModule,
-    ],
-    {
-      env: { ...process.env, TMP: scratchTmp, TEMP: scratchTmp, TMPDIR: scratchTmp },
-      encoding: 'utf8',
-      windowsHide: true,
-    },
-  );
+  const script = `
+const fs = require('node:fs');
+const path = require('node:path');
+const { turnEnvironment } = require(process.argv[1]);
+const scratch = process.argv[2];
+const ownStale = path.join(scratch, 'coagent8-turn-' + process.pid + '-own');
+fs.mkdirSync(ownStale, { recursive: true });
+const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+fs.utimesSync(ownStale, twoDaysAgo, twoDaysAgo);
+const a = turnEnvironment();
+const b = turnEnvironment();
+console.log(JSON.stringify({ a: a.coagent8_DIR, b: b.coagent8_DIR, ownStaleExists: fs.existsSync(ownStale) }));
+`;
+  const run = spawnSync(process.execPath, ['--require', 'tsx/cjs', '-e', script, nestedTurnModule, scratchTmp], {
+    env: { ...process.env, TMP: scratchTmp, TEMP: scratchTmp, TMPDIR: scratchTmp },
+    encoding: 'utf8',
+    windowsHide: true,
+  });
 
   assert.equal(run.status, 0, `child process failed: ${run.stderr}`);
-  const { a, b } = JSON.parse(run.stdout.trim());
+  const { a, b, ownStaleExists } = JSON.parse(run.stdout.trim());
   assert.equal(a, b, 'child process reuses one directory across turns');
   assert.ok(isInsideDir(a, scratchTmp), 'created inside os.tmpdir()');
+  assert.equal(ownStaleExists, true, 'current process directory is never pruned');
   assert.equal(fs.existsSync(a), false, 'disposable directory is removed on process exit');
-  assert.equal(fs.existsSync(staleDir), false, 'stale coagent8-turn-* directory older than a day is pruned');
-  assert.equal(fs.existsSync(freshDir), true, 'recent coagent8-turn-* directory from another live process is kept');
+  assert.equal(fs.existsSync(deadStaleDir), false, 'stale coagent8-turn-* directory of a dead PID older than a day is pruned');
+  assert.equal(fs.existsSync(deadFreshDir), true, 'recent coagent8-turn-* directory is kept');
+  assert.equal(fs.existsSync(liveStaleDir), true, 'old coagent8-turn-* directory of a live PID is kept');
 });
 
 test('every backend turn (agy, claude, codex) receives disposable CoAgent8 paths, not the server paths (#248)', async t => {
