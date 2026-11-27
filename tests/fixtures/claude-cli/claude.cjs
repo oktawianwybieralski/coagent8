@@ -78,8 +78,14 @@ const recordings = {
   'missing-init': ['success-partial', 0],
   'startup-failure': ['success-partial', 1],
   interruptible: ['success-partial', 0],
+  'streaming-interruptible': ['success-partial', 0],
   'ignore-interrupt': ['success-partial', 0],
   'max-tokens': ['success-partial', 0],
+  'background-task': ['success-partial', 0],
+  'notification-interruptible': ['success-partial', 0],
+  'resume-notification': ['success-partial', 0],
+  'resume-notification-interruptible': ['success-partial', 0],
+  'second-result': ['success-partial', 0],
 };
 const [file, exitCode] = recordings[scenario] || [];
 if (!file) {
@@ -96,14 +102,89 @@ const records = [];
 const send = event => process.stdout.write(JSON.stringify(event) + '\n');
 let pending = '',
   answered = false,
-  interruptible = null;
+  interruptible = null,
+  activeNotificationOrigin = null;
 function capture() {
   if (!env.CLAUDE_FIXTURE_CAPTURE) return;
   const user = records.find(record => record.type === 'user');
   fs.writeFileSync(
     env.CLAUDE_FIXTURE_CAPTURE,
-    JSON.stringify({ argv, stdin: user ? user.message.content : '', records, nested: env.COAGENT8_NESTED_TURN ?? null }),
+    JSON.stringify({
+      argv,
+      stdin: user ? user.message.content : '',
+      records,
+      nested: env.COAGENT8_NESTED_TURN ?? null,
+      env: {
+        CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS ?? null,
+        BASH_DEFAULT_TIMEOUT_MS: env.BASH_DEFAULT_TIMEOUT_MS ?? null,
+        BASH_MAX_TIMEOUT_MS: env.BASH_MAX_TIMEOUT_MS ?? null,
+      },
+    }),
   );
+}
+// Background task events (shapes of Claude Code 2.1.332, recorded 2026-11-27): a Bash command
+// run in the background, its notification, and the automatic turn the CLI runs for it.
+const TASK = { task_id: 'b7x2k9q4', run_id: 'run-1', tool_use_id: 'toolu_background_1', description: 'sleep 25' };
+const taskStarted = () => [
+  { type: 'system', subtype: 'background_tasks_changed', session_id: sessionId, tasks: [{ ...TASK, task_type: 'local_bash' }] },
+  { type: 'system', subtype: 'task_started', session_id: sessionId, ...TASK, is_backgrounded: true, task_type: 'local_bash' },
+  { type: 'tool_progress', tool_use_id: TASK.tool_use_id, tool_name: 'Bash', elapsed_time_seconds: 1, session_id: sessionId },
+];
+function notificationTurn(task, text, index) {
+  return [
+    {
+      type: 'system',
+      subtype: 'task_updated',
+      session_id: sessionId,
+      task_id: task.task_id,
+      run_id: task.run_id,
+      patch: { status: 'completed', end_time: 1 },
+    },
+    {
+      type: 'system',
+      subtype: 'task_notification',
+      session_id: sessionId,
+      task_id: task.task_id,
+      run_id: task.run_id,
+      tool_use_id: task.tool_use_id,
+      status: 'completed',
+      output_file: '<redacted>',
+      summary: `Background command "${task.description}" completed (exit code 0)`,
+    },
+    { type: 'system', subtype: 'background_tasks_changed', session_id: sessionId, tasks: [] },
+    {
+      type: 'system',
+      subtype: 'init',
+      session_id: sessionId,
+      tools: (valueOf('--tools') || '').split(','),
+      mcp_servers: [],
+      model: 'claude-haiku-4-5-20251001',
+      permissionMode: 'dontAsk',
+    },
+    {
+      type: 'assistant',
+      session_id: sessionId,
+      message: { id: `msg_notification_${index}`, role: 'assistant', content: [{ type: 'text', text }] },
+    },
+    {
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      session_id: sessionId,
+      result: text,
+      origin: { kind: 'task-notification', producer: 'session-task', runId: task.run_id },
+      result_index: index,
+      process_turn_index: index,
+      usage: {
+        input_tokens: 5,
+        cache_creation_input_tokens: 20,
+        cache_read_input_tokens: 100,
+        cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 20 },
+        output_tokens: 12,
+        output_tokens_details: { thinking_tokens: 3 },
+      },
+    },
+  ];
 }
 function answer() {
   const lines = fs
@@ -121,6 +202,54 @@ function answer() {
     // `max-tokens`: the answer stopped at the output length limit (ENVELOPE-001).
     if (scenario === 'max-tokens' && event.type === 'result') event.stop_reason = 'max_tokens';
     if ((scenario === 'no-result' || scenario === 'interruptible' || scenario === 'ignore-interrupt') && event.type === 'result') continue;
+    if (scenario === 'streaming-interruptible') {
+      if (event.subtype !== 'init') continue;
+      out.push(
+        event,
+        { type: 'stream_event', session_id: sessionId, event: { type: 'message_start', message: { id: 'msg_stream_1' } } },
+        {
+          type: 'stream_event',
+          session_id: sessionId,
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Streaming ' } },
+        },
+        {
+          type: 'stream_event',
+          session_id: sessionId,
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'partial report' } },
+        },
+      );
+      break;
+    }
+    // `background-task` (#245): the prompt turn answers "I'll wait..." while a background task runs,
+    // and the automatic notification turn later emits the real report (or stays interruptible).
+    if (scenario === 'background-task' || scenario === 'notification-interruptible') {
+      const interim = "I'll wait for the background run to finish.";
+      if (event.type === 'stream_event' && event.event?.delta?.type === 'text_delta') event.event.delta.text = interim;
+      if (event.type === 'assistant' && event.message?.content?.[0]?.type === 'text') event.message.content[0].text = interim;
+      if (event.type === 'result') {
+        event.result = interim;
+        out.push(...taskStarted());
+      }
+    }
+    // `resume-notification` (#233): a task of the timed-out earlier turn ends first, and its
+    // notification turn runs before the resumed turn's own init and answer.
+    if (scenario === 'resume-notification' && event.subtype === 'init')
+      out.push(...notificationTurn({ ...TASK, run_id: 'run-0' }, 'The earlier background command sleep 25 finished.', 0).slice(3));
+    if (scenario === 'resume-notification-interruptible') {
+      if (event.subtype !== 'init') continue;
+      const pre = notificationTurn({ ...TASK, run_id: 'run-0' }, 'Earlier notification still running...', 0).slice(3, 5);
+      out.push(
+        ...pre,
+        { type: 'stream_event', session_id: sessionId, event: { type: 'message_start', message: { id: 'msg_pre_stream' } } },
+        {
+          type: 'stream_event',
+          session_id: sessionId,
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Earlier streaming...' } },
+        },
+      );
+      activeNotificationOrigin = { kind: 'task-notification', producer: 'session-task', runId: 'run-0' };
+      break;
+    }
     if (scenario === 'unknown-events' && event.type === 'result') {
       out.push(
         { type: 'future_event_type', payload: 1 },
@@ -129,11 +258,38 @@ function answer() {
       );
     }
     out.push(event);
+    if (scenario === 'second-result' && event.type === 'result') out.push({ ...event, result_index: 1 });
   }
   for (const event of out) send(event);
+  if (scenario === 'background-task') {
+    // Like 2.1.332 the process stays alive until the task ends, even after stdin is closed;
+    // CLAUDE_FIXTURE_TASK_MS sets how long the task runs.
+    setTimeout(
+      () => {
+        for (const event of notificationTurn(TASK, 'Final report: sleep 25 completed.', 1)) send(event);
+      },
+      Number(env.CLAUDE_FIXTURE_TASK_MS || 500),
+    );
+  }
+  if (scenario === 'notification-interruptible') {
+    setTimeout(
+      () => {
+        const events = notificationTurn(TASK, 'Notification turn running...', 1);
+        for (const event of events.slice(0, -1)) send(event);
+        activeNotificationOrigin = events.at(-1).origin;
+        interruptible = setInterval(() => {}, 1000);
+      },
+      Number(env.CLAUDE_FIXTURE_TASK_MS || 50),
+    );
+  }
   // A CLI that dies without a terminal result: exit without waiting for stdin.
   if (scenario === 'no-result') process.exit(exitCode);
-  if (scenario === 'interruptible' || scenario === 'ignore-interrupt') {
+  if (
+    scenario === 'interruptible' ||
+    scenario === 'ignore-interrupt' ||
+    scenario === 'streaming-interruptible' ||
+    scenario === 'resume-notification-interruptible'
+  ) {
     // The turn keeps running until an interrupt arrives (2.1.289 output shapes, recorded live).
     interruptible = setInterval(() => {}, 1000);
     if (env.CLAUDE_FIXTURE_READY) {
@@ -184,7 +340,7 @@ function initialize(request) {
 function interrupt(request) {
   send({ type: 'control_response', response: { subtype: 'success', request_id: request.request_id, response: { still_queued: [] } } });
   // Only a running turn ends with an interrupted result.
-  if (scenario === 'ignore-interrupt' || !interruptible) return;
+  if (scenario === 'ignore-interrupt' || env.CLAUDE_FIXTURE_IGNORE_INTERRUPT === '1' || !interruptible) return;
   clearInterval(interruptible);
   interruptible = null;
   send({
@@ -195,7 +351,9 @@ function interrupt(request) {
     terminal_reason: 'aborted_streaming',
     stop_reason: null,
     errors: [],
+    ...(activeNotificationOrigin ? { origin: activeNotificationOrigin } : {}),
   });
+  activeNotificationOrigin = null;
   process.exitCode = 1;
 }
 process.stdin.setEncoding('utf8');

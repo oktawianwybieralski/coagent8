@@ -16,7 +16,13 @@ import {
   type TerminalExecutionResult,
   type CliAdapter,
 } from '../types.js';
-import { ToolError, type ExecutionError, type ExecutionProfile } from '../../contracts/index.js';
+import {
+  DEFAULT_EXECUTION_TIMEOUT_MS,
+  MAX_EXECUTION_TIMEOUT_MS,
+  ToolError,
+  type ExecutionError,
+  type ExecutionProfile,
+} from '../../contracts/index.js';
 import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from './version.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
 import { configuredBackendCommand, probeCommand } from '../executable.js';
@@ -34,6 +40,31 @@ export function claudeTurnSettings(): string {
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const claudeCommand = () => configuredBackendCommand('claude');
+/**
+ * Appended to every turn's system prompt so Claude runs commands and servers synchronously
+ * instead of detaching processes or ending a turn just to wait (#245).
+ */
+export const CLAUDE_TURN_SYSTEM_PROMPT =
+  'Do not leave commands, servers or watchers running when you answer, and do not detach processes (no &, nohup or start). Run a server only inside one command that also runs its checks and stops it, and never end a turn only to wait for something.';
+/** Default foreground Bash timeout (10 min) when background tasks are disabled (#245). */
+export const CLAUDE_BASH_DEFAULT_TIMEOUT_MS = 600_000;
+
+/**
+ * Builds the environment for one Claude Code turn (#245): disables background tasks so
+ * shell commands stay in the foreground, and raises the Bash timeouts so long builds and
+ * test suites can finish within the turn's remaining time (bounded, at least the default).
+ */
+export function claudeTurnEnvironment(timeoutMs?: number, base?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const remaining =
+    timeoutMs !== undefined && Number.isFinite(timeoutMs) && timeoutMs > 0 ? Math.trunc(timeoutMs) : DEFAULT_EXECUTION_TIMEOUT_MS;
+  const maxTimeoutMs = Math.max(CLAUDE_BASH_DEFAULT_TIMEOUT_MS, Math.min(MAX_EXECUTION_TIMEOUT_MS, remaining));
+  return {
+    ...turnEnvironment(base),
+    CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
+    BASH_DEFAULT_TIMEOUT_MS: String(CLAUDE_BASH_DEFAULT_TIMEOUT_MS),
+    BASH_MAX_TIMEOUT_MS: String(maxTimeoutMs),
+  };
+}
 /** User settings, which can choose the default model; a change invalidates cached probes and observed models. */
 const claudeSettingsPath = () => path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json');
 
@@ -432,6 +463,10 @@ export async function listModels(probe?: AdapterProbeResult, context?: BackendRe
  * pins a fresh `--session-id`; a continuation passes `--resume`. The prompt is one
  * stream-json user message on stdin, which stays open so cancellation and deadlines
  * can interrupt the turn (`control_request` `interrupt`) before the process is stopped.
+ * When background tasks keep the CLI alive after the prompt result (#245), the adapter
+ * waits within the turn's deadline and returns the latest result once the CLI exits. A
+ * turn that times out or is cancelled returns its latest public text marked as partial
+ * progress together with any background tasks still running (#231).
  */
 export async function executeClaude(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
   const rejected = (code: ExecutionError['code'], message: string, model?: string): TerminalExecutionResult => ({
@@ -474,6 +509,8 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
     'stream-json',
     '--verbose',
     '--include-partial-messages',
+    '--append-system-prompt',
+    CLAUDE_TURN_SYSTEM_PROMPT,
     '--model',
     model,
   ];
@@ -485,7 +522,12 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
       message: redactDiagnostic(`Ignoring unsupported Claude reasoning effort '${effort.slice(0, 32)}'.`),
     });
   args.push(resumeId ? '--resume' : '--session-id', sessionId);
-  const collector = createClaudeStreamCollector({ expectedSessionId: sessionId, allowedTools: tools, onEvent: options.onEvent });
+  const collector = createClaudeStreamCollector({
+    expectedSessionId: sessionId,
+    allowedTools: tools,
+    resumed: Boolean(resumeId),
+    onEvent: options.onEvent,
+  });
   let channel: StdinChannel | undefined;
   const session: StdinSession = {
     start(opened, input) {
@@ -497,17 +539,19 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
       opened.send({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } });
     },
   };
-  // stdin is closed only after the terminal `result`: Claude 2.1.289 did not exit on EOF mid-turn.
+  // stdin is closed only once the prompt result and every pending task-notification turn
+  // have completed with no tasks still running: Claude 2.1.289 did not exit on EOF mid-turn,
+  // and keeping stdin open through notification turns lets cancellation/deadlines interrupt them.
   const onStdoutLine = (line: string) => {
     try {
       collector.line(line);
     } finally {
-      if (collector.isTerminal()) channel?.close();
+      if (collector.canCloseStdin()) channel?.close();
     }
   };
   const result = await runCommand(claudeCommand(), args, {
     cwd: options.cwd,
-    env: turnEnvironment(),
+    env: claudeTurnEnvironment(options.timeoutMs),
     stdinInput: prompt,
     session,
     abortSignal: options.abortSignal,
@@ -551,10 +595,11 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
   const continuationAvailable =
     !!nativeSessionId &&
     (status === 'completed' || (Boolean(snapshot.hasAssistantMessage) && !nonResumableCodes.includes(error?.code || '')));
+  const stopped = status === 'cancelled' || status === 'timed_out';
   return {
     status,
     isError: status !== 'completed',
-    output: snapshot.output,
+    output: stopped ? collector.partialProgress() : snapshot.output,
     model: snapshot.model ?? model,
     threadId: nativeSessionId,
     nativeSessionId,

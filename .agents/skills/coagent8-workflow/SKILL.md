@@ -39,7 +39,7 @@ claims or nested-turn enforcement as a shortcut.
 
 You are the coordinator ([`project.md`](../../project.md#agent-roles)): per
 issue, `consult` codex on the plan of a non-trivial change, write a
-self-contained task spec, `delegate` it to agy (claude in a critical area) with
+self-contained task spec, `delegate` it to agy (to claude for the boundaries project.md "Agent roles" reserves) with
 `scope`, `checks` and `mode: async`, read the whole diff against the scope,
 send confirmed findings back to the delegate's `session_handle`, run the long
 suites yourself, get the required reviews READY on the head, judge the change

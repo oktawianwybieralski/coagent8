@@ -131,7 +131,15 @@ test('Claude collector accepts uppercase session ID in init and result case-inse
 
 test('Claude collector tolerates unknown event types and system subtypes with one warning each', () => {
   const events = recording('success-partial');
-  events.splice(-1, 0, { type: 'future_event_type' }, { type: 'future_event_type' }, { type: 'system', subtype: 'future_subtype' });
+  events.splice(
+    -1,
+    0,
+    { type: 'system', subtype: 'thinking_tokens' },
+    { type: 'system', subtype: 'compact_boundary' },
+    { type: 'future_event_type' },
+    { type: 'future_event_type' },
+    { type: 'system', subtype: 'future_subtype' },
+  );
   const { snapshot, seen } = collect(events);
   assert.equal(snapshot.output, 'OK');
   assert.equal(snapshot.error, undefined);
@@ -226,4 +234,315 @@ test('AX-001c: partial Claude usage keeps the reported counts and sums only comp
     'a split that does not add up is unknown',
   );
   assert.equal(writes(undefined).cacheWriteLongInputTokens, undefined, 'no split reported');
+});
+
+// Background task events of Claude Code 2.1.332 (#231, #233, #245).
+const TASK = { task_id: 'b7x2k9q4', run_id: 'run-1', tool_use_id: 'toolu_background_1', description: 'sleep 25' };
+const backgroundStarted = [
+  { type: 'system', subtype: 'background_tasks_changed', tasks: [{ ...TASK, task_type: 'local_bash' }] },
+  { type: 'system', subtype: 'task_started', ...TASK, is_backgrounded: true, task_type: 'local_bash' },
+  { type: 'tool_progress', tool_use_id: TASK.tool_use_id, tool_name: 'Bash', elapsed_time_seconds: 1 },
+];
+const NOTIFICATION_USAGE = {
+  input_tokens: 5,
+  cache_creation_input_tokens: 20,
+  cache_read_input_tokens: 100,
+  cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 20 },
+  output_tokens: 12,
+  output_tokens_details: { thinking_tokens: 3 },
+};
+function notificationTurn(runId, text, usage = NOTIFICATION_USAGE) {
+  return [
+    { type: 'system', subtype: 'task_updated', task_id: TASK.task_id, run_id: runId, patch: { status: 'completed', end_time: 1 } },
+    {
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: TASK.task_id,
+      run_id: runId,
+      status: 'completed',
+      summary: 'sleep 25 completed',
+    },
+    { type: 'system', subtype: 'background_tasks_changed', tasks: [] },
+    { type: 'system', subtype: 'init', session_id: SESSION, tools: TOOLS, mcp_servers: [], permissionMode: 'dontAsk' },
+    { type: 'assistant', message: { id: `msg_notification_${runId}`, content: [{ type: 'text', text }] } },
+    {
+      type: 'result',
+      subtype: 'success',
+      session_id: SESSION,
+      result: text,
+      origin: { kind: 'task-notification', runId },
+      ...(usage ? { usage } : {}),
+    },
+  ];
+}
+
+test('Claude collector composes prompt and notification answers in order, sums usage and warns on failed notifications (#245)', () => {
+  const events = recording('success-partial');
+  const answer = {
+    ...events.pop(),
+    result: "I'll wait for the background run to finish.",
+    total_cost_usd: 0.5,
+    modelUsage: { 'claude-haiku-4-5-20251001': { costUSD: 0.5 } },
+  };
+  const seen = [];
+  const collector = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS, onEvent: e => seen.push(e) });
+  for (const event of [...events, ...backgroundStarted, answer]) collector.line(JSON.stringify(event));
+  assert.deepEqual(collector.runningTasks(), ['sleep 25'], 'the running task is tracked by description');
+  assert.equal(collector.canCloseStdin(), false, 'keeps stdin open while background task runs');
+  assert.ok(seen.some(e => e.type === 'status' && e.message.includes('sleep 25') && /Waiting/.test(e.message)));
+  const notifEvents = notificationTurn('run-1', 'Final report: sleep 25 completed.');
+  for (const event of notifEvents.slice(0, -1)) collector.line(JSON.stringify(event));
+  assert.equal(collector.canCloseStdin(), false, 'keeps stdin open after task_updated/task_notification until notification result');
+  collector.line(JSON.stringify(notifEvents.at(-1)));
+  assert.equal(collector.canCloseStdin(), true, 'allows stdin to close once notification result arrives');
+  const snapshot = collector.snapshot();
+  assert.equal(snapshot.error, undefined, 'a result with origin is counted as part of the same turn');
+  assert.equal(snapshot.output, "I'll wait for the background run to finish.\n\nFinal report: sleep 25 completed.");
+  assert.deepEqual(collector.runningTasks(), []);
+  assert.ok(seen.some(e => e.type === 'assistant_message' && e.text === 'Final report: sleep 25 completed.'));
+  assert.ok(!seen.some(e => e.type === 'warning'), 'no warning for a normal notification turn');
+  assert.ok(seen.some(e => e.type === 'status' && e.message === 'Background task started: sleep 25'));
+  // Per-result usage sums across counted results (6590 + 125 = 6715 input, 48 + 12 = 60 output).
+  assert.deepEqual(snapshot.usage, {
+    source: 'provider',
+    inputTokens: 6715,
+    cachedInputTokens: 4670,
+    cacheWriteInputTokens: 2030,
+    cacheWriteLongInputTokens: 2030,
+    outputTokens: 60,
+    reasoningTokens: 44,
+    totalTokens: 6775,
+  });
+  // A short notification after a full report does not replace the report; an empty one adds no blank lines.
+  const fullEvents = recording('success-partial');
+  fullEvents[fullEvents.length - 1] = { ...fullEvents.at(-1), result: 'Full report: all 10 checks passed.' };
+  const full = collect([
+    ...fullEvents,
+    ...notificationTurn('run-2', 'All done.'),
+    ...notificationTurn('run-3', '', { input_tokens: 1, cache_read_input_tokens: 2, cache_creation_input_tokens: 3, output_tokens: 4 }),
+  ]);
+  assert.equal(full.snapshot.output, 'Full report: all 10 checks passed.\n\nAll done.');
+  assert.equal(full.snapshot.usage.inputTokens, 6721);
+  assert.equal(full.snapshot.usage.outputTokens, 64);
+
+  // A notification result with is_error keeps the delivered answer and warns with the task and error.
+  const errorNotif = notificationTurn('run-4', 'Reached max turns');
+  errorNotif[errorNotif.length - 1] = {
+    type: 'result',
+    subtype: 'error_max_turns',
+    is_error: true,
+    session_id: SESSION,
+    errors: ['Reached max turns'],
+    origin: { kind: 'task-notification', runId: 'run-4' },
+    usage: { input_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 5, output_tokens: 7 },
+  };
+  const withError = collect([...fullEvents, ...errorNotif]);
+  assert.equal(withError.snapshot.error, undefined, 'failed notification does not fail a delivered answer');
+  assert.equal(withError.snapshot.output, 'Full report: all 10 checks passed.');
+  assert.equal(withError.snapshot.usage.outputTokens, 55);
+  const errorWarnings = withError.seen.filter(e => e.type === 'warning').map(e => e.message);
+  assert.equal(errorWarnings.length, 1);
+  assert.match(errorWarnings[0], /sleep 25 completed/);
+  assert.match(errorWarnings[0], /Reached max turns/);
+});
+
+test('Claude collector warns once for an unexpected origin kind and never treats it as a protocol error or sole answer', () => {
+  const events = recording('success-partial');
+  const unexpectedBefore = {
+    type: 'result',
+    subtype: 'success',
+    session_id: SESSION,
+    result: 'Cron message',
+    origin: { kind: 'cron-tick', runId: 'c-1' },
+  };
+  const preOnly = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS });
+  preOnly.line(JSON.stringify(events[0]));
+  preOnly.line(JSON.stringify(unexpectedBefore));
+  assert.equal(preOnly.isTerminal(), false, 'never becomes the only answer');
+  assert.equal(preOnly.snapshot().output, '');
+
+  const unexpectedAfter = {
+    type: 'result',
+    subtype: 'success',
+    session_id: SESSION,
+    result: 'Follow-up note',
+    origin: { kind: 'cron-tick', runId: 'c-2' },
+    usage: NOTIFICATION_USAGE,
+  };
+  const { snapshot, seen } = collect([...events, unexpectedAfter, { ...unexpectedAfter, result: 'Second note' }]);
+  assert.equal(snapshot.error, undefined);
+  assert.equal(snapshot.output, 'OK\n\nFollow-up note\n\nSecond note');
+  const warnings = seen.filter(e => e.type === 'warning').map(e => e.message);
+  assert.equal(warnings.length, 1, 'unexpected origin kind warned once');
+  assert.match(warnings[0], /cron-tick/);
+});
+
+test('Claude collector skips a notification result of an earlier task before the answer on resume without publishing its text (#233)', () => {
+  const { PARTIAL_PROGRESS_NOTICE, PARTIAL_PROGRESS_UNCERTAIN_NOTICE } = require('../../../src/backends/claude/collector.ts');
+  const events = recording('success-partial');
+  const skipped = [
+    ...notificationTurn('run-0', 'Earlier sleep 25 done.').slice(3, 5),
+    { type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_notification_run-0' } } },
+    { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Earlier ' } } },
+    notificationTurn('run-0', 'Earlier sleep 25 done.')[5],
+  ];
+  const seen = [];
+  const collector = createClaudeStreamCollector({
+    expectedSessionId: SESSION,
+    allowedTools: TOOLS,
+    resumed: true,
+    onEvent: e => seen.push(e),
+  });
+  for (const event of skipped.slice(0, -1)) collector.line(JSON.stringify(event));
+  assert.equal(collector.snapshot().hasAssistantMessage, true, 'unclassified pre-result output keeps session continuable');
+  assert.equal(
+    collector.partialProgress(),
+    `${PARTIAL_PROGRESS_UNCERTAIN_NOTICE}\n\nEarlier `,
+    'unclassified pre-result text is marked uncertain, never plain progress',
+  );
+  assert.ok(!collector.partialProgress().startsWith(PARTIAL_PROGRESS_NOTICE));
+  assert.ok(!seen.some(e => e.type === 'assistant_message' || e.type === 'assistant_delta'), 'no unclassified pre-answer text emitted');
+  collector.line(JSON.stringify(skipped.at(-1)));
+  assert.equal(collector.snapshot().hasAssistantMessage, false, 'classified skipped turn is excluded from continuation');
+  assert.equal(collector.partialProgress(), '', 'classified skipped turn leaves no partial progress');
+  assert.ok(!seen.some(e => e.type === 'assistant_message' || e.type === 'assistant_delta'), 'no skipped text emitted');
+  for (const event of events) collector.line(JSON.stringify(event));
+  const snapshot = collector.snapshot();
+  assert.equal(snapshot.error, undefined);
+  assert.equal(snapshot.output, 'OK');
+  assert.equal(snapshot.terminal, true);
+  assert.equal(snapshot.usage.outputTokens, 48, 'skipped earlier notification usage is not counted');
+  assert.deepEqual(
+    seen.filter(e => e.type === 'assistant_message').map(e => e.text),
+    ['OK'],
+    'prompt turn assistant message is published once its own result confirms it',
+  );
+  assert.deepEqual(
+    seen.filter(e => e.type === 'warning').map(e => e.message),
+    ['Skipped notification result from an earlier background task: Earlier sleep 25 done.'],
+  );
+});
+
+test('Claude collector still validates repeated init and rejects a second result without origin', () => {
+  const events = recording('success-partial');
+  assert.throws(
+    () => collect([...events, ...notificationTurn('run-1', 'x').slice(0, 5), { ...events.at(-1) }]),
+    err => err.code === 'PROTOCOL_ERROR' && /second result/.test(err.message),
+  );
+  const badInit = notificationTurn('run-1', 'x');
+  badInit[3] = { ...badInit[3], tools: [...TOOLS, 'Bash'] };
+  assert.throws(
+    () => collect([...events, ...badInit]),
+    err => err.code === 'SANDBOX_UNAVAILABLE',
+  );
+});
+
+test('Claude collector offers streaming deltas and latest assistant text as marked partial progress plus running tasks (#231, #245)', () => {
+  const { PARTIAL_PROGRESS_NOTICE, PARTIAL_PROGRESS_UNCERTAIN_NOTICE } = require('../../../src/backends/claude/collector.ts');
+  const events = recording('success-partial').filter(e => e.type !== 'result');
+  const collector = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS, maxTotalMessageBytes: 200 });
+  assert.equal(collector.partialProgress(), '', 'nothing before any assistant text');
+  // Streaming deltas of the first message provide partial progress before `assistant` completes.
+  collector.line(JSON.stringify(events[0]));
+  collector.line(JSON.stringify({ type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_stream_1' } } }));
+  collector.line(
+    JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'First ' } } }),
+  );
+  collector.line(
+    JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'draft' } } }),
+  );
+  assert.equal(collector.partialProgress(), `${PARTIAL_PROGRESS_NOTICE}\n\nFirst draft`);
+  assert.equal(collector.snapshot().hasAssistantMessage, true, 'accepted streaming text enables continuation');
+  // A resumed prompt timing out with only its own streamed text (no result) uses the uncertainty notice and stays continuable.
+  const resumedStream = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS, resumed: true });
+  resumedStream.line(JSON.stringify(events[0]));
+  resumedStream.line(JSON.stringify({ type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_resumed_1' } } }));
+  resumedStream.line(
+    JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Resumed draft' } } }),
+  );
+  assert.equal(resumedStream.partialProgress(), `${PARTIAL_PROGRESS_UNCERTAIN_NOTICE}\n\nResumed draft`);
+  assert.equal(resumedStream.snapshot().hasAssistantMessage, true);
+  for (const event of events.slice(1)) collector.line(JSON.stringify(event));
+  assert.equal(collector.partialProgress(), `${PARTIAL_PROGRESS_NOTICE}\n\nOK`);
+  for (const event of backgroundStarted) collector.line(JSON.stringify(event));
+  const withTask = collector.partialProgress();
+  assert.ok(withTask.startsWith(PARTIAL_PROGRESS_NOTICE));
+  assert.ok(withTask.includes('sleep 25'), 'names running background task');
+  assert.ok(withTask.includes('OK'), 'retains latest public text');
+  collector.line(JSON.stringify({ type: 'assistant', message: { id: 'msg_long', content: [{ type: 'text', text: 'y'.repeat(150) }] } }));
+  assert.ok(Buffer.byteLength(collector.partialProgress()) <= 200, 'bounded by the public budget');
+});
+
+test('Claude collector drops usage when any counted result omits it and bounds composed answers on arrival', () => {
+  const events = recording('success-partial');
+  const missingUsage = collect([
+    ...events,
+    ...notificationTurn('run-1', 'No usage', null),
+    ...notificationTurn('run-2', 'Restored usage', NOTIFICATION_USAGE),
+  ]);
+  assert.equal(missingUsage.snapshot.usage, undefined, 'missing usage in a counted result cannot be restored later');
+
+  const partialDropped = collect([
+    ...events,
+    ...notificationTurn('run-1', 'Partial usage', { output_tokens: 10 }),
+    ...notificationTurn('run-2', 'Full usage', NOTIFICATION_USAGE),
+  ]);
+  assert.deepEqual(partialDropped.snapshot.usage, { source: 'provider', outputTokens: 70 });
+
+  const bounded = collect([events[0], { ...events.at(-1), result: 'A'.repeat(40) }, ...notificationTurn('run-1', 'B'.repeat(40))], {
+    maxTotalMessageBytes: 50,
+  });
+  assert.equal(bounded.snapshot.truncated, true);
+  assert.equal(bounded.snapshot.error?.code, 'BUFFER_LIMIT');
+  assert.ok(Buffer.byteLength(bounded.snapshot.output) <= 50);
+
+  // Pre-answer buffer ignores empty text events and coalesces deltas per message ID so a completed message is never dropped.
+  const bufferedEvents = [];
+  const boundedBuffer = createClaudeStreamCollector({
+    expectedSessionId: SESSION,
+    allowedTools: TOOLS,
+    resumed: true,
+    onEvent: e => bufferedEvents.push(e),
+  });
+  boundedBuffer.line(JSON.stringify(events[0]));
+  boundedBuffer.line(JSON.stringify({ type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_flood' } } }));
+  for (let i = 0; i < 50; i++) {
+    boundedBuffer.line(
+      JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '' } } }),
+    );
+    boundedBuffer.line(JSON.stringify({ type: 'assistant', message: { id: `msg_empty_${i}`, content: [{ type: 'text', text: '' }] } }));
+  }
+  for (let i = 0; i < 5000; i++) {
+    boundedBuffer.line(
+      JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'x' } } }),
+    );
+  }
+  boundedBuffer.line(
+    JSON.stringify({ type: 'assistant', message: { id: 'msg_flood', content: [{ type: 'text', text: 'Completed final message' }] } }),
+  );
+  boundedBuffer.line(JSON.stringify({ ...events.at(-1), result: 'Done' }));
+  assert.deepEqual(
+    bufferedEvents.filter(e => e.type === 'assistant_message').map(e => e.text),
+    ['Completed final message'],
+    'completed message replaces the 5000 deltas and is emitted cleanly',
+  );
+  assert.equal(bufferedEvents.filter(e => e.type === 'assistant_delta').length, 0);
+  assert.equal(boundedBuffer.snapshot().output, 'Done');
+
+  // Resumed turn carries pending reducer truncation into snapshot.truncated (both before and after prompt result).
+  const resumedTruncated = createClaudeStreamCollector({
+    expectedSessionId: SESSION,
+    allowedTools: TOOLS,
+    resumed: true,
+    maxTotalMessageBytes: 100,
+  });
+  resumedTruncated.line(JSON.stringify(events[0]));
+  resumedTruncated.line(
+    JSON.stringify({ type: 'assistant', message: { id: 'msg_big', content: [{ type: 'text', text: 'Z'.repeat(150) }] } }),
+  );
+  assert.equal(resumedTruncated.snapshot().truncated, true, 'unclassified pending truncation is reported');
+  assert.ok(Buffer.byteLength(resumedTruncated.partialProgress()) <= 100);
+  resumedTruncated.line(JSON.stringify({ ...events.at(-1), result: 'OK' }));
+  assert.equal(resumedTruncated.snapshot().truncated, true, 'pending truncation survives flush on prompt result');
+  assert.equal(resumedTruncated.snapshot().error?.code, 'BUFFER_LIMIT');
 });

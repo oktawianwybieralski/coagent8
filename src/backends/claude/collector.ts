@@ -2,24 +2,59 @@
 import { BufferLimitError, truncateToByteLength } from '../../execution/runtime/stream.js';
 import { StreamReducer } from '../../execution/stream-reducer.js';
 import { redactDiagnostic } from '../../security/redaction.js';
-import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../contracts/index.js';
+import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError, type TokenUsage } from '../../contracts/index.js';
 import type { TerminalExecutionResult } from '../types.js';
 import { classifyClaudeFailure } from './errors.js';
 import { isValidModelIdentifier } from '../../models/identifier.js';
 
-/** Event types emitted by `claude -p --output-format stream-json --verbose` (observed with 2.1.289). */
-const KNOWN_TYPES = new Set(['system', 'assistant', 'user', 'stream_event', 'result', 'rate_limit_event', 'control_response']);
+/**
+ * Event types emitted by `claude -p --output-format stream-json --verbose` (observed with 2.1.289).
+ * `tool_progress` (2.1.332) reports a running tool's elapsed time; tool events already show the activity.
+ */
+const KNOWN_TYPES = new Set([
+  'system',
+  'assistant',
+  'user',
+  'stream_event',
+  'result',
+  'rate_limit_event',
+  'control_response',
+  'tool_progress',
+]);
 /**
  * `system` subtypes the collector understands; others produce one warning each.
  * `permission_denied` (2.1.300) repeats a denial that the denied tool's result already reports.
+ * `thinking_tokens` and `compact_boundary` (2.1.332) are internal progress/compaction markers.
+ * The task subtypes (2.1.332) describe background tasks, such as a Bash command run in the background.
  */
-const KNOWN_SYSTEM_SUBTYPES = new Set(['init', 'status', 'thinking_tokens', 'api_retry', 'permission_denied']);
+const KNOWN_SYSTEM_SUBTYPES = new Set([
+  'init',
+  'status',
+  'thinking_tokens',
+  'compact_boundary',
+  'api_retry',
+  'permission_denied',
+  'task_started',
+  'task_updated',
+  'task_notification',
+  'background_tasks_changed',
+]);
+/** Upper bound of a task description or summary quoted in a status or warning. */
+const MAX_TASK_TEXT = 160;
+/** Upper bound of the background tasks tracked at once, so a runaway list cannot grow memory. */
+const MAX_TASKS = 64;
+/** Marks the latest assistant text returned when a turn ended without its answer (#231). */
+export const PARTIAL_PROGRESS_NOTICE = '[Partial progress: the turn ended before its final answer; this is the latest assistant message.]';
+/** Marks unclassified pre-result text on `--resume` that may belong to an earlier task's notification. */
+export const PARTIAL_PROGRESS_UNCERTAIN_NOTICE = '[Partial progress; it may include a background-task notification from an earlier turn.]';
 
 export interface ClaudeStreamCollectorOptions {
   /** Session ID passed as `--session-id` or `--resume`; `system/init` must report the same ID. */
   expectedSessionId: string;
   /** Built-in tools the run may expose; `system/init` must not report any other tool. */
   allowedTools: readonly string[];
+  /** Whether the CLI runs `--resume`, so pre-answer notification turns must be buffered until `result`. */
+  resumed?: boolean;
   onEvent?: (event: AdapterEvent) => void;
   maxTotalMessageBytes?: number;
   maxMessages?: number;
@@ -31,8 +66,70 @@ function record(value: unknown): Record<string, unknown> | null {
 function fail(code: 'PROTOCOL_ERROR' | 'SANDBOX_UNAVAILABLE', message: string): never {
   throw new ToolError(code, message);
 }
+function isTaskSubtype(subtype: unknown): boolean {
+  return typeof subtype === 'string' && (subtype.startsWith('task_') || subtype === 'background_tasks_changed');
+}
+function taskText(value: unknown): string {
+  return typeof value === 'string' ? redactDiagnostic(value.replace(/\s+/g, ' ').trim(), MAX_TASK_TEXT) : '';
+}
 function count(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+const known = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+const USAGE_FIELDS = [
+  'inputTokens',
+  'cachedInputTokens',
+  'cacheWriteInputTokens',
+  'cacheWriteLongInputTokens',
+  'outputTokens',
+  'reasoningTokens',
+  'totalTokens',
+] as const;
+
+function parseResultUsage(raw: unknown): TokenUsage | undefined {
+  const data = record(raw);
+  if (!data) return undefined;
+  // Anthropic reports cached input separately; the sum is the input actually processed
+  // (AX-001c). Output includes extended thinking, reported as `output_tokens_details.thinking_tokens`.
+  // Each count is kept only when reported; a sum only when every part is known.
+  const uncached = data.input_tokens,
+    read = data.cache_read_input_tokens,
+    write = data.cache_creation_input_tokens;
+  const output = data.output_tokens,
+    thinking = record(data.output_tokens_details)?.thinking_tokens;
+  const input = known(uncached) && known(read) && known(write) ? uncached + read + write : undefined;
+  // Writes kept for an hour have their own list price; the split counts only when it adds up.
+  const classes = record(data.cache_creation),
+    short = classes?.ephemeral_5m_input_tokens,
+    long = classes?.ephemeral_1h_input_tokens;
+  const longWrite = known(write) && known(short) && known(long) && short + long === write ? long : undefined;
+  const counts: TokenUsage = {
+    source: 'provider',
+    ...(input !== undefined ? { inputTokens: input } : {}),
+    ...(known(read) ? { cachedInputTokens: read } : {}),
+    ...(known(write) ? { cacheWriteInputTokens: write } : {}),
+    ...(longWrite !== undefined ? { cacheWriteLongInputTokens: longWrite } : {}),
+    ...(known(output) ? { outputTokens: output } : {}),
+    ...(known(thinking) ? { reasoningTokens: thinking } : {}),
+    ...(input !== undefined && known(output) ? { totalTokens: input + output } : {}),
+  };
+  return Object.keys(counts).length > 1 ? counts : undefined;
+}
+
+/**
+ * Tracks per-result usage across every counted result of the turn. Once any counted result
+ * omits `usage` (or a field), that missing field cannot be restored by later results (AX-001c).
+ */
+function mergeUsage(countedResults: number, current: TokenUsage | undefined, next: TokenUsage | undefined): TokenUsage | undefined {
+  if (countedResults === 0) return next;
+  if (!current || !next) return undefined;
+  const merged: TokenUsage = { source: 'provider' };
+  for (const field of USAGE_FIELDS) {
+    const a = current[field],
+      b = next[field];
+    if (a !== undefined && b !== undefined) merged[field] = a + b;
+  }
+  return Object.keys(merged).length > 1 ? merged : undefined;
 }
 
 /**
@@ -41,11 +138,20 @@ function count(value: unknown): number {
  * @returns A line collector whose snapshot is used directly by the production adapter.
  * @throws `SANDBOX_UNAVAILABLE` when `system/init` reports a tool, MCP server or
  * permission mode other than requested; `PROTOCOL_ERROR` on malformed
- * known events, a mismatched session ID or a second terminal result.
+ * known events, a mismatched session ID or a second result without `origin`.
  * @remarks
  * Thinking blocks, tool inputs and tool results are discarded. Unknown event
  * types and `system` subtypes are tolerated with one warning per type. Answer
  * text is not passed through keyword redaction; only diagnostics are redacted.
+ *
+ * The prompt turn's `result` (no `origin`) and every following successful `result` with
+ * `origin` (such as task-notification turns run by Claude Code 2.1.332 when a background
+ * task ends) compose the delegated turn's answer in order, separated by blank lines (#245),
+ * and per-result `usage` sums every counted result. A notification `result` with `is_error`
+ * keeps the delivered answer and warns with the task and error; an unexpected `origin.kind`
+ * warns once and behaves like a notification. A notification `result` that arrives before the
+ * prompt turn's own result belongs to an earlier turn (#233), so it is skipped and named in
+ * a warning; a second `result` without `origin` fails with `PROTOCOL_ERROR`.
  */
 export function createClaudeStreamCollector(options: ClaudeStreamCollectorOptions) {
   const reducer = new StreamReducer({
@@ -60,13 +166,57 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   let model: string | undefined;
   let currentMessageId: string | null = null;
   let terminal = false;
-  let finalText: string | null = null;
+  // Message ID of the latest completed public assistant text: partial progress fallback.
+  let latestMessageId: string | null = null;
+  // Bounded text deltas of the message currently streaming, cleared once `assistant` arrives.
+  let streamingMessageId: string | null = null;
+  let streamingText = '';
+  let streamingTruncated = false;
+  // On `--resume`, buffer pre-answer assistant progress coalesced by message ID until `result` classifies the turn.
+  let pendingReducer: StreamReducer | null = null;
+  let pendingLatestMessageId: string | null = null;
+  const pendingStreamed = new Map<string, string>();
+  const pendingStreamTruncatedIds = new Set<string>();
+  let pendingStreamedBytes = 0;
+  let pendingStreamingMessageId: string | null = null;
+  let pendingStreamingTruncated = false;
+  const bufferingPreAnswer = () => Boolean(options.resumed) && !terminal;
+  const ensurePendingReducer = () =>
+    (pendingReducer ??= new StreamReducer({
+      maxTotalBytes: reducer.maxTotalBytes,
+      maxMessageBytes: reducer.maxMessageBytes,
+      maxMessages: reducer.maxMessages,
+    }));
+  const clearPendingBuffer = () => {
+    pendingReducer = null;
+    pendingLatestMessageId = null;
+    pendingStreamed.clear();
+    pendingStreamTruncatedIds.clear();
+    pendingStreamedBytes = 0;
+    pendingStreamingMessageId = null;
+    pendingStreamingTruncated = false;
+  };
+  // Background tasks still running: task ID to description.
+  const tasks = new Map<string, string>();
+  // Finished tasks after the prompt result whose notification turn result has not arrived yet.
+  const pendingTaskTurns = new Set<string>();
+  // Maps a finished task's run_id to its task_id so its notification result clears that entry.
+  const runTaskIds = new Map<string, string>();
+  // Summaries of finished tasks by run ID, which a notification turn's `origin.runId` names.
+  const summaries = new Map<string, string>();
+  // Bounded composed answer: prompt turn text followed by successful notification result texts.
+  let answerText = '';
+  let answerBytes = 0;
+  let answerTruncated = false;
+  let bufferedMessagesTruncated = false;
+  let latestResultMessage: string | null = null;
   let streamedBytes = 0;
   let category: string | null = null;
   let rateLimitResetsAt: number | null = null;
   let resultFields: { isError: boolean; subtype: string | null; apiErrorStatus: number | null; errors: string[] } | null = null;
   // `stop_reason` of the result event (Claude Code stream-json), e.g. `end_turn` or `max_tokens`.
   let stopReason: string | null = null;
+  let countedResults = 0;
   let usage: TerminalExecutionResult['usage'];
   const emit = (event: AdapterEvent) => options.onEvent?.(event);
   const warnOnce = (key: string, message: string) => {
@@ -74,13 +224,35 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     warned.add(key);
     emit({ type: 'warning', message: redactDiagnostic(message, 512) });
   };
+  const runningTasks = () => [...tasks].map(([id, description]) => description || id);
+  const appendAnswerPart = (part: string) => {
+    if (!part.trim() || answerTruncated) return;
+    const addition = answerText.length === 0 ? part : `\n\n${part}`;
+    const remaining = reducer.maxTotalBytes - answerBytes;
+    if (remaining <= 0) {
+      answerTruncated = true;
+      return;
+    }
+    const additionBytes = Buffer.byteLength(addition);
+    if (additionBytes <= remaining) {
+      answerText += addition;
+      answerBytes += additionBytes;
+      return;
+    }
+    answerText += truncateToByteLength(addition, remaining);
+    answerBytes = Buffer.byteLength(answerText);
+    answerTruncated = true;
+  };
 
   function ensureInitialized() {
     if (sessionId === null) fail('SANDBOX_UNAVAILABLE', 'Claude Code emitted events before its initialization.');
   }
 
+  /**
+   * Validates `system/init`. A notification turn of a background task (2.1.332) starts
+   * with another init of the same session, which must pass the same checks.
+   */
   function acceptInit(event: Record<string, unknown>) {
-    if (sessionId !== null) fail('PROTOCOL_ERROR', 'Claude Code emitted a second init event.');
     if (typeof event.session_id !== 'string' || event.session_id.toLowerCase() !== options.expectedSessionId.toLowerCase()) {
       fail('PROTOCOL_ERROR', 'Claude Code reported an unexpected session ID.');
     }
@@ -92,6 +264,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     if (!Array.isArray(servers) || servers.length > 0)
       fail('SANDBOX_UNAVAILABLE', 'Claude Code connected MCP servers despite the empty strict MCP configuration.');
     if (event.permissionMode !== 'dontAsk') fail('SANDBOX_UNAVAILABLE', 'Claude Code did not start in dontAsk permission mode.');
+    if (sessionId !== null) return;
     sessionId = options.expectedSessionId.toLowerCase();
     // The CLI resolves aliases such as `opus`; report the model that actually answers.
     if (isValidModelIdentifier(event.model)) model = event.model;
@@ -110,8 +283,57 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
           512,
         ),
       });
-    } else if (!KNOWN_SYSTEM_SUBTYPES.has(subtype))
+    } else if (isTaskSubtype(subtype)) acceptTask(subtype, event);
+    else if (!KNOWN_SYSTEM_SUBTYPES.has(subtype))
       warnOnce(`system/${subtype}`, `Ignoring unknown Claude Code system event '${subtype.slice(0, 64)}'.`);
+  }
+  /** Tracks background tasks, so the turn can name the ones it stops, and shows their progress. */
+  function acceptTask(subtype: string, event: Record<string, unknown>) {
+    if (!KNOWN_SYSTEM_SUBTYPES.has(subtype)) {
+      warnOnce(`system/${subtype}`, `Ignoring unknown Claude Code system event '${subtype.slice(0, 64)}'.`);
+      return;
+    }
+    const id = typeof event.task_id === 'string' ? event.task_id.slice(0, 128) : null;
+    if (subtype === 'background_tasks_changed') {
+      if (!Array.isArray(event.tasks)) return;
+      const nextIds = new Set<string>();
+      for (const entry of event.tasks.slice(0, MAX_TASKS)) {
+        const task = record(entry);
+        if (typeof task?.task_id === 'string') nextIds.add(task.task_id.slice(0, 128));
+      }
+      if (terminal) {
+        for (const existingId of tasks.keys()) {
+          if (!nextIds.has(existingId) && pendingTaskTurns.size < MAX_TASKS) pendingTaskTurns.add(existingId);
+        }
+      }
+      // The list is the CLI's full set of running tasks, so it replaces the tracked one.
+      tasks.clear();
+      for (const entry of event.tasks.slice(0, MAX_TASKS)) {
+        const task = record(entry);
+        if (typeof task?.task_id === 'string') tasks.set(task.task_id.slice(0, 128), taskText(task.description));
+      }
+    } else if (subtype === 'task_started' && id) {
+      if (!tasks.has(id) && tasks.size >= MAX_TASKS) return;
+      const description = taskText(event.description);
+      tasks.set(id, description);
+      emit({ type: 'status', message: `Background task started: ${description || id}` });
+    } else if (subtype === 'task_updated' && id) {
+      const status = record(event.patch)?.status;
+      if (typeof status === 'string' && status !== 'running' && status !== 'pending') {
+        const existed = tasks.delete(id);
+        if (terminal && existed && pendingTaskTurns.size < MAX_TASKS) pendingTaskTurns.add(id);
+      }
+    } else if (subtype === 'task_notification' && id) {
+      const description = tasks.get(id);
+      tasks.delete(id);
+      if (terminal && pendingTaskTurns.size < MAX_TASKS) {
+        pendingTaskTurns.add(id);
+        if (typeof event.run_id === 'string' && runTaskIds.size < MAX_TASKS) runTaskIds.set(event.run_id, id);
+      }
+      const summary = taskText(event.summary) || description || id;
+      if (typeof event.run_id === 'string' && summaries.size < MAX_TASKS) summaries.set(event.run_id, summary);
+      emit({ type: 'status', message: `Background task ${taskText(event.status) || 'ended'}: ${summary}` });
+    }
   }
   function acceptAssistant(event: Record<string, unknown>) {
     ensureInitialized();
@@ -126,11 +348,37 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       const block = record(value);
       if (!block) fail('PROTOCOL_ERROR', 'Invalid Claude Code content block.');
       if (block.type === 'text' && typeof block.text === 'string') {
-        if (!publicText) continue;
+        if (bufferingPreAnswer()) {
+          const streamed = pendingStreamed.get(id);
+          pendingStreamTruncatedIds.delete(id);
+          if (streamed !== undefined) {
+            pendingStreamed.delete(id);
+            pendingStreamedBytes -= Buffer.byteLength(streamed);
+          }
+          if (id === pendingStreamingMessageId) {
+            pendingStreamingMessageId = null;
+            pendingStreamingTruncated = false;
+          }
+          if (!publicText || block.text.length === 0) continue;
+          const target = ensurePendingReducer();
+          if (!target.getMessageMap().has(id) && target.getMessageMap().size >= target.maxMessages)
+            throw new BufferLimitError('Too many Claude Code public messages.');
+          target.upsertMessage(id, (target.getMessageMap().get(id) ?? '') + block.text);
+          pendingLatestMessageId = id;
+          continue;
+        }
+        if (id === streamingMessageId) {
+          streamingMessageId = null;
+          streamingText = '';
+          streamingTruncated = false;
+        }
+        if (!publicText || block.text.length === 0) continue;
         if (!reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages)
           throw new BufferLimitError('Too many Claude Code public messages.');
         reducer.upsertMessage(id, (reducer.getMessageMap().get(id) ?? '') + block.text);
-        emit({ type: 'assistant_message', messageId: id, text: reducer.getMessageMap().get(id) ?? '' });
+        latestMessageId = id;
+        const msgText = reducer.getMessageMap().get(id) ?? '';
+        emit({ type: 'assistant_message', messageId: id, text: msgText });
       } else if (block.type === 'tool_use') {
         if (!validEventIdentifier(block.id) || !validEventIdentifier(block.name)) fail('PROTOCOL_ERROR', 'Invalid Claude Code tool call.');
         if (tools.has(block.id as string)) continue;
@@ -156,63 +404,147 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     if (!inner) fail('PROTOCOL_ERROR', 'Invalid Claude Code stream event.');
     if (inner.type === 'message_start') {
       const message = record(inner.message);
-      if (message && validEventIdentifier(message.id)) currentMessageId = message.id as string;
+      if (message && validEventIdentifier(message.id)) {
+        currentMessageId = message.id as string;
+        if (bufferingPreAnswer()) {
+          pendingStreamingMessageId = currentMessageId;
+          pendingStreamingTruncated = false;
+        } else {
+          streamingMessageId = currentMessageId;
+          streamingText = '';
+          streamingTruncated = false;
+        }
+      }
     } else if (inner.type === 'content_block_start' && record(inner.content_block)?.type === 'thinking') {
       emit({ type: 'status', message: 'Analyzing context...' });
     } else if (inner.type === 'content_block_delta') {
       const delta = record(inner.delta);
-      if (delta?.type !== 'text_delta' || typeof delta.text !== 'string' || !currentMessageId) return;
+      if (delta?.type !== 'text_delta' || typeof delta.text !== 'string' || delta.text.length === 0 || !currentMessageId) return;
       // Deltas stop at the public budget; the bounded assistant message still replaces the draft.
       streamedBytes += Buffer.byteLength(delta.text);
+      if (bufferingPreAnswer()) {
+        if (pendingStreamingMessageId !== currentMessageId) {
+          pendingStreamingMessageId = currentMessageId;
+          pendingStreamingTruncated = false;
+        }
+        if (!pendingStreamed.has(currentMessageId) && pendingStreamed.size >= reducer.maxMessages) return;
+        if (!pendingStreamingTruncated) {
+          const prev = pendingStreamed.get(currentMessageId) ?? '';
+          const prevBytes = Buffer.byteLength(prev);
+          const remaining = reducer.maxTotalBytes - (pendingStreamedBytes - prevBytes);
+          if (remaining <= 0) {
+            pendingStreamingTruncated = true;
+            pendingStreamTruncatedIds.add(currentMessageId);
+            return;
+          }
+          const next = truncateToByteLength(prev + delta.text, remaining);
+          if (next !== prev + delta.text) {
+            pendingStreamingTruncated = true;
+            pendingStreamTruncatedIds.add(currentMessageId);
+          }
+          pendingStreamed.set(currentMessageId, next);
+          pendingStreamedBytes = pendingStreamedBytes - prevBytes + Buffer.byteLength(next);
+        }
+        return;
+      }
       if (streamedBytes <= reducer.maxTotalBytes) emit({ type: 'assistant_delta', messageId: currentMessageId, text: delta.text });
+      if (streamingMessageId !== currentMessageId) {
+        streamingMessageId = currentMessageId;
+        streamingText = '';
+        streamingTruncated = false;
+      }
+      if (!streamingTruncated) {
+        const next = truncateToByteLength(streamingText + delta.text, reducer.maxTotalBytes);
+        if (next !== streamingText + delta.text) streamingTruncated = true;
+        streamingText = next;
+      }
     }
   }
   function acceptResult(event: Record<string, unknown>) {
-    if (terminal) fail('PROTOCOL_ERROR', 'Claude Code emitted a second result event.');
+    const origin = record(event.origin);
+    if (origin && origin.kind !== 'task-notification') {
+      const kind = typeof origin.kind === 'string' && origin.kind.trim() ? origin.kind.slice(0, 64) : 'unknown';
+      warnOnce(`origin/${kind}`, `Received Claude Code result with unexpected origin kind '${kind}'.`);
+    }
+    const runId = origin && typeof origin.runId === 'string' ? origin.runId : null;
+    if (origin && !terminal) {
+      // Before the prompt turn's answer it belongs to a task of an earlier turn (#233): drop all
+      // buffered assistant progress and error state from that skipped turn.
+      clearPendingBuffer();
+      streamedBytes = 0;
+      category = null;
+      rateLimitResetsAt = null;
+      const summary = (runId && summaries.get(runId)) || taskText(event.result) || runId || 'unnamed task';
+      emit({ type: 'warning', message: redactDiagnostic(`Skipped notification result from an earlier background task: ${summary}`, 512) });
+      return;
+    }
+    if (!origin && terminal) fail('PROTOCOL_ERROR', 'Claude Code emitted a second result event.');
     if (typeof event.session_id === 'string' && event.session_id.toLowerCase() !== options.expectedSessionId.toLowerCase()) {
       fail('PROTOCOL_ERROR', 'Claude Code result reported an unexpected session ID.');
     }
+    if (!origin) {
+      if (pendingReducer) {
+        if (pendingReducer.isTruncated()) bufferedMessagesTruncated = true;
+        for (const [id, text] of pendingReducer.getMessageMap()) {
+          if (!reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages) {
+            throw new BufferLimitError('Too many Claude Code public messages.');
+          }
+          reducer.upsertMessage(id, text);
+          emit({ type: 'assistant_message', messageId: id, text: reducer.getMessageMap().get(id) ?? '' });
+        }
+        if (pendingLatestMessageId !== null) latestMessageId = pendingLatestMessageId;
+      }
+      for (const [id, text] of pendingStreamed) {
+        if (pendingReducer?.getMessageMap().has(id) || !text) continue;
+        if (pendingStreamTruncatedIds.has(id)) bufferedMessagesTruncated = true;
+        emit({ type: 'assistant_delta', messageId: id, text });
+        if (id === pendingStreamingMessageId) {
+          streamingMessageId = id;
+          streamingText = text;
+          streamingTruncated = pendingStreamingTruncated;
+        }
+      }
+    }
+    clearPendingBuffer();
     terminal = true;
     const isError = event.is_error === true || (typeof event.subtype === 'string' && event.subtype !== 'success');
     if (!isError && sessionId === null) {
       fail('SANDBOX_UNAVAILABLE', 'Claude Code completed successfully without its initialization.');
     }
-    resultFields = {
-      isError,
-      subtype: typeof event.subtype === 'string' ? event.subtype : null,
-      apiErrorStatus: typeof event.api_error_status === 'number' ? event.api_error_status : null,
-      errors: Array.isArray(event.errors) ? event.errors.filter((entry): entry is string => typeof entry === 'string') : [],
-    };
-    if (typeof event.result === 'string') finalText = event.result;
-    if (typeof event.stop_reason === 'string') stopReason = event.stop_reason;
-    const data = record(event.usage);
-    if (data) {
-      // Anthropic reports cached input separately; the sum is the input actually processed
-      // (AX-001c). Output includes extended thinking, reported as `output_tokens_details.thinking_tokens`.
-      // Each count is kept only when reported; a sum only when every part is known.
-      const known = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-      const uncached = data.input_tokens,
-        read = data.cache_read_input_tokens,
-        write = data.cache_creation_input_tokens;
-      const output = data.output_tokens,
-        thinking = record(data.output_tokens_details)?.thinking_tokens;
-      const input = known(uncached) && known(read) && known(write) ? uncached + read + write : undefined;
-      // Writes kept for an hour have their own list price; the split counts only when it adds up.
-      const classes = record(data.cache_creation),
-        short = classes?.ephemeral_5m_input_tokens,
-        long = classes?.ephemeral_1h_input_tokens;
-      const longWrite = known(write) && known(short) && known(long) && short + long === write ? long : undefined;
-      const counts: NonNullable<typeof usage> = {
-        source: 'provider',
-        ...(input !== undefined ? { inputTokens: input } : {}),
-        ...(known(read) ? { cachedInputTokens: read } : {}),
-        ...(known(write) ? { cacheWriteInputTokens: write } : {}),
-        ...(longWrite !== undefined ? { cacheWriteLongInputTokens: longWrite } : {}),
-        ...(known(output) ? { outputTokens: output } : {}),
-        ...(known(thinking) ? { reasoningTokens: thinking } : {}),
-        ...(input !== undefined && known(output) ? { totalTokens: input + output } : {}),
-      };
-      if (Object.keys(counts).length > 1) usage = counts;
+    const resultMessage = typeof event.result === 'string' ? event.result : null;
+    const errors = Array.isArray(event.errors) ? event.errors.filter((entry): entry is string => typeof entry === 'string') : [];
+    const subtype = typeof event.subtype === 'string' ? event.subtype : null;
+    const apiErrorStatus = typeof event.api_error_status === 'number' ? event.api_error_status : null;
+    usage = mergeUsage(countedResults, usage, parseResultUsage(event.usage));
+    countedResults += 1;
+    if (origin) {
+      const taskId = runId ? runTaskIds.get(runId) : undefined;
+      if (runId) runTaskIds.delete(runId);
+      if (taskId) pendingTaskTurns.delete(taskId);
+      else if (pendingTaskTurns.size > 0) {
+        const first = pendingTaskTurns.values().next().value;
+        if (first !== undefined) pendingTaskTurns.delete(first);
+      }
+      if (isError) {
+        const taskName = (runId && summaries.get(runId)) || runId || 'unnamed task';
+        const failure = classifyClaudeFailure({ category, apiErrorStatus, subtype, errors, message: resultMessage, rateLimitResetsAt });
+        category = null;
+        rateLimitResetsAt = null;
+        emit({
+          type: 'warning',
+          message: redactDiagnostic(`Background task notification failed (${taskName}): ${failure.message}`, 512),
+        });
+      } else {
+        category = null;
+        if (resultMessage !== null) appendAnswerPart(resultMessage);
+        if (typeof event.stop_reason === 'string' && stopReason !== 'max_tokens') stopReason = event.stop_reason;
+      }
+    } else {
+      if (!isError) category = null;
+      resultFields = { isError, subtype, apiErrorStatus, errors };
+      latestResultMessage = resultMessage;
+      if (resultMessage !== null) appendAnswerPart(resultMessage);
+      stopReason = typeof event.stop_reason === 'string' ? event.stop_reason : null;
     }
     const denials = Array.isArray(event.permission_denials)
       ? event.permission_denials.map(entry => record(entry)?.tool_name).filter(validEventIdentifier)
@@ -222,6 +554,8 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
         type: 'warning',
         message: `Claude Code denied tool calls outside the requested profile: ${[...new Set(denials)].join(', ')}.`,
       });
+    const running = runningTasks();
+    if (running.length) emit({ type: 'status', message: redactDiagnostic(`Waiting for background tasks: ${running.join('; ')}`, 512) });
   }
   function line(raw: string) {
     if (!raw.trim()) return;
@@ -233,7 +567,6 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     }
     const event = record(parsed);
     if (!event || typeof event.type !== 'string') fail('PROTOCOL_ERROR', 'Invalid Claude Code event.');
-    if (terminal && event.type !== 'result') return;
     if (event.type === 'system') acceptSystem(event);
     else if (event.type === 'assistant') acceptAssistant(event);
     else if (event.type === 'user') acceptUser(event);
@@ -249,21 +582,23 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     } else if (!KNOWN_TYPES.has(event.type)) warnOnce(event.type, `Ignoring unknown Claude Code event type '${event.type.slice(0, 64)}'.`);
   }
   function snapshot() {
-    const text = finalText ?? '';
-    const output = truncateToByteLength(text, reducer.maxTotalBytes);
-    const truncated = output !== text || reducer.isTruncated();
+    const output = answerText;
+    const pendingTruncated = Boolean(pendingReducer?.isTruncated()) || pendingStreamTruncatedIds.size > 0;
+    const truncated = answerTruncated || reducer.isTruncated() || bufferedMessagesTruncated || pendingTruncated;
     const error: ExecutionError | undefined = resultFields?.isError
       ? classifyClaudeFailure({
           category,
           apiErrorStatus: resultFields.apiErrorStatus,
           subtype: resultFields.subtype,
           errors: resultFields.errors,
-          message: finalText,
+          message: latestResultMessage,
           rateLimitResetsAt,
         })
       : truncated
         ? { code: 'BUFFER_LIMIT', message: 'Claude Code public output exceeded the byte budget.', retryable: false }
         : undefined;
+    const hasPendingText =
+      [...pendingStreamed.values()].some(text => text.trim().length > 0) || (pendingReducer?.getMessageMap().size ?? 0) > 0;
     return {
       sessionId,
       initialized: sessionId !== null,
@@ -274,8 +609,41 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       lengthLimited: stopReason === null ? undefined : stopReason === 'max_tokens',
       error,
       output: resultFields?.isError || !sessionId ? '' : output,
-      hasAssistantMessage: reducer.getMessageMap().size > 0,
+      hasAssistantMessage: reducer.getMessageMap().size > 0 || streamingText.trim().length > 0 || hasPendingText,
     };
   }
-  return { line, snapshot, isTerminal: () => terminal };
+  /**
+   * The latest public assistant text, marked as partial progress, for a turn that ended
+   * without completing (#231, #245), together with any background tasks still running;
+   * bounded by the public byte budget. Empty when there is neither text nor a running task.
+   */
+  function partialProgress(): string {
+    const completed = latestMessageId === null ? answerText : (reducer.getMessageMap().get(latestMessageId) ?? answerText);
+    const latest = streamingText.trim() ? streamingText : completed;
+    let text = latest.trim() ? latest : '';
+    let notice = PARTIAL_PROGRESS_NOTICE;
+    if (!text && bufferingPreAnswer()) {
+      const pendingStreaming = pendingStreamingMessageId ? (pendingStreamed.get(pendingStreamingMessageId) ?? '') : '';
+      const pendingCompleted = pendingLatestMessageId !== null ? (pendingReducer?.getMessageMap().get(pendingLatestMessageId) ?? '') : '';
+      const pendingLatest = pendingStreaming.trim() ? pendingStreaming : pendingCompleted;
+      if (pendingLatest.trim()) {
+        text = pendingLatest;
+        notice = PARTIAL_PROGRESS_UNCERTAIN_NOTICE;
+      }
+    }
+    const running = runningTasks();
+    if (!text && !running.length) return '';
+    const header = running.length ? `${notice}\nBackground tasks still running: ${running.join('; ')}.` : notice;
+    return truncateToByteLength(text ? `${header}\n\n${text}` : header, reducer.maxTotalBytes);
+  }
+  return {
+    line,
+    snapshot,
+    partialProgress,
+    isTerminal: () => terminal,
+    /** Whether the prompt turn and all pending task-notification turns have finished so stdin can close. */
+    canCloseStdin: () => terminal && tasks.size === 0 && pendingTaskTurns.size === 0,
+    /** Descriptions (or IDs) of the background tasks still running. */
+    runningTasks,
+  };
 }

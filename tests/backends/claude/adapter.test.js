@@ -4,7 +4,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { CLAUDE_TOOLS: CLAUDE_HOST_TOOLS, executeClaude, probe } = require('../../../src/backends/claude/adapter.ts');
+const {
+  CLAUDE_BASH_DEFAULT_TIMEOUT_MS,
+  CLAUDE_TOOLS: CLAUDE_HOST_TOOLS,
+  CLAUDE_TURN_SYSTEM_PROMPT,
+  claudeTurnEnvironment,
+  executeClaude,
+  probe,
+} = require('../../../src/backends/claude/adapter.ts');
 const MODEL = 'claude-sonnet-4-6';
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
@@ -39,9 +46,19 @@ test('Claude runs restricted print mode with the host tools, streaming, a pinned
     assert.equal(result.status, 'completed');
     assert.equal(result.output, 'OK');
     assert.equal(result.model, 'claude-haiku-4-5-20251001', 'the model reported by system/init, not the requested alias');
-    const { argv, stdin, records, nested } = captured();
+    const { argv, stdin, records, nested, env } = captured();
     assert.equal(stdin, 'Reply with OK');
     assert.equal(nested, '1', 'the turn carries the nested-turn guard');
+    assert.deepEqual(env, {
+      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
+      BASH_DEFAULT_TIMEOUT_MS: String(CLAUDE_BASH_DEFAULT_TIMEOUT_MS),
+      BASH_MAX_TIMEOUT_MS: '900000',
+    });
+    assert.equal(claudeTurnEnvironment(300).BASH_MAX_TIMEOUT_MS, String(CLAUDE_BASH_DEFAULT_TIMEOUT_MS), 'at least default');
+    assert.equal(claudeTurnEnvironment(1_200_000).BASH_MAX_TIMEOUT_MS, '1200000');
+    assert.equal(claudeTurnEnvironment(9_999_999).BASH_MAX_TIMEOUT_MS, '1800000', 'bounded to max execution timeout');
+    assert.match(CLAUDE_TURN_SYSTEM_PROMPT, /nohup/i);
+    assert.match(CLAUDE_TURN_SYSTEM_PROMPT, /servers or watchers/i);
     assert.equal(argv[argv.indexOf('--model') + 1], MODEL, 'the model the controller selected');
     assert.deepEqual(
       records,
@@ -61,6 +78,7 @@ test('Claude runs restricted print mode with the host tools, streaming, a pinned
     assert.ok(argv.includes('--strict-mcp-config'));
     assert.equal(argv[argv.indexOf('--output-format') + 1], 'stream-json');
     assert.ok(argv.includes('--include-partial-messages'));
+    assert.equal(argv[argv.indexOf('--append-system-prompt') + 1], CLAUDE_TURN_SYSTEM_PROMPT);
     assert.equal(argv[argv.indexOf('--effort') + 1], 'low');
     const session = argv[argv.indexOf('--session-id') + 1];
     assert.match(session, UUID);
@@ -276,6 +294,8 @@ test('Claude cancellation and deadlines interrupt the turn over stream-json befo
       assert.equal(result.status, expected, mode);
       assert.equal(result.error.code, mode === 'abort' ? 'ABORTED' : 'TIMEOUT');
       assert.equal(result.exitCode, 1, `${mode}: Claude exited by itself after the interrupted result`);
+      // #231: the agent's latest progress survives the stop, marked as partial.
+      assert.match(result.output, /^\[Partial progress: .*\]\n\nOK$/, mode);
       assert.ok(Date.now() - startedAt < 2900, `${mode}: no wait for the forced-stop grace period`);
       const { records } = captured();
       assert.deepEqual(
@@ -677,4 +697,122 @@ test('ENVELOPE-001: Claude forwards a stop at the output length limit as lengthL
     const limited = await executeClaude('Reply with OK', { cwd: dir, model: MODEL });
     assert.equal(limited.status, 'completed');
     assert.equal(limited.lengthLimited, true);
+  }));
+
+test('#231 #233 #245: Claude waits for background notification turns, sums usage, skips pre-answer notifications, and reports partial progress at deadline', () =>
+  withFixture(async ({ dir, captured }) => {
+    const { activeProcesses } = require('../../../src/execution/process.ts');
+    // (a) Answer "I'll wait..." followed by a notification turn with the real report: completed with the report.
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'background-task';
+    process.env.CLAUDE_FIXTURE_TASK_MS = '300';
+    let events = [];
+    const finished = await executeClaude('x', { cwd: dir, model: MODEL, onEvent: e => events.push(e) });
+    assert.equal(finished.status, 'completed', finished.error?.message);
+    assert.equal(finished.output, "I'll wait for the background run to finish.\n\nFinal report: sleep 25 completed.");
+    assert.equal(finished.continuationAvailable, true);
+    assert.equal(events.filter(e => e.type === 'warning').length, 0);
+    assert.ok(
+      events.some(e => e.type === 'status' && /Waiting for background tasks:.*sleep 25/.test(e.message)),
+      'emits a status naming the running background task while waiting',
+    );
+    assert.equal(finished.usage.inputTokens, 6715);
+    assert.equal(finished.usage.outputTokens, 60);
+    assert.equal(activeProcesses.size, 0);
+    // (b) A resumed turn first receives the notification turn of an earlier turn's task: answer returned, warning names task.
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'resume-notification';
+    events = [];
+    const session = '859bbd7d-81ae-440c-b76a-a80e596d0fa5';
+    const resumed = await executeClaude('x', { cwd: dir, model: MODEL, nativeSessionId: session, onEvent: e => events.push(e) });
+    assert.equal(resumed.status, 'completed', resumed.error?.message);
+    assert.equal(resumed.output, 'OK');
+    assert.equal(resumed.nativeSessionId, session);
+    assert.equal(resumed.continuationAvailable, true);
+    assert.equal(resumed.usage.outputTokens, 48, 'skipped earlier notification usage is not counted');
+    assert.ok(
+      !events.some(e => (e.type === 'assistant_message' || e.type === 'assistant_delta') && /Earlier|sleep 25/.test(e.text)),
+      'skipped earlier notification text is never published as assistant progress',
+    );
+    assert.ok(events.some(e => e.type === 'assistant_message' && e.text === 'OK'));
+    const warnings = events.filter(e => e.type === 'warning').map(e => e.message);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /sleep 25/);
+    // (c) A background task still running at the deadline: timed_out, partial text, task named.
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'background-task';
+    process.env.CLAUDE_FIXTURE_TASK_MS = '60000';
+    events = [];
+    const timedOut = await executeClaude('x', { cwd: dir, model: MODEL, timeoutMs: 300, onEvent: e => events.push(e) });
+    assert.equal(timedOut.status, 'timed_out');
+    assert.equal(timedOut.error?.code, 'TIMEOUT');
+    assert.match(timedOut.output, /^\[Partial progress: /);
+    assert.ok(timedOut.output.includes("I'll wait for the background run to finish."));
+    assert.ok(timedOut.output.includes('sleep 25'));
+    assert.equal(activeProcesses.size, 0, 'the stopped process is released');
+    // (d) A second result without origin is still PROTOCOL_ERROR.
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'second-result';
+    const duplicate = await executeClaude('x', { cwd: dir, model: MODEL });
+    assert.equal(duplicate.status, 'failed');
+    assert.equal(duplicate.error?.code, 'PROTOCOL_ERROR');
+    captured();
+    // (e) Cancellation during an active notification turn interrupts it over open stdin before forced stop.
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'notification-interruptible';
+    process.env.CLAUDE_FIXTURE_TASK_MS = '50';
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    const cancelled = await executeClaude('x', {
+      cwd: dir,
+      model: MODEL,
+      abortSignal: controller.signal,
+      timeoutMs: 30000,
+      onEvent: e => {
+        if (e.type === 'assistant_message' && e.text === 'Notification turn running...') controller.abort();
+      },
+    });
+    assert.equal(cancelled.status, 'cancelled');
+    assert.equal(cancelled.error?.code, 'ABORTED');
+    assert.equal(cancelled.exitCode, 1, 'exited by itself after the notification interrupt');
+    assert.ok(Date.now() - startedAt < 2900, 'did not wait for the forced-stop grace period');
+    assert.match(cancelled.output, /^\[Partial progress: .*\]\n\nNotification turn running\.\.\.$/);
+    assert.deepEqual(
+      captured().records.map(r => r.type),
+      ['user', 'control_request'],
+    );
+    assert.equal(activeProcesses.size, 0);
+    // (f) A turn timed out while streaming its first assistant message keeps partial deltas and remains resumable,
+    // both on a fresh session and on a resumed session that stops without a result (marked uncertain).
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'streaming-interruptible';
+    const streamingTimedOut = await executeClaude('x', { cwd: dir, model: MODEL, timeoutMs: 250 });
+    assert.equal(streamingTimedOut.status, 'timed_out');
+    assert.equal(streamingTimedOut.error?.code, 'TIMEOUT');
+    assert.match(streamingTimedOut.output, /^\[Partial progress: .*\]\n\nStreaming partial report$/);
+    assert.equal(streamingTimedOut.continuationAvailable, true);
+    process.env.CLAUDE_FIXTURE_IGNORE_INTERRUPT = '1';
+    const resumedStreamingTimedOut = await executeClaude('x', { cwd: dir, model: MODEL, nativeSessionId: session, timeoutMs: 250 });
+    assert.equal(resumedStreamingTimedOut.status, 'timed_out');
+    assert.equal(resumedStreamingTimedOut.error?.code, 'TIMEOUT');
+    assert.match(
+      resumedStreamingTimedOut.output,
+      /^\[Partial progress; it may include a background-task notification from an earlier turn\.\]\n\nStreaming partial report$/,
+    );
+    assert.equal(resumedStreamingTimedOut.continuationAvailable, true);
+    assert.equal(activeProcesses.size, 0);
+    // (g) A resumed turn timed out during an unclassified earlier task notification only emits text with the uncertainty note, never as plain progress.
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'resume-notification-interruptible';
+    const preEvents = [];
+    const preTimedOut = await executeClaude('x', {
+      cwd: dir,
+      model: MODEL,
+      nativeSessionId: session,
+      timeoutMs: 250,
+      onEvent: e => preEvents.push(e),
+    });
+    delete process.env.CLAUDE_FIXTURE_IGNORE_INTERRUPT;
+    assert.equal(preTimedOut.status, 'timed_out');
+    assert.equal(preTimedOut.error?.code, 'TIMEOUT');
+    assert.match(
+      preTimedOut.output,
+      /^\[Partial progress; it may include a background-task notification from an earlier turn\.\]\n\nEarlier streaming\.\.\.$/,
+    );
+    assert.equal(preTimedOut.continuationAvailable, true);
+    assert.ok(!preEvents.some(e => e.type === 'assistant_message' || e.type === 'assistant_delta'));
+    assert.equal(activeProcesses.size, 0);
   }));

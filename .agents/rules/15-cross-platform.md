@@ -36,7 +36,11 @@ guarantees for window suppression.
      `Stop-Process`, CIM/WMI snapshots or descendant polling.
    - Stop a protocol CLI gracefully first: interrupt its turn over its own
      protocol and close stdin on the terminal event, then force-stop the owned root
-     after a bounded grace period.
+     after a bounded grace period. Claude Code turns disable background tasks
+     (`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, with `BASH_DEFAULT_TIMEOUT_MS=600000`
+     and `BASH_MAX_TIMEOUT_MS` bounded by the remaining turn time, at least 10 minutes); if the CLI
+     still stays alive after its prompt result, waiting is bounded by the turn
+     deadline, after which the graceful interrupt and owned-tree stop terminate it.
    - A chain of Node processes ends with its root through libuv's
      `KILL_ON_JOB_CLOSE` job on Windows. The per-run job helper
      ([ARCHITECTURE](../../docs/ARCHITECTURE.md#windows-per-call-containment-windows-001))
