@@ -340,7 +340,7 @@ function initialize(request) {
 function interrupt(request) {
   send({ type: 'control_response', response: { subtype: 'success', request_id: request.request_id, response: { still_queued: [] } } });
   // Only a running turn ends with an interrupted result.
-  if (scenario === 'ignore-interrupt' || !interruptible) return;
+  if (scenario === 'ignore-interrupt' || env.CLAUDE_FIXTURE_IGNORE_INTERRUPT === '1' || !interruptible) return;
   clearInterval(interruptible);
   interruptible = null;
   send({

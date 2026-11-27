@@ -378,6 +378,7 @@ test('Claude collector warns once for an unexpected origin kind and never treats
 });
 
 test('Claude collector skips a notification result of an earlier task before the answer on resume without publishing its text (#233)', () => {
+  const { PARTIAL_PROGRESS_NOTICE, PARTIAL_PROGRESS_UNCERTAIN_NOTICE } = require('../../../src/backends/claude/collector.ts');
   const events = recording('success-partial');
   const skipped = [
     ...notificationTurn('run-0', 'Earlier sleep 25 done.').slice(3, 5),
@@ -393,12 +394,17 @@ test('Claude collector skips a notification result of an earlier task before the
     onEvent: e => seen.push(e),
   });
   for (const event of skipped.slice(0, -1)) collector.line(JSON.stringify(event));
-  assert.equal(collector.snapshot().hasAssistantMessage, false, 'unclassified pre-answer output stays out of hasAssistantMessage');
-  assert.equal(collector.partialProgress(), '', 'unclassified pre-answer output stays out of partialProgress');
+  assert.equal(collector.snapshot().hasAssistantMessage, true, 'unclassified pre-result output keeps session continuable');
+  assert.equal(
+    collector.partialProgress(),
+    `${PARTIAL_PROGRESS_UNCERTAIN_NOTICE}\n\nEarlier `,
+    'unclassified pre-result text is marked uncertain, never plain progress',
+  );
+  assert.ok(!collector.partialProgress().startsWith(PARTIAL_PROGRESS_NOTICE));
   assert.ok(!seen.some(e => e.type === 'assistant_message' || e.type === 'assistant_delta'), 'no unclassified pre-answer text emitted');
   collector.line(JSON.stringify(skipped.at(-1)));
-  assert.equal(collector.snapshot().hasAssistantMessage, false, 'dropped skipped turn does not mark session resumable');
-  assert.equal(collector.partialProgress(), '', 'dropped skipped turn leaves no partial progress');
+  assert.equal(collector.snapshot().hasAssistantMessage, false, 'classified skipped turn is excluded from continuation');
+  assert.equal(collector.partialProgress(), '', 'classified skipped turn leaves no partial progress');
   assert.ok(!seen.some(e => e.type === 'assistant_message' || e.type === 'assistant_delta'), 'no skipped text emitted');
   for (const event of events) collector.line(JSON.stringify(event));
   const snapshot = collector.snapshot();
@@ -410,10 +416,6 @@ test('Claude collector skips a notification result of an earlier task before the
     seen.filter(e => e.type === 'assistant_message').map(e => e.text),
     ['OK'],
     'prompt turn assistant message is published once its own result confirms it',
-  );
-  assert.deepEqual(
-    seen.filter(e => e.type === 'assistant_delta').map(e => e.text),
-    ['OK'],
   );
   assert.deepEqual(
     seen.filter(e => e.type === 'warning').map(e => e.message),
@@ -436,7 +438,7 @@ test('Claude collector still validates repeated init and rejects a second result
 });
 
 test('Claude collector offers streaming deltas and latest assistant text as marked partial progress plus running tasks (#231, #245)', () => {
-  const { PARTIAL_PROGRESS_NOTICE } = require('../../../src/backends/claude/collector.ts');
+  const { PARTIAL_PROGRESS_NOTICE, PARTIAL_PROGRESS_UNCERTAIN_NOTICE } = require('../../../src/backends/claude/collector.ts');
   const events = recording('success-partial').filter(e => e.type !== 'result');
   const collector = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS, maxTotalMessageBytes: 200 });
   assert.equal(collector.partialProgress(), '', 'nothing before any assistant text');
@@ -451,6 +453,15 @@ test('Claude collector offers streaming deltas and latest assistant text as mark
   );
   assert.equal(collector.partialProgress(), `${PARTIAL_PROGRESS_NOTICE}\n\nFirst draft`);
   assert.equal(collector.snapshot().hasAssistantMessage, true, 'accepted streaming text enables continuation');
+  // A resumed prompt timing out with only its own streamed text (no result) uses the uncertainty notice and stays continuable.
+  const resumedStream = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS, resumed: true });
+  resumedStream.line(JSON.stringify(events[0]));
+  resumedStream.line(JSON.stringify({ type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_resumed_1' } } }));
+  resumedStream.line(
+    JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Resumed draft' } } }),
+  );
+  assert.equal(resumedStream.partialProgress(), `${PARTIAL_PROGRESS_UNCERTAIN_NOTICE}\n\nResumed draft`);
+  assert.equal(resumedStream.snapshot().hasAssistantMessage, true);
   for (const event of events.slice(1)) collector.line(JSON.stringify(event));
   assert.equal(collector.partialProgress(), `${PARTIAL_PROGRESS_NOTICE}\n\nOK`);
   for (const event of backgroundStarted) collector.line(JSON.stringify(event));
@@ -485,8 +496,7 @@ test('Claude collector drops usage when any counted result omits it and bounds c
   assert.equal(bounded.snapshot.error?.code, 'BUFFER_LIMIT');
   assert.ok(Buffer.byteLength(bounded.snapshot.output) <= 50);
 
-  // Pre-answer buffer ignores empty text events and bounds the buffered event count.
-  const { MAX_PENDING_ASSISTANT_EVENTS } = require('../../../src/backends/claude/collector.ts');
+  // Pre-answer buffer ignores empty text events and coalesces deltas per message ID so a completed message is never dropped.
   const bufferedEvents = [];
   const boundedBuffer = createClaudeStreamCollector({
     expectedSessionId: SESSION,
@@ -502,15 +512,20 @@ test('Claude collector drops usage when any counted result omits it and bounds c
     );
     boundedBuffer.line(JSON.stringify({ type: 'assistant', message: { id: `msg_empty_${i}`, content: [{ type: 'text', text: '' }] } }));
   }
-  for (let i = 0; i < MAX_PENDING_ASSISTANT_EVENTS + 100; i++) {
+  for (let i = 0; i < 5000; i++) {
     boundedBuffer.line(
       JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'x' } } }),
     );
   }
+  boundedBuffer.line(
+    JSON.stringify({ type: 'assistant', message: { id: 'msg_flood', content: [{ type: 'text', text: 'Completed final message' }] } }),
+  );
   boundedBuffer.line(JSON.stringify({ ...events.at(-1), result: 'Done' }));
-  const deltas = bufferedEvents.filter(e => e.type === 'assistant_delta');
-  assert.ok(!deltas.some(e => e.text === ''), 'empty deltas are ignored');
-  assert.ok(!bufferedEvents.some(e => e.type === 'assistant_message' && e.text === ''), 'empty assistant messages are ignored');
-  assert.equal(deltas.length, MAX_PENDING_ASSISTANT_EVENTS, 'buffered events are capped');
+  assert.deepEqual(
+    bufferedEvents.filter(e => e.type === 'assistant_message').map(e => e.text),
+    ['Completed final message'],
+    'completed message replaces the 5000 deltas and is emitted cleanly',
+  );
+  assert.equal(bufferedEvents.filter(e => e.type === 'assistant_delta').length, 0);
   assert.equal(boundedBuffer.snapshot().output, 'Done');
 });

@@ -43,10 +43,10 @@ const KNOWN_SYSTEM_SUBTYPES = new Set([
 const MAX_TASK_TEXT = 160;
 /** Upper bound of the background tasks tracked at once, so a runaway list cannot grow memory. */
 const MAX_TASKS = 64;
-/** Upper bound of pre-answer assistant events buffered on `--resume` before `result` classifies the turn. */
-export const MAX_PENDING_ASSISTANT_EVENTS = 4096;
 /** Marks the latest assistant text returned when a turn ended without its answer (#231). */
 export const PARTIAL_PROGRESS_NOTICE = '[Partial progress: the turn ended before its final answer; this is the latest assistant message.]';
+/** Marks unclassified pre-result text on `--resume` that may belong to an earlier task's notification. */
+export const PARTIAL_PROGRESS_UNCERTAIN_NOTICE = '[Partial progress; it may include a background-task notification from an earlier turn.]';
 
 export interface ClaudeStreamCollectorOptions {
   /** Session ID passed as `--session-id` or `--resume`; `system/init` must report the same ID. */
@@ -172,14 +172,13 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   let streamingMessageId: string | null = null;
   let streamingText = '';
   let streamingTruncated = false;
-  // On `--resume`, buffer pre-answer assistant progress separately until `result` proves it is not an earlier task notification.
+  // On `--resume`, buffer pre-answer assistant progress coalesced by message ID until `result` classifies the turn.
   let pendingReducer: StreamReducer | null = null;
   let pendingLatestMessageId: string | null = null;
+  const pendingStreamed = new Map<string, string>();
+  let pendingStreamedBytes = 0;
   let pendingStreamingMessageId: string | null = null;
-  let pendingStreamingText = '';
   let pendingStreamingTruncated = false;
-  const pendingAssistantEvents: AdapterEvent[] = [];
-  let pendingEventBytes = 0;
   const bufferingPreAnswer = () => Boolean(options.resumed) && !terminal;
   const ensurePendingReducer = () =>
     (pendingReducer ??= new StreamReducer({
@@ -190,17 +189,10 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   const clearPendingBuffer = () => {
     pendingReducer = null;
     pendingLatestMessageId = null;
+    pendingStreamed.clear();
+    pendingStreamedBytes = 0;
     pendingStreamingMessageId = null;
-    pendingStreamingText = '';
     pendingStreamingTruncated = false;
-    pendingAssistantEvents.length = 0;
-    pendingEventBytes = 0;
-  };
-  const bufferAssistantEvent = (event: AdapterEvent, byteCap: number, bytes: number) => {
-    if (pendingAssistantEvents.length >= MAX_PENDING_ASSISTANT_EVENTS) return;
-    if (pendingEventBytes + bytes > byteCap) return;
-    pendingEventBytes += bytes;
-    pendingAssistantEvents.push(event);
   };
   // Background tasks still running: task ID to description.
   const tasks = new Map<string, string>();
@@ -354,9 +346,13 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       if (!block) fail('PROTOCOL_ERROR', 'Invalid Claude Code content block.');
       if (block.type === 'text' && typeof block.text === 'string') {
         if (bufferingPreAnswer()) {
+          const streamed = pendingStreamed.get(id);
+          if (streamed !== undefined) {
+            pendingStreamed.delete(id);
+            pendingStreamedBytes -= Buffer.byteLength(streamed);
+          }
           if (id === pendingStreamingMessageId) {
             pendingStreamingMessageId = null;
-            pendingStreamingText = '';
             pendingStreamingTruncated = false;
           }
           if (!publicText || block.text.length === 0) continue;
@@ -365,13 +361,6 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
             throw new BufferLimitError('Too many Claude Code public messages.');
           target.upsertMessage(id, (target.getMessageMap().get(id) ?? '') + block.text);
           pendingLatestMessageId = id;
-          const msgText = target.getMessageMap().get(id) ?? '';
-          if (msgText.length > 0)
-            bufferAssistantEvent(
-              { type: 'assistant_message', messageId: id, text: msgText },
-              reducer.maxTotalBytes * 2,
-              Buffer.byteLength(msgText),
-            );
           continue;
         }
         if (id === streamingMessageId) {
@@ -415,7 +404,6 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
         currentMessageId = message.id as string;
         if (bufferingPreAnswer()) {
           pendingStreamingMessageId = currentMessageId;
-          pendingStreamingText = '';
           pendingStreamingTruncated = false;
         } else {
           streamingMessageId = currentMessageId;
@@ -431,20 +419,23 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       // Deltas stop at the public budget; the bounded assistant message still replaces the draft.
       streamedBytes += Buffer.byteLength(delta.text);
       if (bufferingPreAnswer()) {
-        bufferAssistantEvent(
-          { type: 'assistant_delta', messageId: currentMessageId, text: delta.text },
-          reducer.maxTotalBytes,
-          Buffer.byteLength(delta.text),
-        );
         if (pendingStreamingMessageId !== currentMessageId) {
           pendingStreamingMessageId = currentMessageId;
-          pendingStreamingText = '';
           pendingStreamingTruncated = false;
         }
+        if (!pendingStreamed.has(currentMessageId) && pendingStreamed.size >= reducer.maxMessages) return;
         if (!pendingStreamingTruncated) {
-          const next = truncateToByteLength(pendingStreamingText + delta.text, reducer.maxTotalBytes);
-          if (next !== pendingStreamingText + delta.text) pendingStreamingTruncated = true;
-          pendingStreamingText = next;
+          const prev = pendingStreamed.get(currentMessageId) ?? '';
+          const prevBytes = Buffer.byteLength(prev);
+          const remaining = reducer.maxTotalBytes - (pendingStreamedBytes - prevBytes);
+          if (remaining <= 0) {
+            pendingStreamingTruncated = true;
+            return;
+          }
+          const next = truncateToByteLength(prev + delta.text, remaining);
+          if (next !== prev + delta.text) pendingStreamingTruncated = true;
+          pendingStreamed.set(currentMessageId, next);
+          pendingStreamedBytes = pendingStreamedBytes - prevBytes + Buffer.byteLength(next);
         }
         return;
       }
@@ -485,15 +476,24 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     }
     if (!origin) {
       if (pendingReducer) {
-        for (const [id, text] of pendingReducer.getMessageMap()) reducer.upsertMessage(id, text);
+        for (const [id, text] of pendingReducer.getMessageMap()) {
+          if (!reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages) {
+            throw new BufferLimitError('Too many Claude Code public messages.');
+          }
+          reducer.upsertMessage(id, text);
+          emit({ type: 'assistant_message', messageId: id, text: reducer.getMessageMap().get(id) ?? '' });
+        }
         if (pendingLatestMessageId !== null) latestMessageId = pendingLatestMessageId;
       }
-      if (pendingStreamingText) {
-        streamingMessageId = pendingStreamingMessageId;
-        streamingText = pendingStreamingText;
-        streamingTruncated = pendingStreamingTruncated;
+      for (const [id, text] of pendingStreamed) {
+        if (pendingReducer?.getMessageMap().has(id) || !text) continue;
+        emit({ type: 'assistant_delta', messageId: id, text });
+        if (id === pendingStreamingMessageId) {
+          streamingMessageId = id;
+          streamingText = text;
+          streamingTruncated = pendingStreamingTruncated;
+        }
       }
-      for (const buffered of pendingAssistantEvents) emit(buffered);
     }
     clearPendingBuffer();
     terminal = true;
@@ -586,6 +586,8 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       : truncated
         ? { code: 'BUFFER_LIMIT', message: 'Claude Code public output exceeded the byte budget.', retryable: false }
         : undefined;
+    const hasPendingText =
+      [...pendingStreamed.values()].some(text => text.trim().length > 0) || (pendingReducer?.getMessageMap().size ?? 0) > 0;
     return {
       sessionId,
       initialized: sessionId !== null,
@@ -596,7 +598,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       lengthLimited: stopReason === null ? undefined : stopReason === 'max_tokens',
       error,
       output: resultFields?.isError || !sessionId ? '' : output,
-      hasAssistantMessage: reducer.getMessageMap().size > 0 || streamingText.trim().length > 0,
+      hasAssistantMessage: reducer.getMessageMap().size > 0 || streamingText.trim().length > 0 || hasPendingText,
     };
   }
   /**
@@ -607,12 +609,20 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   function partialProgress(): string {
     const completed = latestMessageId === null ? answerText : (reducer.getMessageMap().get(latestMessageId) ?? answerText);
     const latest = streamingText.trim() ? streamingText : completed;
-    const text = latest.trim() ? latest : '';
+    let text = latest.trim() ? latest : '';
+    let notice = PARTIAL_PROGRESS_NOTICE;
+    if (!text && bufferingPreAnswer()) {
+      const pendingStreaming = pendingStreamingMessageId ? (pendingStreamed.get(pendingStreamingMessageId) ?? '') : '';
+      const pendingCompleted = pendingLatestMessageId !== null ? (pendingReducer?.getMessageMap().get(pendingLatestMessageId) ?? '') : '';
+      const pendingLatest = pendingStreaming.trim() ? pendingStreaming : pendingCompleted;
+      if (pendingLatest.trim()) {
+        text = pendingLatest;
+        notice = PARTIAL_PROGRESS_UNCERTAIN_NOTICE;
+      }
+    }
     const running = runningTasks();
     if (!text && !running.length) return '';
-    const header = running.length
-      ? `${PARTIAL_PROGRESS_NOTICE}\nBackground tasks still running: ${running.join('; ')}.`
-      : PARTIAL_PROGRESS_NOTICE;
+    const header = running.length ? `${notice}\nBackground tasks still running: ${running.join('; ')}.` : notice;
     return truncateToByteLength(text ? `${header}\n\n${text}` : header, reducer.maxTotalBytes);
   }
   return {

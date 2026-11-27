@@ -777,15 +777,25 @@ test('#231 #233 #245: Claude waits for background notification turns, sums usage
       ['user', 'control_request'],
     );
     assert.equal(activeProcesses.size, 0);
-    // (f) A turn timed out while streaming its first assistant message keeps partial deltas and remains resumable.
+    // (f) A turn timed out while streaming its first assistant message keeps partial deltas and remains resumable,
+    // both on a fresh session and on a resumed session that stops without a result (marked uncertain).
     process.env.CLAUDE_FIXTURE_SCENARIO = 'streaming-interruptible';
     const streamingTimedOut = await executeClaude('x', { cwd: dir, model: MODEL, timeoutMs: 250 });
     assert.equal(streamingTimedOut.status, 'timed_out');
     assert.equal(streamingTimedOut.error?.code, 'TIMEOUT');
     assert.match(streamingTimedOut.output, /^\[Partial progress: .*\]\n\nStreaming partial report$/);
     assert.equal(streamingTimedOut.continuationAvailable, true);
+    process.env.CLAUDE_FIXTURE_IGNORE_INTERRUPT = '1';
+    const resumedStreamingTimedOut = await executeClaude('x', { cwd: dir, model: MODEL, nativeSessionId: session, timeoutMs: 250 });
+    assert.equal(resumedStreamingTimedOut.status, 'timed_out');
+    assert.equal(resumedStreamingTimedOut.error?.code, 'TIMEOUT');
+    assert.match(
+      resumedStreamingTimedOut.output,
+      /^\[Partial progress; it may include a background-task notification from an earlier turn\.\]\n\nStreaming partial report$/,
+    );
+    assert.equal(resumedStreamingTimedOut.continuationAvailable, true);
     assert.equal(activeProcesses.size, 0);
-    // (g) A resumed turn timed out during an earlier task's notification turn leaks no notification text.
+    // (g) A resumed turn timed out during an unclassified earlier task notification only emits text with the uncertainty note, never as plain progress.
     process.env.CLAUDE_FIXTURE_SCENARIO = 'resume-notification-interruptible';
     const preEvents = [];
     const preTimedOut = await executeClaude('x', {
@@ -795,10 +805,14 @@ test('#231 #233 #245: Claude waits for background notification turns, sums usage
       timeoutMs: 250,
       onEvent: e => preEvents.push(e),
     });
+    delete process.env.CLAUDE_FIXTURE_IGNORE_INTERRUPT;
     assert.equal(preTimedOut.status, 'timed_out');
     assert.equal(preTimedOut.error?.code, 'TIMEOUT');
-    assert.equal(preTimedOut.output, '');
-    assert.equal(preTimedOut.continuationAvailable, false);
+    assert.match(
+      preTimedOut.output,
+      /^\[Partial progress; it may include a background-task notification from an earlier turn\.\]\n\nEarlier streaming\.\.\.$/,
+    );
+    assert.equal(preTimedOut.continuationAvailable, true);
     assert.ok(!preEvents.some(e => e.type === 'assistant_message' || e.type === 'assistant_delta'));
     assert.equal(activeProcesses.size, 0);
   }));
