@@ -16,7 +16,8 @@ import { createExecutionBudget } from '../execution/runtime/budget.js';
 import { truncateToByteLength } from '../execution/runtime/stream.js';
 import { combineSignals } from '../storage/lock.js';
 import { BRAND } from '../brand.js';
-import { getRuntimePath } from '../paths.js';
+import { getAgyProfileDir, getRuntimePath } from '../paths.js';
+import { agyProfileExists, describeAgyProfileContents, usesAgyProfile } from '../backends/agy/adapter.js';
 import {
   DEFAULT_DIAGNOSTIC_TIMEOUT_MS,
   type TimingObserver,
@@ -121,10 +122,19 @@ export interface DoctorReport {
   /** Provenance and change identity of the configuration snapshot used for diagnostics. */
   configProvenance?: DoctorConfigProvenance;
   /**
-   * MCP servers and plugins of the user's CLI configuration that a backend's turns offer the
-   * model and CoAgent8 cannot disable (agy, `CUR-002`); only backends that report any.
+   * MCP servers and plugins a backend's turns would offer the model (agy, `CUR-002`); only
+   * backends that report any. On Windows agy's are those of CoAgent8's agy profile, see `agyProfile`.
    */
   inheritedTools: Partial<Record<ProviderId, InheritedTools>>;
+  /**
+   * Windows only, agy installed: the state of CoAgent8's own agy profile as checked from
+   * `checkedFrom`, this process's directory (#224). `verified`: no MCP servers or plugins there;
+   * `refused`: it contains some, and agy turns do not start; `unverified`: agy could not list
+   * them; `not_created`: the profile does not exist yet, doctor neither creates it nor starts agy
+   * against it, and the first agy turn creates and verifies it. Workspace-scoped agy
+   * configuration can differ, so every agy turn checks again in its own directory before it starts.
+   */
+  agyProfile?: { path: string; checkedFrom: string; state: 'verified' | 'refused' | 'unverified' | 'not_created' };
   /** Optional call-level execution trace measuring diagnostic phases. */
   trace?: ExecutionTrace;
 }
@@ -234,6 +244,8 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     let catalogs: (ModelCatalog | undefined)[];
     let inherited: (InheritedTools | undefined)[];
     let prices: Awaited<ReturnType<typeof readPrices>>;
+    // Read before the adapter: a read-only doctor never creates CoAgent8's agy profile (#224).
+    const agyProfileExisted = usesAgyProfile() && agyProfileExists();
     try {
       const [c, cats, inh] = await Promise.all([
         inspectQuotas(true, probes, {
@@ -266,6 +278,18 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
       const tools = inherited[index];
       if (tools && (tools.mcpServers.length || tools.plugins.length)) inheritedTools[id] = tools;
     });
+    // On Windows agy runs with CoAgent8's own profile; the same check runs before every agy turn (#224).
+    const agyIndex = selected.indexOf('agy');
+    const agyProfilePath = redactDiagnostic(getAgyProfileDir());
+    const agyProfile: DoctorReport['agyProfile'] =
+      agyIndex >= 0 && probes.agy!.installed && usesAgyProfile()
+        ? {
+            path: agyProfilePath,
+            // The adapter reads the profile in this process's directory; a turn checks its own.
+            checkedFrom: redactDiagnostic(process.cwd()),
+            state: !inherited[agyIndex] ? 'unverified' : inheritedTools.agy ? 'refused' : agyProfileExisted ? 'verified' : 'not_created',
+          }
+        : undefined;
 
     const active = selected.filter(id => probes[id]!.installed && config.routing.allowedBackends.includes(id));
     // One decision table (AX-005a); a quota the CLI measured in this run (agy and Claude
@@ -312,16 +336,25 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
       }
       return [];
     });
+    // agy turns do not start until the profile is empty again: a problem to fix.
+    if (agyProfile?.state === 'refused') {
+      recommendations.push(
+        `agy: CoAgent8's agy profile ${agyProfile.path}, as checked from ${agyProfile.checkedFrom}, contains ${describeAgyProfileContents(inheritedTools.agy!)}, so agy turns do not start. ` +
+          "Remove them with 'agy mcp remove <name>' and 'agy plugin uninstall <name>' run with USERPROFILE set to that directory.",
+      );
+    }
     // A known limitation, not a configuration problem: it leaves the status unchanged.
-    const inheritedNotes = (Object.entries(inheritedTools) as [ProviderId, InheritedTools][]).map(([id, tools]) => {
-      const named = [
-        tools.mcpServers.length ? `MCP servers ${tools.mcpServers.join(', ')}` : '',
-        tools.plugins.length ? `plugins ${tools.plugins.join(', ')}` : '',
-      ]
-        .filter(Boolean)
-        .join(' and ');
-      return `${id}: turns run in the CLI's sandbox but can use ${named} from your ${id} configuration; CoAgent8 cannot disable them. Keep only servers you trust there.`;
-    });
+    const inheritedNotes = (Object.entries(inheritedTools) as [ProviderId, InheritedTools][])
+      .filter(([id]) => !(id === 'agy' && agyProfile))
+      .map(
+        ([id, tools]) =>
+          `${id}: turns on this platform can use ${describeAgyProfileContents(tools)} from your ${id} configuration; CoAgent8 cannot disable them here (CUR-002). Keep only servers you trust there.`,
+      );
+    if (agyProfile?.state === 'unverified') {
+      inheritedNotes.push(
+        `agy: CoAgent8 could not list the MCP servers and plugins of its agy profile ${agyProfile.path} from ${agyProfile.checkedFrom}; every agy turn checks again in its own directory and does not start unless the profile has none.`,
+      );
+    }
 
     // The default model of each installed backend. One the CLI does not state itself (the first
     // model agy lists, the model Claude Code reports) is recorded in config.json once, so a later
@@ -484,6 +517,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
       ...(configError ? { configError } : {}),
       configProvenance,
       inheritedTools,
+      ...(agyProfile ? { agyProfile } : {}),
       trace,
     };
   } finally {
@@ -580,6 +614,20 @@ const TURN_REACH: Record<ProviderId, string> = {
   agy: 'commands, network and its own MCP servers on the host in a turn',
 };
 
+/** {@link TURN_REACH}, for agy as its verified profile allows (#224). */
+function turnReach(id: ProviderId, report: DoctorReport): string {
+  if (id !== 'agy' || !report.agyProfile) return TURN_REACH[id];
+  const { state, checkedFrom } = report.agyProfile;
+  const recheck = 'every turn checks again in its own directory';
+  return state === 'verified'
+    ? `commands and network on the host, no MCP servers or plugins of yours (CoAgent8 agy profile, none as checked from ${checkedFrom}; ${recheck})`
+    : state === 'refused'
+      ? `turns refused: CoAgent8 agy profile has MCP servers or plugins as checked from ${checkedFrom}`
+      : state === 'not_created'
+        ? 'CoAgent8 agy profile not created yet; the first agy turn creates and verifies it'
+        : `CoAgent8 agy profile not verified from ${checkedFrom}; ${recheck}`;
+}
+
 function formatQuota(quota: DoctorQuota | undefined): string {
   if (!quota) return 'quota unknown';
   if (quota.status === 'rate_limited')
@@ -665,7 +713,7 @@ export function formatDoctorSummary(report: DoctorReport): string {
         ? ` - last turn ${readiness.lastSuccess.at.slice(0, 16).replace('T', ' ')} UTC on ${readiness.lastSuccess.model}`
         : '';
       lines.push(
-        `${id}: ${state} - ${probe.version || 'unknown version'}${formatDefault(report.defaultModels?.[id])} - ${formatQuota(report.quotas[id])}${lastTurn} - ${TURN_REACH[id]}`,
+        `${id}: ${state} - ${probe.version || 'unknown version'}${formatDefault(report.defaultModels?.[id])} - ${formatQuota(report.quotas[id])}${lastTurn} - ${turnReach(id, report)}`,
       );
       if (rows(id).length) lines.push(formatCandidates(rows(id), limits[id]!));
       const unlisted = formatUnlisted({

@@ -526,7 +526,7 @@ commentary without carrying discarded commentary truncation into the final resul
 | --- | --- |
 | Codex | app-server danger-full-access/never; disable tool features, read effective config, disable each inherited MCP server per thread, verify dangerFullAccess/never, features off and every MCP server disabled before turn/start. Empty MCP tables alone do not isolate. |
 | Claude | restricted Read/Glob/Grep/Edit/Write/Bash/WebFetch/WebSearch with an allow rule each, dontAsk, no permission prompts, hooks disabled and strict empty MCP config; verify startup tools/no MCP/permission mode; stream-json, native resume and interrupt. Verified local /usage path requires 2.1.289+. |
-| agy | --dangerously-skip-permissions, explicit model, stream-json/stdin and conversation resume. Unknown events warn; malformed known events fail. Every launch disables its auto-updater to prevent focus-stealing windows. Inherited MCP/plugins remain accessible. |
+| agy | --dangerously-skip-permissions, explicit model, stream-json/stdin and conversation resume. Unknown events warn; malformed known events fail. Every launch disables its auto-updater to prevent focus-stealing windows. On Windows turns, recovery, resume and the profile check before them (mcp list, plugin list) get `USERPROFILE=<data directory>/agy-profile`, which only the turn path creates; setup's checks, the probe's `--version`, `agy models` and `/usage` load no turn tools and keep the user's own environment, and doctor never creates the profile (before the first turn it reports it as not created yet), and every agy launch of a turn (the recovery after an empty denial included) starts only after `agy mcp list` and `agy plugin list --json`, run there in the turn's directory, and the profile's plugin directory show no MCP server and no plugin, disabled ones included (agy's own `swarm` entry in `config.json` aside); a check that fails or prints unknown output refuses the turn; a conversation of the user's own profile is not resumed (#224). On macOS and Linux inherited MCP/plugins remain accessible. |
 
 No turn starts before the user accepted host execution (`hostExecution: "accepted"`, or the
 one-time form, `src/execution/host-consent.ts`); the earlier read-only and workspace-write
@@ -1742,12 +1742,13 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-11-03 | The reviewer stays read-only; `review.checks` are run by the server before the turn under the same approval as the loop's checks, a check that does not pass blocks, and a check that changed the reviewed state refuses the review (REVIEW-003). |
 | 2026-11-21 | Owner decision (#208, #211): one runner for every role, and every turn runs on the host without a sandbox after a one-time user consent (`hostExecution`). Codex runs danger-full-access, Claude Code gets Bash, edits and web tools, agy skips permission prompts; tool features and inherited MCP servers stay off where the backend allows. On Windows every role needs the job helper. Containers or microVMs come later (#215). |
 | 2026-11-24 | Owner decision (#212): the delegated coordinator (`delegate` with `coordinate: true`, #164) is removed; the calling agent coordinates its workers, and `coordinate` is refused with that replacement. |
+| 2026-11-27 | Owner decision (#224): every agy turn on Windows, with its recovery, resume and the check before it, runs with a CoAgent8-owned profile that only the turn path creates (setup's checks, `--version`, `agy models` and `/usage` keep the user's own; doctor never creates it) (`USERPROFILE`), verified to configure no MCP server or plugin before every turn; commands in agy turns see that profile as their user profile, sessions of the user's own profile are not resumed, and macOS and Linux keep the inherited tools for now. |
 
 ## Known limitations
 
 | ID | Limitation | Plan owner |
 | --- | --- | --- |
-| CUR-002 | agy inherits external tools; accepted limitation, recursion refused | COAGENT-002/006 |
+| CUR-002 | agy inherits external tools on macOS and Linux (on Windows a CoAgent8 profile verified empty, #224); accepted limitation, recursion refused | COAGENT-002/006 |
 | CUR-007 | Preparation excluded from timeout/footer | EXEC-001, CLI-INTERACT-001 |
 | CUR-008 | Mandatory disk session; first handle only at return | SESSION-001, COAGENT-004 |
 | CUR-009 | Auth/profile/UI evidence incomplete | DIAGNOSTICS-001, AX-003/005 |

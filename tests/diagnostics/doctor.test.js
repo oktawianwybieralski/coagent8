@@ -271,8 +271,14 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
   }
 });
 
-test('doctor names the MCP servers and plugins agy turns inherit, without changing the status (CUR-002)', async () => {
+/**
+ * Runs doctor as on `platform` with every backend installed and agy's inherited tools read by
+ * `agyTools`: the agy profile of #224 applies on Windows only.
+ */
+async function doctorWithAgyTools(platform, agyTools) {
+  const { formatDoctorSummary } = require('../../src/diagnostics/doctor.ts');
   const original = { ...adapterRegistry };
+  const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
   try {
     for (const id of ['codex', 'claude', 'agy']) {
       adapterRegistry[id] = {
@@ -280,7 +286,7 @@ test('doctor names the MCP servers and plugins agy turns inherit, without changi
         inspectQuota: async () => undefined,
         listModels: undefined,
         observeModel: id === 'claude' ? async requested => requested : undefined,
-        inheritedTools: id === 'agy' ? async () => ({ mcpServers: ['context7', 'coagent8'], plugins: ['team-kit'] }) : undefined,
+        inheritedTools: id === 'agy' ? agyTools : undefined,
         probe: async () => ({
           id,
           installed: true,
@@ -297,14 +303,99 @@ test('doctor names the MCP servers and plugins agy turns inherit, without changi
       routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] },
       backends: { codex: {}, claude: {}, agy: {} },
     });
+    Object.defineProperty(process, 'platform', { ...platformDescriptor, value: platform });
     const report = await runDoctor({ quota: false });
-    assert.deepEqual(report.inheritedTools, { agy: { mcpServers: ['context7', 'coagent8'], plugins: ['team-kit'] } });
-    const note = report.recommendations.find(text => text.startsWith('agy: turns run'));
-    assert.match(note, /MCP servers context7, coagent8 and plugins team-kit from your agy configuration; CoAgent8 cannot disable them/);
-    const withoutNote = report.recommendations.filter(text => text !== note);
-    assert.equal(report.status, withoutNote.length ? 'partially_configured' : 'operational', 'the note alone does not change the status');
+    Object.defineProperty(process, 'platform', platformDescriptor);
+    return { report, summary: formatDoctorSummary(report) };
   } finally {
+    Object.defineProperty(process, 'platform', platformDescriptor);
     Object.assign(adapterRegistry, original);
+  }
+}
+
+test('doctor names the MCP servers and plugins agy turns inherit on macOS and Linux, without changing the status (CUR-002)', async () => {
+  const { report } = await doctorWithAgyTools('linux', async () => ({ mcpServers: ['context7', 'coagent8'], plugins: ['team-kit'] }));
+  assert.deepEqual(report.inheritedTools, { agy: { mcpServers: ['context7', 'coagent8'], plugins: ['team-kit'] } });
+  assert.equal(report.agyProfile, undefined, 'no CoAgent8 agy profile outside Windows');
+  const note = report.recommendations.find(text => text.startsWith('agy: turns on this platform'));
+  assert.match(note, /MCP servers context7, coagent8 and plugins team-kit from your agy configuration; CoAgent8 cannot disable them here/);
+  assert.ok(!report.recommendations.some(text => /sandbox/.test(text)), 'turns run on the host since #211');
+  const withoutNote = report.recommendations.filter(text => text !== note);
+  assert.equal(report.status, withoutNote.length ? 'partially_configured' : 'operational', 'the note alone does not change the status');
+});
+
+test('doctor reports the verified CoAgent8 agy profile on Windows (#224)', async () => {
+  const { getAgyProfileDir } = require('../../src/paths.ts');
+  fs.mkdirSync(getAgyProfileDir(), { recursive: true });
+  const { report, summary } = await doctorWithAgyTools('win32', async () => ({ mcpServers: [], plugins: [] }));
+  // The state as checked from this process's directory; a turn checks its own again.
+  assert.deepEqual(report.agyProfile, { path: getAgyProfileDir(), checkedFrom: process.cwd(), state: 'verified' });
+  assert.deepEqual(report.inheritedTools, {});
+  assert.ok(!report.recommendations.some(text => text.startsWith('agy:')), JSON.stringify(report.recommendations));
+  assert.ok(
+    summary.includes(
+      `commands and network on the host, no MCP servers or plugins of yours (CoAgent8 agy profile, none as checked from ${process.cwd()}; every turn checks again in its own directory)`,
+    ),
+    summary,
+  );
+});
+
+test('doctor reports a CoAgent8 agy profile with MCP servers or plugins as refusing agy turns on Windows (#224)', async () => {
+  const { getAgyProfileDir } = require('../../src/paths.ts');
+  const { report, summary } = await doctorWithAgyTools('win32', async () => ({ mcpServers: ['context7'], plugins: ['team-kit'] }));
+  assert.deepEqual(report.agyProfile, { path: getAgyProfileDir(), checkedFrom: process.cwd(), state: 'refused' });
+  const refusal = report.recommendations.filter(text => text.startsWith('agy:'));
+  assert.equal(refusal.length, 1, JSON.stringify(report.recommendations));
+  assert.match(
+    refusal[0],
+    /agy profile .*, as checked from .*, contains MCP servers context7 and plugins team-kit, so agy turns do not start/,
+  );
+  assert.equal(report.status, 'partially_configured', 'a refused backend is a problem to fix');
+  assert.ok(summary.includes(`turns refused: CoAgent8 agy profile has MCP servers or plugins as checked from ${process.cwd()}`), summary);
+
+  const unread = await doctorWithAgyTools('win32', async () => undefined);
+  assert.equal(unread.report.agyProfile.state, 'unverified');
+  assert.ok(
+    unread.report.recommendations.some(text =>
+      /could not list the MCP servers and plugins of its agy profile .* from .*; every agy turn checks again in its own directory/.test(
+        text,
+      ),
+    ),
+  );
+});
+
+test('a read-only doctor on a fresh data directory creates no CoAgent8 agy profile and starts no agy against it (#224)', async () => {
+  const { getAgyProfileDir } = require('../../src/paths.ts');
+  const { formatDoctorSummary } = require('../../src/diagnostics/doctor.ts');
+  const previous = process.env.coagent8_DIR;
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-doctor-fresh-'));
+  const log = path.join(dataDir, 'launches.jsonl');
+  process.env.coagent8_DIR = dataDir;
+  process.env.coagent8_FIXTURE_LAUNCH_LOG = log;
+  try {
+    // The complete doctor path with the agy fixture: probe, quota, catalog and inherited tools.
+    const report = await runDoctor({ backend: 'agy' });
+    assert.equal(fs.existsSync(getAgyProfileDir()), false, 'no profile directory');
+    const launches = fs.existsSync(log)
+      ? fs
+          .readFileSync(log, 'utf8')
+          .trim()
+          .split('\n')
+          .map(line => JSON.parse(line))
+      : [];
+    assert.ok(launches.length > 0, 'doctor ran the agy fixture');
+    assert.ok(
+      launches.every(launch => launch.userProfile !== getAgyProfileDir()),
+      JSON.stringify(launches.map(launch => launch.args)),
+    );
+    if (process.platform === 'win32' && report.probes?.agy?.installed !== false) {
+      assert.equal(report.agyProfile?.state, 'not_created', JSON.stringify(report.agyProfile));
+      assert.match(formatDoctorSummary(report), /CoAgent8 agy profile not created yet; the first agy turn creates and verifies it/);
+    }
+  } finally {
+    process.env.coagent8_DIR = previous;
+    delete process.env.coagent8_FIXTURE_LAUNCH_LOG;
+    fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
 
@@ -852,9 +943,21 @@ test('AX-005b: a completed agy turn turns an unverified sign-in into ready, with
     assert.deepEqual(after.ready_backends, ['agy']);
     assert.equal(after.readiness.agy.lastSuccess.model, 'gemini-3.8-flash');
     const summary = formatDoctorSummary(after);
+    // On Windows the fixture's empty agy profile is verified through its `mcp list` and `plugin list`;
+    // a profile no turn created yet is reported as such (#224).
+    const { getAgyProfileDir } = require('../../src/paths.ts');
+    const reach =
+      process.platform === 'win32' && !fs.existsSync(getAgyProfileDir())
+        ? 'CoAgent8 agy profile not created yet; the first agy turn creates and verifies it'
+        : process.platform === 'win32'
+          ? 'commands and network on the host, no MCP servers or plugins of yours \\(CoAgent8 agy profile, none as checked from .*; every turn checks again in its own directory\\)'
+          : 'commands, network and its own MCP servers on the host in a turn';
     assert.match(
       summary,
-      /^agy: ready - agy-ready-fixture .* - last turn \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC on gemini-3\.8-flash - commands, network and its own MCP servers on the host in a turn$/m,
+      new RegExp(
+        `^agy: ready - agy-ready-fixture .* - last turn \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2} UTC on gemini-3\\.8-flash - ${reach}$`,
+        'm',
+      ),
     );
     // An invalid model name is not recorded as evidence.
     await recordTurnSuccess('agy', '');

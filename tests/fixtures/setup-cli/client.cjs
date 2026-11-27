@@ -10,6 +10,7 @@ if (process.env.SETUP_FIXTURE_ENV_LOG)
       args,
       autoUpdate: process.env.AGY_CLI_DISABLE_AUTO_UPDATE ?? null,
       auth: process.env.AGY_CLI_CDE_AUTH_ACTION ?? null,
+      userProfile: process.env.USERPROFILE ?? null,
     }) + '\n',
   );
 // agy's silent sign-in check, as run by the Google Antigravity extension.
