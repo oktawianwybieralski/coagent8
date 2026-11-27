@@ -534,14 +534,14 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
       opened.send({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } });
     },
   };
-  // stdin is closed only after the terminal `result` once no background tasks remain:
-  // Claude 2.1.289 did not exit on EOF mid-turn, and keeping stdin open while tasks run
-  // lets deadlines or cancellation interrupt an active notification turn.
+  // stdin is closed only once the prompt result and every pending task-notification turn
+  // have completed with no tasks still running: Claude 2.1.289 did not exit on EOF mid-turn,
+  // and keeping stdin open through notification turns lets cancellation/deadlines interrupt them.
   const onStdoutLine = (line: string) => {
     try {
       collector.line(line);
     } finally {
-      if (collector.isTerminal() && !collector.runningTasks().length) channel?.close();
+      if (collector.canCloseStdin()) channel?.close();
     }
   };
   const result = await runCommand(claudeCommand(), args, {

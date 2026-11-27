@@ -288,8 +288,13 @@ test('Claude collector composes prompt and notification answers in order, sums u
   const collector = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS, onEvent: e => seen.push(e) });
   for (const event of [...events, ...backgroundStarted, answer]) collector.line(JSON.stringify(event));
   assert.deepEqual(collector.runningTasks(), ['sleep 25'], 'the running task is tracked by description');
+  assert.equal(collector.canCloseStdin(), false, 'keeps stdin open while background task runs');
   assert.ok(seen.some(e => e.type === 'status' && e.message.includes('sleep 25') && /Waiting/.test(e.message)));
-  for (const event of notificationTurn('run-1', 'Final report: sleep 25 completed.')) collector.line(JSON.stringify(event));
+  const notifEvents = notificationTurn('run-1', 'Final report: sleep 25 completed.');
+  for (const event of notifEvents.slice(0, -1)) collector.line(JSON.stringify(event));
+  assert.equal(collector.canCloseStdin(), false, 'keeps stdin open after task_updated/task_notification until notification result');
+  collector.line(JSON.stringify(notifEvents.at(-1)));
+  assert.equal(collector.canCloseStdin(), true, 'allows stdin to close once notification result arrives');
   const snapshot = collector.snapshot();
   assert.equal(snapshot.error, undefined, 'a result with origin is counted as part of the same turn');
   assert.equal(snapshot.output, "I'll wait for the background run to finish.\n\nFinal report: sleep 25 completed.");
@@ -399,12 +404,22 @@ test('Claude collector still validates repeated init and rejects a second result
   );
 });
 
-test('Claude collector offers the latest assistant text as marked partial progress plus running tasks (#231, #245)', () => {
+test('Claude collector offers streaming deltas and latest assistant text as marked partial progress plus running tasks (#231, #245)', () => {
   const { PARTIAL_PROGRESS_NOTICE } = require('../../../src/backends/claude/collector.ts');
   const events = recording('success-partial').filter(e => e.type !== 'result');
   const collector = createClaudeStreamCollector({ expectedSessionId: SESSION, allowedTools: TOOLS, maxTotalMessageBytes: 200 });
   assert.equal(collector.partialProgress(), '', 'nothing before any assistant text');
-  for (const event of events) collector.line(JSON.stringify(event));
+  // Streaming deltas of the first message provide partial progress before `assistant` completes.
+  collector.line(JSON.stringify(events[0]));
+  collector.line(JSON.stringify({ type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_stream_1' } } }));
+  collector.line(
+    JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'First ' } } }),
+  );
+  collector.line(
+    JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'draft' } } }),
+  );
+  assert.equal(collector.partialProgress(), `${PARTIAL_PROGRESS_NOTICE}\n\nFirst draft`);
+  for (const event of events.slice(1)) collector.line(JSON.stringify(event));
   assert.equal(collector.partialProgress(), `${PARTIAL_PROGRESS_NOTICE}\n\nOK`);
   for (const event of backgroundStarted) collector.line(JSON.stringify(event));
   const withTask = collector.partialProgress();
@@ -413,4 +428,28 @@ test('Claude collector offers the latest assistant text as marked partial progre
   assert.ok(withTask.includes('OK'), 'retains latest public text');
   collector.line(JSON.stringify({ type: 'assistant', message: { id: 'msg_long', content: [{ type: 'text', text: 'y'.repeat(150) }] } }));
   assert.ok(Buffer.byteLength(collector.partialProgress()) <= 200, 'bounded by the public budget');
+});
+
+test('Claude collector drops usage when any counted result omits it and bounds composed answers on arrival', () => {
+  const events = recording('success-partial');
+  const missingUsage = collect([
+    ...events,
+    ...notificationTurn('run-1', 'No usage', null),
+    ...notificationTurn('run-2', 'Restored usage', NOTIFICATION_USAGE),
+  ]);
+  assert.equal(missingUsage.snapshot.usage, undefined, 'missing usage in a counted result cannot be restored later');
+
+  const partialDropped = collect([
+    ...events,
+    ...notificationTurn('run-1', 'Partial usage', { output_tokens: 10 }),
+    ...notificationTurn('run-2', 'Full usage', NOTIFICATION_USAGE),
+  ]);
+  assert.deepEqual(partialDropped.snapshot.usage, { source: 'provider', outputTokens: 70 });
+
+  const bounded = collect([events[0], { ...events.at(-1), result: 'A'.repeat(40) }, ...notificationTurn('run-1', 'B'.repeat(40))], {
+    maxTotalMessageBytes: 50,
+  });
+  assert.equal(bounded.snapshot.truncated, true);
+  assert.equal(bounded.snapshot.error?.code, 'BUFFER_LIMIT');
+  assert.ok(Buffer.byteLength(bounded.snapshot.output) <= 50);
 });

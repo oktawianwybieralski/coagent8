@@ -700,7 +700,7 @@ test('ENVELOPE-001: Claude forwards a stop at the output length limit as lengthL
   }));
 
 test('#231 #233 #245: Claude waits for background notification turns, sums usage, skips pre-answer notifications, and reports partial progress at deadline', () =>
-  withFixture(async ({ dir }) => {
+  withFixture(async ({ dir, captured }) => {
     const { activeProcesses } = require('../../../src/execution/process.ts');
     // (a) Answer "I'll wait..." followed by a notification turn with the real report: completed with the report.
     process.env.CLAUDE_FIXTURE_SCENARIO = 'background-task';
@@ -747,4 +747,29 @@ test('#231 #233 #245: Claude waits for background notification turns, sums usage
     const duplicate = await executeClaude('x', { cwd: dir, model: MODEL });
     assert.equal(duplicate.status, 'failed');
     assert.equal(duplicate.error?.code, 'PROTOCOL_ERROR');
+    captured();
+    // (e) Cancellation during an active notification turn interrupts it over open stdin before forced stop.
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'notification-interruptible';
+    process.env.CLAUDE_FIXTURE_TASK_MS = '50';
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    const cancelled = await executeClaude('x', {
+      cwd: dir,
+      model: MODEL,
+      abortSignal: controller.signal,
+      timeoutMs: 30000,
+      onEvent: e => {
+        if (e.type === 'assistant_message' && e.text === 'Notification turn running...') controller.abort();
+      },
+    });
+    assert.equal(cancelled.status, 'cancelled');
+    assert.equal(cancelled.error?.code, 'ABORTED');
+    assert.equal(cancelled.exitCode, 1, 'exited by itself after the notification interrupt');
+    assert.ok(Date.now() - startedAt < 2900, 'did not wait for the forced-stop grace period');
+    assert.match(cancelled.output, /^\[Partial progress: .*\]\n\nNotification turn running\.\.\.$/);
+    assert.deepEqual(
+      captured().records.map(r => r.type),
+      ['user', 'control_request'],
+    );
+    assert.equal(activeProcesses.size, 0);
   }));

@@ -81,6 +81,7 @@ const recordings = {
   'ignore-interrupt': ['success-partial', 0],
   'max-tokens': ['success-partial', 0],
   'background-task': ['success-partial', 0],
+  'notification-interruptible': ['success-partial', 0],
   'resume-notification': ['success-partial', 0],
   'second-result': ['success-partial', 0],
 };
@@ -99,7 +100,8 @@ const records = [];
 const send = event => process.stdout.write(JSON.stringify(event) + '\n');
 let pending = '',
   answered = false,
-  interruptible = null;
+  interruptible = null,
+  activeNotificationOrigin = null;
 function capture() {
   if (!env.CLAUDE_FIXTURE_CAPTURE) return;
   const user = records.find(record => record.type === 'user');
@@ -199,8 +201,8 @@ function answer() {
     if (scenario === 'max-tokens' && event.type === 'result') event.stop_reason = 'max_tokens';
     if ((scenario === 'no-result' || scenario === 'interruptible' || scenario === 'ignore-interrupt') && event.type === 'result') continue;
     // `background-task` (#245): the prompt turn answers "I'll wait..." while a background task runs,
-    // and the automatic notification turn later emits the real report.
-    if (scenario === 'background-task') {
+    // and the automatic notification turn later emits the real report (or stays interruptible).
+    if (scenario === 'background-task' || scenario === 'notification-interruptible') {
       const interim = "I'll wait for the background run to finish.";
       if (event.type === 'stream_event' && event.event?.delta?.type === 'text_delta') event.event.delta.text = interim;
       if (event.type === 'assistant' && event.message?.content?.[0]?.type === 'text') event.message.content[0].text = interim;
@@ -232,6 +234,17 @@ function answer() {
         for (const event of notificationTurn(TASK, 'Final report: sleep 25 completed.', 1)) send(event);
       },
       Number(env.CLAUDE_FIXTURE_TASK_MS || 500),
+    );
+  }
+  if (scenario === 'notification-interruptible') {
+    setTimeout(
+      () => {
+        const events = notificationTurn(TASK, 'Notification turn running...', 1);
+        for (const event of events.slice(0, -1)) send(event);
+        activeNotificationOrigin = events.at(-1).origin;
+        interruptible = setInterval(() => {}, 1000);
+      },
+      Number(env.CLAUDE_FIXTURE_TASK_MS || 50),
     );
   }
   // A CLI that dies without a terminal result: exit without waiting for stdin.
@@ -298,7 +311,9 @@ function interrupt(request) {
     terminal_reason: 'aborted_streaming',
     stop_reason: null,
     errors: [],
+    ...(activeNotificationOrigin ? { origin: activeNotificationOrigin } : {}),
   });
+  activeNotificationOrigin = null;
   process.exitCode = 1;
 }
 process.stdin.setEncoding('utf8');
