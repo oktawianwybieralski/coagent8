@@ -136,7 +136,11 @@ wall-clock time from root call entry through completion, including preparation, 
 collection, consent, execution, and teardown/cleanup overruns. In the event of early
 failure during tool preparation, Git collection, or cancelled consent prompts, error
 footers report actual elapsed monotonic time rather than `0.0s`. `timeout_ms` bounds the
-complete call via `ExecutionBudget`, reserving teardown allowance for cleanup.
+complete call via `ExecutionBudget`, reserving teardown allowance for cleanup: synchronous
+calls (`consult`, `review`, `delegate` with `mode: "sync"`) default to 15 minutes and cap at
+30 minutes; asynchronous tasks (`delegate` by default, `review` and `consult` with
+`mode: "async"`) default to 60 minutes and cap at 4 hours (`14,400,000` ms). Both are
+configurable under `limits` in `config.json`.
 Progress cannot extend a host deadline. A measured agy 1.3.1 headless host cancelled
 after 180 seconds; this is not a universal claim about IDE clients.
 
@@ -1402,8 +1406,10 @@ are `rootLimits` of the user's configuration when the root is created: `maxCalls
 turns, every later backend turn of a loop and agy's recovery turn), `maxConcurrent` 8 (owner decision
 2026-11-06, with `maxCalls`), `maxChildren` 16, `maxDepth` 3, `maxMinutes` 240 and
 `graceMinutes` 60. A calling agent cannot raise them. Every reservation runs under the record's
-lock, also across server processes; a task's budget is its `timeout_ms` or the default, cut to
-what is left of the root's running time.
+lock, also across server processes; a task's budget is its `timeout_ms` or the async default
+(60 minutes, configurable via `limits`), cut to what is left of the root's running time (and
+continuation grace when continuing a session of the root), and both the task handle response and
+the execution footer state which bound applied.
 
 `maxMinutes` counts running time (#228): the union of the tasks' intervals, from a reservation to
 its end, so idle time between calls does not count and tasks running side by side count once; the
@@ -1571,9 +1577,11 @@ of `request_id` returns its task only once its turn has started, and is refused 
 observed get `wakeup: background_wait`; today that is Claude Code. Others get `none` and
 the same `wait_argv`.
 
-**Mode.** `mode: "async" | "sync"`. `async` is the target default; `sync` keeps
-the DELEGATE-001w contract. There is no `auto`: the same request runs the same
-way in every client, and client capability selects only how the caller is woken.
+**Mode.** `mode: "async" | "sync"`. `async` is the default for `delegate`; `sync` is the default
+for `review` and `consult`, and either accepts `mode: "async"` through the same background task
+machinery (`startBackgroundTask`, `session` action `task`, `coagent8 wait`, and `wakeup`),
+including the server verdict on finished review tasks. There is no `auto`: the same request
+runs the same way in every client, and client capability selects only how the caller is woken.
 
 **Start.** Before the call returns, the server validates the request, obtains
 model approval (elicitation needs the open request), acquires the writer,

@@ -4,12 +4,15 @@ import type { TaskOptions } from '../../execution/controller.js';
 import { openCallScope, runTask, type CallScopeOptions } from '../../execution/task.js';
 import { CANONICAL_TOOL_NAMES, HOST_TOOL_GUIDANCE, LEAVE_WORKSPACE_GUIDANCE } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
+import { loadConfig, resolveExecutionLimits, resolveTurnTimeout } from '../../config.js';
+import { startBackgroundTask } from '../../execution/delegation.js';
+import { formatTaskOutcome, formatTaskStarted, resolveExecutionMode } from './async-task.js';
 
 export function getCanonicalConsultToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.CONSULT,
     description:
-      'Second opinion on a question, design, bug or plan. Returns the answer, then "CoAgent8:" lines: backend, model, seconds, session handle.',
+      'Second opinion on a question, design, bug or plan. Sync by default; mode async returns a task_handle (read via wait_argv or session task).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -17,7 +20,7 @@ export function getCanonicalConsultToolDefinition() {
         task_type: {
           type: 'string',
           enum: ['architecture', 'debug', 'implementation'],
-          description: 'Omit for a plain question; set to ask for that kind of analysis.',
+          description: 'Omit for plain question; else analysis kind.',
         },
         context_files: {
           type: 'array',
@@ -26,7 +29,7 @@ export function getCanonicalConsultToolDefinition() {
         },
         // Accepted alias of context_files.
         file_paths: { type: 'array', items: { type: 'string' } },
-        specific_questions: { type: 'string', description: 'Extra questions or criteria the answer must cover.' },
+        specific_questions: { type: 'string', description: 'Extra questions or criteria.' },
         ...EXECUTION_PARAMETERS,
       },
       required: ['proposal'],
@@ -34,19 +37,20 @@ export function getCanonicalConsultToolDefinition() {
   };
 }
 
-/**
- * Runs a consult turn.
- * @remarks Callers validate `proposal` once at their boundary: the `consult` schema
- * requires a non-empty string, and `run` and the deprecated aliases check their own
- * request argument (AUD-P2-4).
- */
-export async function handleConsult(
-  toolName: string,
+/** Per-call options of a consult. */
+export type ConsultOptions = Pick<TaskOptions, 'warnings' | 'askConsent' | 'onTurnStart' | 'beforeExtraTurn'> &
+  CallScopeOptions & {
+    /** Connected MCP client name for wake-up capability detection in async mode. */
+    clientName?: string;
+  };
+
+/** Runs a consult turn and returns its unformatted outcome. */
+export async function executeConsult(
   args: ToolArguments,
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
   onProgress: ToolProgress = null,
-  options: Pick<TaskOptions, 'warnings' | 'askConsent'> & CallScopeOptions = {},
+  options: ConsultOptions = {},
 ) {
   const call = openCallScope(args.timeout_ms, abortSignal, options);
   call.assertLive('Request cancelled before consult execution.');
@@ -92,7 +96,7 @@ export async function handleConsult(
     .join('\n');
 
   try {
-    const outcome = await runTask('consult', {
+    return await runTask('consult', {
       prompt,
       publicInput: args.proposal + (args.specific_questions ? '\n' + args.specific_questions : ''),
       args: { ...args, backend: args.backend },
@@ -102,6 +106,8 @@ export async function handleConsult(
       options: {
         warnings: options.warnings,
         askConsent: options.askConsent,
+        onTurnStart: options.onTurnStart,
+        beforeExtraTurn: options.beforeExtraTurn,
         budget: call.budget,
         context: call.readContext,
         tracker: call.tracker,
@@ -109,8 +115,66 @@ export async function handleConsult(
         onTiming: options.onTiming,
       },
     });
-    return formatExecutionResult(outcome);
   } finally {
     call.dispose();
   }
+}
+
+/**
+ * Runs a consult turn synchronously or asynchronously depending on `args.mode` (default `'sync'`).
+ * @remarks Callers validate `proposal` once at their boundary: the `consult` schema
+ * requires a non-empty string, and `run` and the deprecated aliases check their own
+ * request argument (AUD-P2-4).
+ */
+export async function handleConsult(
+  toolName: string,
+  args: ToolArguments,
+  workspaceCwd: string,
+  abortSignal: AbortSignal | null = null,
+  onProgress: ToolProgress = null,
+  options: ConsultOptions = {},
+) {
+  const mode = resolveExecutionMode(args.mode, 'sync');
+  const config = loadConfig();
+  const limits = resolveExecutionLimits(config);
+  const resolvedTimeoutMs =
+    args.timeout_ms !== undefined || !options.budget ? resolveTurnTimeout(mode, args.timeout_ms, limits) : undefined;
+  if (mode === 'async') {
+    const publicInput = args.proposal + (args.specific_questions ? '\n' + args.specific_questions : '');
+    const started = await startBackgroundTask({
+      role: 'consult',
+      publicInput,
+      args,
+      cwd: workspaceCwd,
+      scope: [],
+      fingerprintInput: {
+        proposal: args.proposal,
+        task_type: args.task_type,
+        context_files: args.context_files,
+        file_paths: args.file_paths,
+        specific_questions: args.specific_questions,
+      },
+      requestId: typeof args.request_id === 'string' && args.request_id ? args.request_id : undefined,
+      requestSignal: abortSignal,
+      root: { limits: config.rootLimits },
+      limits,
+      format: formatTaskOutcome,
+      options: { requireEnvelope: false, askConsent: options.askConsent, warnings: options.warnings, clock: options.clock },
+      run: env =>
+        executeConsult(args, workspaceCwd, env.signal, null, {
+          warnings: options.warnings,
+          askConsent: options.askConsent,
+          clock: options.clock,
+          onTiming: options.onTiming,
+          budget: env.budget,
+          context: env.context,
+          onTurnStart: env.onTurnStart,
+          beforeExtraTurn: env.beforeRound,
+        }),
+    });
+    if ('outcome' in started) return formatExecutionResult(started.outcome);
+    return formatTaskStarted(started.task, { role: 'consult', clientName: options.clientName });
+  }
+  const syncArgs = resolvedTimeoutMs !== undefined ? { ...args, timeout_ms: resolvedTimeoutMs } : args;
+  return formatExecutionResult(await executeConsult(syncArgs, workspaceCwd, abortSignal, onProgress, options));
 }

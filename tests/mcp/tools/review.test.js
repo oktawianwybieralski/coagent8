@@ -9,6 +9,7 @@ const { execFileSync } = require('node:child_process');
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-review-'));
 process.env.coagent8_DIR = path.join(tempDir, 'data');
 const { adapterRegistry } = require('../../../src/backends/registry.ts');
+require('../../../src/execution/controller.ts').composeExecutionCancellation();
 const { handleReview } = require('../../../src/mcp/tools/review.tool.ts');
 const { saveConfig } = require('../../../src/config.ts');
 const { readResult } = require('../../helpers/result.cjs');
@@ -585,5 +586,163 @@ test('Issue #20: handleReview on agy recovers automatically from an initial sand
     else process.env.AGY_PATH = originalAgyPath;
     delete process.env.coagent8_FIXTURE_MODE;
     delete process.env.coagent8_FIXTURE_RECOVER_RESPONSE;
+  }
+});
+
+test('review mode: async returns a task handle, runs checks/snapshot/gate identically, and exposes verdict via task/wait (#246)', async () => {
+  const { handleSession, handleCancelSession } = require('../../../src/mcp/tools/session.tool.ts');
+  const { stopActiveDelegations } = require('../../../src/execution/delegation.ts');
+  const { readTask } = require('../../../src/sessions/tasks.ts');
+  const { runWaitCli } = require('../../../src/sessions/wait-cli.ts');
+  const { setTimeout: delay } = require('node:timers/promises');
+
+  const repo = path.join(tempDir, 'repo-review-async');
+  fs.mkdirSync(repo);
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
+  git('init', '-q');
+  git('config', 'user.name', 'Fixture');
+  git('config', 'user.email', 'fixture@example.invalid');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 1;\n');
+  git('add', '.');
+  git('commit', '-qm', 'base');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 2;\n');
+
+  const original = adapterRegistry.agy;
+  const recordedTimeouts = [];
+  let holdExecute = null;
+  let mutateDuringTurn = false;
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ id: 'agy', installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async (prompt, options) => {
+      recordedTimeouts.push(options.timeoutMs);
+      if (holdExecute) {
+        const aborted = await new Promise(resolve => {
+          holdExecute.resolve = () => resolve(false);
+          options.abortSignal?.addEventListener('abort', () => resolve(true), { once: true });
+        });
+        if (aborted) {
+          return {
+            status: 'cancelled',
+            isError: true,
+            truncated: false,
+            continuationAvailable: false,
+            error: { code: 'ABORTED', message: 'cancelled', retryable: false },
+            output: '',
+          };
+        }
+      }
+      if (mutateDuringTurn) fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 99;\n');
+      const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)[1];
+      return {
+        status: 'completed',
+        isError: false,
+        truncated: false,
+        continuationAvailable: true,
+        nativeSessionId: '11111111-2222-3333-4444-555555555566',
+        model: 'fixture-model',
+        output: [
+          'REVIEW: 1',
+          `SNAPSHOT: ${snapshot}`,
+          'COVERAGE: COMPLETE',
+          'VERDICT: READY',
+          'Reviewed: a.ts',
+          'CHECKS: typecheck=PASS; tests=PASS',
+        ].join('\n'),
+      };
+    },
+  };
+
+  const waitTask = async taskHandle => {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const task = readTask(taskHandle);
+      if (task && task.state !== 'running') return task;
+      assert.ok(Date.now() < deadline, 'async review finished in time');
+      await delay(25);
+    }
+  };
+
+  try {
+    await saveConfig({
+      defaultBackend: 'agy',
+      routing: { strategy: 'fixed', allowedBackends: ['agy'] },
+      allowedChecks: ['node -e "process.exit(0)"'],
+    });
+
+    // 1. Sync review refuses > 1,800,000 ms naming the limit; async accepts up to 14,400,000 ms and refuses larger.
+    await assert.rejects(
+      handleReview('review', { timeout_ms: 1_800_001 }, repo),
+      err => err.code === 'INPUT_LIMIT' && err.message.includes('1800000'),
+    );
+    await assert.rejects(
+      handleReview('review', { mode: 'async', timeout_ms: 14_400_001 }, repo),
+      err => err.code === 'INPUT_LIMIT' && err.message.includes('14400000'),
+    );
+
+    // 2. Async review returns a task handle immediately while running, then stores result + server verdict.
+    holdExecute = {};
+    const started = await handleReview(
+      'review',
+      { mode: 'async', checks: ['node -e "process.exit(0)"'], timeout_ms: 7_200_000 },
+      repo,
+      null,
+      null,
+      { clientName: 'claude-code' },
+    );
+    const { taskHandle, sessionHandle, wakeup, waitArgv, timeoutMs, timeoutBound } = started.structuredContent;
+    assert.match(taskHandle, /^task_[a-f0-9]{32}$/);
+    assert.match(sessionHandle, /^syn_sess_/);
+    assert.equal(wakeup, 'background_wait');
+    assert.equal(timeoutMs, 7_200_000);
+    assert.equal(timeoutBound, 'timeout_ms');
+    assert.equal(waitArgv[2], 'wait');
+    assert.equal(readTask(taskHandle).state, 'running');
+    assert.ok(recordedTimeouts.at(-1) > 7_000_000 && recordedTimeouts.at(-1) <= 7_200_000);
+
+    holdExecute.resolve();
+    holdExecute = null;
+    const finished = await waitTask(taskHandle);
+    assert.equal(finished.state, 'completed');
+    assert.equal(finished.review?.verdict, 'READY');
+    assert.match(finished.result.text, /Verdict: READY/);
+    assert.match(finished.result.text, /Budget: 7200000 ms \(timeout_ms\)/);
+
+    const taskRead = await handleSession({ action: 'task', task_handle: taskHandle }, repo);
+    assert.equal(taskRead.structuredContent.state, 'completed');
+    assert.equal(taskRead.structuredContent.review?.verdict, 'READY');
+    assert.match(taskRead.content[0].text, /Verdict: READY/);
+
+    const chunks = [];
+    const exitCode = await runWaitCli([taskHandle], { write: c => chunks.push(String(c)) }, { write: () => {} });
+    assert.equal(exitCode, 0);
+    assert.match(chunks.join(''), /Verdict: READY/);
+
+    // 3. Snapshot verification in async mode blocks READY if workspace mutates during the turn.
+    fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 3;\n');
+    mutateDuringTurn = true;
+    const mutatedStart = await handleReview('review', { mode: 'async' }, repo);
+    mutateDuringTurn = false;
+    assert.equal(mutatedStart.structuredContent.timeoutMs, 3_600_000);
+    assert.equal(mutatedStart.structuredContent.timeoutBound, 'async_default');
+    const mutatedDone = await waitTask(mutatedStart.structuredContent.taskHandle);
+    assert.equal(mutatedDone.state, 'completed');
+    assert.equal(mutatedDone.review?.verdict, 'BLOCKED');
+    assert.match(mutatedDone.result.text, /Verdict: BLOCKED/);
+    assert.match(mutatedDone.result.text, /Review workspace or input changed during the turn/i);
+
+    // 4. Async review can be cancelled cleanly via session_handle.
+    fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 4;\n');
+    holdExecute = {};
+    const cancelStart = await handleReview('review', { mode: 'async' }, repo);
+    await handleCancelSession({ session_handle: cancelStart.structuredContent.sessionHandle, workspace_path: repo });
+    holdExecute = null;
+    const cancelDone = await waitTask(cancelStart.structuredContent.taskHandle);
+    assert.equal(cancelDone.state, 'cancelled');
+    assert.match(cancelDone.result.text, /Verdict: BLOCKED/);
+  } finally {
+    await stopActiveDelegations();
+    adapterRegistry.agy = original;
   }
 });

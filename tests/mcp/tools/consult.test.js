@@ -275,3 +275,147 @@ test('AX-001g: the footer shows the turn usage with the list price of the exact-
     adapterRegistry.agy = original;
   }
 });
+
+test('consult mode: async returns a task handle, defaults to 60m up to 4h, and sync keeps 15m/30m (#246)', async () => {
+  const { handleSession, handleCancelSession } = require('../../../src/mcp/tools/session.tool.ts');
+  const { stopActiveDelegations } = require('../../../src/execution/delegation.ts');
+  const { readTask } = require('../../../src/sessions/tasks.ts');
+  const { runWaitCli } = require('../../../src/sessions/wait-cli.ts');
+  const { setTimeout: delay } = require('node:timers/promises');
+
+  const original = adapterRegistry.agy;
+  const recordedTimeouts = [];
+  let holdExecute = null;
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ id: 'agy', installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async (_prompt, options) => {
+      recordedTimeouts.push(options.timeoutMs);
+      if (holdExecute) {
+        const aborted = await new Promise(resolve => {
+          holdExecute.resolve = () => resolve(false);
+          options.abortSignal?.addEventListener('abort', () => resolve(true), { once: true });
+        });
+        if (aborted) {
+          return {
+            status: 'cancelled',
+            isError: true,
+            truncated: false,
+            continuationAvailable: false,
+            error: { code: 'ABORTED', message: 'cancelled', retryable: false },
+            output: '',
+          };
+        }
+      }
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'Async consult opinion',
+        nativeSessionId: randomUUID(),
+        model: 'fixture-model',
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
+
+  const waitTask = async taskHandle => {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const task = readTask(taskHandle);
+      if (task && task.state !== 'running') return task;
+      assert.ok(Date.now() < deadline, 'async consult finished in time');
+      await delay(25);
+    }
+  };
+
+  try {
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+
+    // Sync keeps 15m default and 30m cap.
+    await handleConsult('consult', { proposal: 'Sync default' }, tempDir);
+    assert.ok(recordedTimeouts.at(-1) > 850_000 && recordedTimeouts.at(-1) <= 900_000);
+    await assert.rejects(
+      handleConsult('consult', { proposal: 'Too long sync', timeout_ms: 1_800_001 }, tempDir),
+      err => err.code === 'INPUT_LIMIT' && err.message.includes('1800000'),
+    );
+
+    // Async defaults to 60m, accepts up to 4h, and refuses > 14,400,000 ms.
+    await assert.rejects(
+      handleConsult('consult', { proposal: 'Too long async', mode: 'async', timeout_ms: 14_400_001 }, tempDir),
+      err => err.code === 'INPUT_LIMIT' && err.message.includes('14400000'),
+    );
+
+    holdExecute = {};
+    const started = await handleConsult('consult', { proposal: 'Deep async analysis', mode: 'async' }, tempDir, null, null, {
+      clientName: 'claude-code',
+    });
+    const { taskHandle, sessionHandle, wakeup, waitArgv, timeoutMs, timeoutBound } = started.structuredContent;
+    assert.match(taskHandle, /^task_[a-f0-9]{32}$/);
+    assert.match(sessionHandle, /^syn_sess_/);
+    assert.equal(wakeup, 'background_wait');
+    assert.equal(timeoutMs, 3_600_000);
+    assert.equal(timeoutBound, 'async_default');
+    assert.equal(waitArgv[2], 'wait');
+    assert.equal(readTask(taskHandle).state, 'running');
+    assert.ok(recordedTimeouts.at(-1) > 3_500_000 && recordedTimeouts.at(-1) <= 3_600_000);
+
+    holdExecute.resolve();
+    holdExecute = null;
+    const done = await waitTask(taskHandle);
+    assert.equal(done.state, 'completed');
+    assert.match(done.result.text, /Async consult opinion/);
+    assert.match(done.result.text, /Budget: 3600000 ms \(async default\)/);
+
+    const taskRead = await handleSession({ action: 'task', task_handle: taskHandle }, tempDir);
+    assert.equal(taskRead.structuredContent.state, 'completed');
+    assert.match(taskRead.content[0].text, /Async consult opinion/);
+
+    const chunks = [];
+    const exitCode = await runWaitCli([taskHandle], { write: c => chunks.push(String(c)) }, { write: () => {} });
+    assert.equal(exitCode, 0);
+    assert.match(chunks.join(''), /Async consult opinion/);
+
+    // Through MCP server: mode async with 14,400,000 works, > 14,400,000 fails with INPUT_LIMIT naming 14400000.
+    const call = createServer()._requestHandlers.get('tools/call');
+    const mcpStarted = await call(
+      {
+        method: 'tools/call',
+        params: {
+          name: 'consult',
+          arguments: { proposal: 'MCP async', mode: 'async', timeout_ms: 14_400_000, workspace_path: tempDir },
+        },
+      },
+      { signal: new AbortController().signal },
+    );
+    assert.equal(mcpStarted.structuredContent.timeoutMs, 14_400_000);
+    await waitTask(mcpStarted.structuredContent.taskHandle);
+
+    const mcpRejected = readResult(
+      await call(
+        {
+          method: 'tools/call',
+          params: {
+            name: 'consult',
+            arguments: { proposal: 'MCP async over cap', mode: 'async', timeout_ms: 14_400_001, workspace_path: tempDir },
+          },
+        },
+        { signal: new AbortController().signal },
+      ),
+    );
+    assert.equal(mcpRejected.error?.code, 'INPUT_LIMIT');
+    assert.match(mcpRejected.error.message, /14400000/);
+
+    // Cancel async consult via session_handle.
+    holdExecute = {};
+    const cancelledStart = await handleConsult('consult', { proposal: 'Cancel me', mode: 'async' }, tempDir);
+    await handleCancelSession({ session_handle: cancelledStart.structuredContent.sessionHandle, workspace_path: tempDir });
+    holdExecute = null;
+    const cancelledDone = await waitTask(cancelledStart.structuredContent.taskHandle);
+    assert.equal(cancelledDone.state, 'cancelled');
+  } finally {
+    await stopActiveDelegations();
+    adapterRegistry.agy = original;
+  }
+});

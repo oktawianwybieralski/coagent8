@@ -14,7 +14,7 @@ import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {
   name: CANONICAL_TOOL_NAMES.SESSION,
-  description: 'List, page history, close sessions; read a delegate task.',
+  description: 'List, page history, close sessions; read a task or root.',
   inputSchema: {
     type: 'object',
     properties: {

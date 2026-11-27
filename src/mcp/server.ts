@@ -43,6 +43,8 @@ import { composeExecutionCancellation, type ConsentPrompt } from '../execution/c
 import type { CheckApprovalPrompt } from '../execution/checks.js';
 import { providerForClient, setCallerProvider } from '../execution/routing.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
+import { resolveExecutionLimits, resolveTurnTimeout } from '../config.js';
+import { resolveExecutionMode } from './tools/async-task.js';
 import type { ToolArguments } from './arguments.js';
 
 export { SERVER_INSTRUCTIONS };
@@ -462,8 +464,10 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
         }
       }
       if (executionNames.has(name) && !(name === CANONICAL_TOOL_NAMES.RUN && args.action === 'issue')) {
+        const mode = resolveExecutionMode(args.mode, name === CANONICAL_TOOL_NAMES.DELEGATE ? 'async' : 'sync');
+        const resolvedTimeoutMs = resolveTurnTimeout(mode, args.timeout_ms, resolveExecutionLimits());
         budget = createExecutionBudget({
-          totalBudgetMs: typeof args.timeout_ms === 'number' && Number.isFinite(args.timeout_ms) ? args.timeout_ms : undefined,
+          totalBudgetMs: resolvedTimeoutMs,
           parentSignal: extra.signal,
           clock: serverClock,
         });
@@ -506,12 +510,19 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
           return withWorkspace(
             await handleReview(name, args, cwd, extra.signal, progress, {
               ...execOptions,
+              clientName: server.getClientVersion()?.name,
               askChecks: checkApprovalPrompt(budget, 'review'),
             }),
             workspace,
           );
         case CANONICAL_TOOL_NAMES.CONSULT:
-          return withWorkspace(await handleConsult(name, args, cwd, extra.signal, progress, execOptions), workspace);
+          return withWorkspace(
+            await handleConsult(name, args, cwd, extra.signal, progress, {
+              ...execOptions,
+              clientName: server.getClientVersion()?.name,
+            }),
+            workspace,
+          );
         case CANONICAL_TOOL_NAMES.DELEGATE:
           // The schema validated `scope` and `checks` as string lists.
           return withWorkspace(

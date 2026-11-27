@@ -28,6 +28,9 @@ export interface ToolArguments extends ExecutionRequest {
   delete_history?: boolean;
   cursor?: string;
   limit?: number;
+  mode?: 'async' | 'sync';
+  request_id?: string;
+  checks?: string[];
 }
 
 /** Public progress only; private provider output never belongs in this callback. */

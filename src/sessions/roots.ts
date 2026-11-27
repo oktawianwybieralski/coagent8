@@ -308,12 +308,13 @@ export function rootRunningMs(root: RootRecord, now = rootNow(root)): number {
  * @param continuation - The task continues a session of this root, which may use the grace minutes.
  * @returns The milliseconds of running time left to it.
  */
-function assertUsable(record: RootRecord, now: number, continuation = false): number {
+function assertUsable(record: RootRecord, now: number, continuation = false): { remainingMs: number; baseRemainingMs: number } {
   if (record.state === 'cancelled') throw new ToolError('ABORTED', `Root ${record.rootHandle} was cancelled.`);
   const grace = rootGraceMinutes(record);
   const usedMs = rootRunningMs(record, now);
-  const remainingMs = (record.limits.maxMinutes + (continuation ? grace : 0)) * 60_000 - usedMs;
-  if (remainingMs > 0) return remainingMs;
+  const baseRemainingMs = record.limits.maxMinutes * 60_000 - usedMs;
+  const remainingMs = baseRemainingMs + (continuation ? grace : 0) * 60_000;
+  if (remainingMs > 0) return { remainingMs, baseRemainingMs };
   const counted = 'counted while its tasks run, not between calls';
   const raise = `For more, raise rootLimits.maxMinutes (up to ${ROOT_LIMIT_BOUNDS.maxMinutes}) or rootLimits.graceMinutes in ${getConfigFile()}; it applies to new roots.`;
   // Past the grace too, a continuation would be refused as well, so the advice to continue is left out.
@@ -355,11 +356,19 @@ function charge(record: RootRecord): void {
 export function reserveRootTask(
   handle: string,
   request: { taskHandle: string; parentTask?: string; continues?: string },
-): Promise<{ depth: number; parentTask?: string; deadlineMs: number }> {
+): Promise<{
+  depth: number;
+  parentTask?: string;
+  deadlineMs: number;
+  remainingMs: number;
+  baseRemainingMs: number;
+  continuation: boolean;
+}> {
   return updateRoot(handle, (record, now) => {
     // A continuation is classified once, here, and its entry keeps the class for its later rounds.
     const earlier = request.continues ? record.tasks.findLast(task => task.sessionHandle === request.continues) : undefined;
-    const remainingMs = assertUsable(record, now, Boolean(earlier));
+    const continuation = Boolean(earlier);
+    const { remainingMs, baseRemainingMs } = assertUsable(record, now, continuation);
     if (record.tasks.some(task => task.taskHandle === request.taskHandle && isRootTaskActive(task))) {
       throw new ToolError('SESSION_BUSY', `Task ${request.taskHandle} is already starting in this root.`);
     }
@@ -395,7 +404,14 @@ export function reserveRootTask(
       startedAt: new Date(now).toISOString(),
     });
     // What is left is a length, so the deadline is on this process's clock, which its caller compares with.
-    return { depth, ...(parentTask ? { parentTask } : {}), deadlineMs: Date.now() + remainingMs };
+    return {
+      depth,
+      ...(parentTask ? { parentTask } : {}),
+      deadlineMs: Date.now() + remainingMs,
+      remainingMs,
+      baseRemainingMs,
+      continuation,
+    };
   });
 }
 

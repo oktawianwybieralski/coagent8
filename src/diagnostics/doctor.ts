@@ -1,6 +1,12 @@
 import { probeBackend, readModelCatalog, readTurnSuccess } from '../backends/probe-cache.js';
 import { decideReadiness, READINESS_LABEL, type BackendReadiness } from './readiness.js';
-import { loadConfigSnapshotForDiagnostics, recordDefaultModel, type ConfigProvenance, type ConfigSnapshot } from '../config.js';
+import {
+  loadConfigSnapshotForDiagnostics,
+  recordDefaultModel,
+  resolveExecutionLimits,
+  type ConfigProvenance,
+  type ConfigSnapshot,
+} from '../config.js';
 import { PROVIDERS, ToolError, type ProviderId, type ModelCatalog } from '../contracts/index.js';
 import { inspectQuotas } from '../backends/availability.js';
 import { catalogNames, listModelCandidates, type ModelCandidate, type ModelSelection, type ModelSource } from '../models/selection.js';
@@ -22,6 +28,7 @@ import {
   DEFAULT_DIAGNOSTIC_TIMEOUT_MS,
   type TimingObserver,
   type MonotonicClock,
+  type ExecutionLimits,
   type ExecutionTrace,
   type ExecutionBudget,
   type BackendReadContext,
@@ -121,6 +128,8 @@ export interface DoctorReport {
   configError?: string;
   /** Provenance and change identity of the configuration snapshot used for diagnostics. */
   configProvenance?: DoctorConfigProvenance;
+  /** Effective turn timeout limits in milliseconds. */
+  limits: ExecutionLimits;
   /**
    * MCP servers and plugins a backend's turns would offer the model (agy, `CUR-002`); only
    * backends that report any. On Windows agy's are those of CoAgent8's agy profile, see `agyProfile`.
@@ -203,6 +212,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   try {
     const snapshot = loadConfigSnapshotForDiagnostics();
     const { config, error: configError } = snapshot;
+    const limits = resolveExecutionLimits(config);
     const configProvenance: DoctorConfigProvenance = {
       path: redactDiagnostic(snapshot.provenance.configFile),
       origin: snapshot.provenance.configFileOrigin,
@@ -224,6 +234,11 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     if (configProvenance.attemptedOverrides?.length) {
       configNotes.push(
         `configuration: ${configProvenance.attemptedOverrides.length} editor setting(s) present but inactive due to configuration error (${configProvenance.attemptedOverrides.join(', ')})`,
+      );
+    }
+    if (config.limits) {
+      configNotes.push(
+        `limits: sync ${limits.syncDefaultMs} ms (max ${limits.syncMaxMs} ms), async ${limits.asyncDefaultMs} ms (max ${limits.asyncMaxMs} ms)`,
       );
     }
     const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
@@ -516,6 +531,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
       ...(jobHelperState ? { windowsJobHelper: jobHelperState } : {}),
       ...(configError ? { configError } : {}),
       configProvenance,
+      limits,
       inheritedTools,
       ...(agyProfile ? { agyProfile } : {}),
       trace,
@@ -756,6 +772,8 @@ export interface ModelReport {
   recommendations: string[];
   /** Provenance and change identity of the configuration snapshot used for diagnostics. */
   configProvenance?: DoctorConfigProvenance;
+  /** Effective turn timeout limits in milliseconds. */
+  limits: ExecutionLimits;
   trace?: ExecutionTrace;
 }
 
@@ -810,6 +828,7 @@ export async function runModelReport(options: DoctorOptions = {}): Promise<Model
   try {
     const snapshot = loadConfigSnapshotForDiagnostics();
     const { config, error: configError } = snapshot;
+    const limits = resolveExecutionLimits(config);
     const configProvenance: DoctorConfigProvenance = {
       path: redactDiagnostic(snapshot.provenance.configFile),
       origin: snapshot.provenance.configFileOrigin,
@@ -831,6 +850,11 @@ export async function runModelReport(options: DoctorOptions = {}): Promise<Model
     if (configProvenance.attemptedOverrides?.length) {
       configNotes.push(
         `configuration: ${configProvenance.attemptedOverrides.length} editor setting(s) present but inactive due to configuration error (${configProvenance.attemptedOverrides.join(', ')})`,
+      );
+    }
+    if (config.limits) {
+      configNotes.push(
+        `limits: sync ${limits.syncDefaultMs} ms (max ${limits.syncMaxMs} ms), async ${limits.asyncDefaultMs} ms (max ${limits.asyncMaxMs} ms)`,
       );
     }
     const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
@@ -963,6 +987,7 @@ export async function runModelReport(options: DoctorOptions = {}): Promise<Model
       ),
       recommendations: [...recommendations, ...configNotes, ...observerNotes],
       configProvenance,
+      limits,
       trace,
     };
   } finally {

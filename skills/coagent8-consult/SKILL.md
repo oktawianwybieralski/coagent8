@@ -27,7 +27,16 @@ the conversation.
    the price list added each model.
 4. For a follow-up on the same topic pass the `session_handle` from the result
    footer. A call without it starts a fresh agent that rereads everything.
-5. Before calling a model that `coagent8-doctor` tags `ask` (expensive,
+5. **Sync vs async and waiting.** By default `consult` runs synchronously
+   (`mode: "sync"`, default 15 minutes / cap 30 minutes `timeout_ms`). For deep or
+   long-running analysis, pass `mode: "async"` (default 60 minutes / cap 4 hours
+   `timeout_ms`, configurable under `limits` in `config.json`): it returns
+   `task_handle`, `session_handle`, `budget`, `wakeup` and `wait_argv` once the
+   turn starts. With `wakeup: background_wait`, start `wait_argv` verbatim as a
+   background command (with `wait_env` when present) to wake when it exits;
+   otherwise read the result later with `session` (`action: "task"`) or run
+   `wait_argv`.
+6. Before calling a model that `coagent8-doctor` tags `ask` (expensive,
    unpriced or on the user's ask list), tell the user its price and that the
    server will show an approval form, and let them choose it or a cheaper model.
    Never call a model tagged `deny`: the user denied it. Their answer in chat is

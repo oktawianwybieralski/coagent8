@@ -14,7 +14,9 @@ import { combineSignals } from '../../storage/lock.js';
 import { ToolError } from '../../contracts/error.js';
 import { approveChecks, parseCheckCommand, runCheck, type CheckApprovalPrompt } from '../../execution/checks.js';
 import type { CheckResult } from '../../contracts/execution.js';
-import { loadConfig } from '../../config.js';
+import { loadConfig, resolveExecutionLimits, resolveTurnTimeout } from '../../config.js';
+import { startBackgroundTask } from '../../execution/delegation.js';
+import { formatTaskOutcome, formatTaskStarted, resolveExecutionMode } from './async-task.js';
 import { snapshotRoot, withReviewSnapshot, type ReviewSnapshot } from '../../review/snapshot.js';
 import { redactDiagnostic } from '../../security/redaction.js';
 import { MAX_REVIEW_PARTS, splitReviewDiff, type ReviewPart } from '../../review/parts.js';
@@ -26,7 +28,7 @@ export function getCanonicalReviewToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.REVIEW,
     description:
-      'Independent review of Git changes: findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)". Separate reviewer; checks run on the server; an unchanged complete repeat cannot help.',
+      'Independent review of Git changes with server Verdict: READY or BLOCKED. Sync by default; mode async returns a task_handle (wait_argv or session task).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -39,6 +41,7 @@ export function getCanonicalReviewToolDefinition() {
         // Said in full on consult; the budget of the tool definitions counts every copy.
         backend: { ...EXECUTION_PARAMETERS.backend, description: 'As in consult.' },
         reasoning_effort: { ...EXECUTION_PARAMETERS.reasoning_effort, description: 'As in consult.' },
+        mode: { ...EXECUTION_PARAMETERS.mode, description: 'sync (default) or async; see consult.' },
       },
     },
   };
@@ -51,6 +54,8 @@ export function getCanonicalReviewToolDefinition() {
  * When the collected snapshot, scope, backend and model match a completed review in a live
  * session of the same workspace, no model turn is started and the refusal footer retains the
  * workspace's valid `session_handle` so the caller can read history or continue after editing.
+ * When `mode` is `'async'`, returns a task handle immediately once the turn starts and stores the
+ * formatted review (including the server verdict) on the task record.
  */
 export async function handleReview(
   toolName: string,
@@ -60,7 +65,44 @@ export async function handleReview(
   onProgress: ToolProgress = null,
   options: ReviewOptions = {},
 ) {
-  return formatExecutionResult(await executeReview(args, workspaceCwd, abortSignal, onProgress, options));
+  const mode = resolveExecutionMode(args.mode, 'sync');
+  const config = loadConfig();
+  const limits = resolveExecutionLimits(config);
+  const resolvedTimeoutMs =
+    args.timeout_ms !== undefined || !options.budget ? resolveTurnTimeout(mode, args.timeout_ms, limits) : undefined;
+  if (mode === 'async') {
+    const scopeLabel = args.scope || args.target || 'uncommitted';
+    const instructions = args.instructions || 'Review correctness, security, edge cases and architecture.';
+    const started = await startBackgroundTask({
+      role: 'review',
+      publicInput: `Review ${scopeLabel}\n${instructions}`,
+      args,
+      cwd: workspaceCwd,
+      scope: [],
+      fingerprintInput: { scope: scopeLabel, instructions, checks: args.checks },
+      requestId: typeof args.request_id === 'string' && args.request_id ? args.request_id : undefined,
+      requestSignal: abortSignal,
+      root: { limits: config.rootLimits },
+      limits,
+      format: formatTaskOutcome,
+      options: { requireEnvelope: true, askConsent: options.askConsent, clock: options.clock },
+      run: env =>
+        executeReview(args, workspaceCwd, env.signal, null, {
+          askConsent: options.askConsent,
+          askChecks: options.askChecks,
+          clock: options.clock,
+          onTiming: options.onTiming,
+          budget: env.budget,
+          context: env.context,
+          onTurnStart: env.onTurnStart,
+          beforeExtraTurn: env.beforeRound,
+        }),
+    });
+    if ('outcome' in started) return formatExecutionResult(started.outcome);
+    return formatTaskStarted(started.task, { role: 'review', clientName: options.clientName });
+  }
+  const syncArgs = resolvedTimeoutMs !== undefined ? { ...args, timeout_ms: resolvedTimeoutMs } : args;
+  return formatExecutionResult(await executeReview(syncArgs, workspaceCwd, abortSignal, onProgress, options));
 }
 
 /** Per-call options of a review. */
@@ -68,6 +110,8 @@ export type ReviewOptions = Pick<TaskOptions, 'askConsent' | 'onTurnStart' | 'be
   CallScopeOptions & {
     /** Asks the user about checks outside `allowedChecks`; absent when the client has no form. */
     askChecks?: CheckApprovalPrompt;
+    /** Connected MCP client name for wake-up capability detection in async mode. */
+    clientName?: string;
   };
 
 /** Runs a review, as {@link handleReview} describes, and returns its outcome unformatted. */

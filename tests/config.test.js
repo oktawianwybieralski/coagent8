@@ -461,3 +461,83 @@ test('setDefaultModel writes and replaces the backend default, rejects invalid o
     else process.env[EDITOR_SETTINGS_ENV] = savedEditorEnv;
   }
 });
+
+test('limits configuration validates bounds, sync/async ordering, VS Code schema, and doctor reporting (#246)', async () => {
+  const { resolveExecutionLimits, resolveTurnTimeout } = require('../src/config.ts');
+  const { DEFAULT_EXECUTION_LIMITS, EXECUTION_LIMIT_BOUNDS } = require('../src/contracts/execution.ts');
+  const { runDoctor, runModelReport, formatDoctorSummary } = require('../src/diagnostics/doctor.ts');
+  const { adapterRegistry } = require('../src/backends/registry.ts');
+  const schemaLimits = require('../extensions/vscode/schemas/config.schema.json').properties.limits;
+
+  // Defaults match built-in limits.
+  assert.deepEqual(resolveExecutionLimits(validateConfig({})), DEFAULT_EXECUTION_LIMITS);
+  assert.equal(resolveTurnTimeout('sync', undefined), 900_000);
+  assert.equal(resolveTurnTimeout('async', undefined), 3_600_000);
+  assert.equal(resolveTurnTimeout('sync', 1_800_000), 1_800_000);
+  assert.equal(resolveTurnTimeout('async', 14_400_000), 14_400_000);
+  assert.throws(() => resolveTurnTimeout('sync', 1_800_001), /1800000 ms/);
+  assert.throws(() => resolveTurnTimeout('async', 14_400_001), /14400000 ms/);
+
+  // VS Code schema matches contracts.
+  assert.equal(schemaLimits.additionalProperties, false);
+  for (const [key, bounds] of Object.entries(EXECUTION_LIMIT_BOUNDS)) {
+    const prop = schemaLimits.properties[key];
+    assert.ok(prop, `schema has limits.${key}`);
+    assert.equal(prop.type, 'integer');
+    assert.equal(prop.minimum, bounds.min);
+    assert.equal(prop.maximum, bounds.max);
+    assert.equal(prop.default, DEFAULT_EXECUTION_LIMITS[key]);
+  }
+
+  // Rejects invalid shapes, unknown keys, non-integers, out-of-bounds, and default > max.
+  for (const limits of [
+    null,
+    [],
+    'fast',
+    { unknownKey: 1000 },
+    { syncDefaultMs: 99 },
+    { syncDefaultMs: 3_600_001 },
+    { syncMaxMs: 3_600_001 },
+    { syncMaxMs: 1000.5 },
+    { asyncDefaultMs: 99 },
+    { asyncDefaultMs: 86_400_001 },
+    { asyncMaxMs: 86_400_001 },
+    { syncDefaultMs: 2_000_000 }, // exceeds default syncMaxMs 1_800_000
+    { syncMaxMs: 500_000 }, // below default syncDefaultMs 900_000
+    { asyncDefaultMs: 15_000_000 }, // exceeds default asyncMaxMs 14_400_000
+    { asyncMaxMs: 1_000_000 }, // below default asyncDefaultMs 3_600_000
+    { syncDefaultMs: 2000, syncMaxMs: 1000 },
+    { asyncDefaultMs: 5000, asyncMaxMs: 4000 },
+  ]) {
+    assert.throws(() => validateConfig({ limits }), /Configuration Error: Invalid limits/, JSON.stringify(limits));
+  }
+
+  // Accepts valid custom limits and persists them across saveConfig/loadConfig.
+  const custom = { syncDefaultMs: 60_000, syncMaxMs: 120_000, asyncDefaultMs: 1_800_000, asyncMaxMs: 28_800_000 };
+  const saved = await saveConfig({ ...loadConfig(), limits: custom });
+  assert.deepEqual(saved.limits, custom);
+  assert.deepEqual(resolveExecutionLimits(), custom);
+  assert.equal(resolveTurnTimeout('sync', undefined, custom), 60_000);
+  assert.equal(resolveTurnTimeout('async', undefined, custom), 1_800_000);
+  assert.throws(() => resolveTurnTimeout('sync', 120_001, custom), /120000 ms/);
+  assert.throws(() => resolveTurnTimeout('async', 28_800_001, custom), /28800000 ms/);
+
+  // Doctor reports effective limits in full reports and notes custom limits in summary.
+  const orig = { ...adapterRegistry };
+  for (const id of ['codex', 'claude', 'agy']) {
+    adapterRegistry[id] = { ...orig[id], probe: async () => ({ id, installed: false }) };
+  }
+  try {
+    const modelReport = await runModelReport();
+    assert.deepEqual(modelReport.limits, custom);
+    assert.ok(
+      modelReport.recommendations.some(r => r.includes('limits: sync 60000 ms (max 120000 ms), async 1800000 ms (max 28800000 ms)')),
+    );
+    const healthReport = await runDoctor({ quota: false });
+    assert.deepEqual(healthReport.limits, custom);
+    assert.match(formatDoctorSummary(healthReport), /limits: sync 60000 ms \(max 120000 ms\), async 1800000 ms \(max 28800000 ms\)/);
+  } finally {
+    Object.assign(adapterRegistry, orig);
+    await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] } });
+  }
+});

@@ -12,7 +12,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ToolError } from '../contracts/index.js';
+import { ToolError, type TaskRole, type TimeoutBound } from '../contracts/index.js';
 import { getDataDir } from '../paths.js';
 import { atomicWrite, withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
@@ -24,6 +24,8 @@ export interface DelegationTask {
   schemaVersion: 1;
   taskHandle: string;
   state: TaskState;
+  /** Tool role that started the task; omitted in records written before `review` and `consult` added async mode. */
+  role?: TaskRole;
   workspace: string;
   sessionHandle: string;
   backend: string;
@@ -46,7 +48,16 @@ export interface DelegationTask {
   depth?: number;
   /** Workspace-relative paths the worker may change; empty or absent means the whole workspace. */
   scope?: readonly string[];
-  /** The complete result as the delegate tool formats it, written before the state turns terminal. */
+  /** Effective turn budget in milliseconds when the task started. */
+  timeoutMs?: number;
+  /** Which limit bounded `timeoutMs`. */
+  timeoutBound?: TimeoutBound;
+  /** Server-derived review verdict for `review` tasks. */
+  review?: {
+    verdict: 'READY' | 'BLOCKED' | 'NOT_APPLICABLE';
+    reason?: string;
+  };
+  /** The complete result as the tool formats it, written before the state turns terminal. */
   result?: { text: string; isError: boolean };
 }
 
@@ -301,8 +312,11 @@ export function readTask(handle: string): DelegationTask | null {
  */
 export function finishedTaskText(task: DelegationTask): string {
   if (task.state !== 'interrupted') return task.result?.text ?? 'The worker ended without a result.';
+  const kind = task.role === 'review' ? 'review' : task.role === 'consult' ? 'consult' : 'delegation';
   const warning =
-    'The server ended before this delegation finished. Its processes may still be running on Linux and macOS: check them, then inspect the work tree with git status before you edit or retry.';
+    kind === 'delegation'
+      ? 'The server ended before this delegation finished. Its processes may still be running on Linux and macOS: check them, then inspect the work tree with git status before you edit or retry.'
+      : `The server ended before this ${kind} finished. Its processes may still be running on Linux and macOS: check them before you retry.`;
   return task.result ? `${warning}\n\nStored before the server ended, not final:\n\n${task.result.text}` : warning;
 }
 
