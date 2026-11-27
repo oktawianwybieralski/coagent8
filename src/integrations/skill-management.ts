@@ -60,6 +60,8 @@ export interface SkillManagementOptions {
   selection?: SkillSelection;
   /** Applying a selection requires the current preview token. */
   apply?: string;
+  /** Package names the user confirmed to overwrite even when changed outside CoAgent8 or already current. */
+  overwrite?: string[];
 }
 
 function validateProfile(home: string, env: NodeJS.ProcessEnv): void {
@@ -153,6 +155,7 @@ export function reconcileSkills(
   selection: SkillSelection,
   origin?: RegistrationOrigin,
   expectedState?: string | null,
+  overwrite: string[] = [],
 ): SkillStatus[] {
   const state = path.join(home, '.coagent8', 'setup.json'),
     before = expectedState === undefined ? read(state) : expectedState;
@@ -161,15 +164,17 @@ export function reconcileSkills(
   const active = { ...saved.skills[client] },
     disabled = { ...saved.disabledSkills?.[client] };
   const targets: SkillTarget[] = [];
+  const overwriteSet = new Set(overwrite);
   const planned = inventory(client, home, catalog, saved, selection);
   for (const item of planned) {
-    if (item.state === 'conflict') {
+    const force = overwriteSet.has(item.name);
+    if (item.state === 'conflict' && !force) {
       statuses.push({ name: item.name, action: 'preserved', message: item.message });
       continue;
     }
     const content = catalog.find(pkg => pkg.name === item.name)!.content;
-    const unchanged = item.state === item.desired && !item.updateAvailable;
-    if (unchanged) {
+    const unchanged = item.state === item.desired && !item.updateAvailable && !force;
+    if (unchanged || (item.state === 'absent' && item.desired === 'absent')) {
       statuses.push({
         name: item.name,
         action: item.state === 'absent' ? 'absent' : 'current',
@@ -204,15 +209,23 @@ export function reconcileSkills(
       const root = target.disabled ? disabledSkillRoot(client, home) : skillRoot(client, home),
         record = target.disabled ? disabled : active;
       let result: SkillStatus;
+      const force = overwriteSet.has(target.name);
+      // Confirmed overwrites pass the observed file digest so installSkills/removeSkills replace edited copies atomically.
+      const seen = force ? observeSkill(path.join(root, target.name)) : undefined;
+      const ownedForTarget =
+        force && seen?.state === 'file'
+          ? { [target.name]: seen.digest }
+          : record[target.name]
+            ? { [target.name]: record[target.name] }
+            : {};
       if (target.content !== null) {
         const pkg = catalog.find(item => item.name === target.name)!;
-        const outcome = installSkills(client, home, [pkg], record[target.name] ? { [target.name]: record[target.name] } : {}, root);
+        const outcome = installSkills(client, home, [pkg], ownedForTarget, root);
         result = outcome.statuses[0];
         if (outcome.owned[target.name]) record[target.name] = outcome.owned[target.name];
       } else {
-        const owned = record[target.name] ? { [target.name]: record[target.name] } : {};
-        const preview = previewSkillRemoval(client, home, owned, root);
-        const outcome = removeSkills(client, home, owned, preview, root);
+        const preview = previewSkillRemoval(client, home, ownedForTarget, root);
+        const outcome = removeSkills(client, home, ownedForTarget, preview, root);
         result = outcome.statuses[0] ?? { name: target.name, action: 'absent', message: 'Not installed.' };
         if (!outcome.owned[target.name] && result.action !== 'preserved') delete record[target.name];
       }
@@ -347,6 +360,16 @@ export async function manageSkills(options: SkillManagementOptions): Promise<Ski
       new Set(selection.disabled).size !== selection.disabled.length)
   )
     throw new Error('Invalid skill selection; choose catalog names and a unique disabled subset.');
+  const overwrite = options.overwrite;
+  if (
+    overwrite !== undefined &&
+    (!Array.isArray(overwrite) ||
+      overwrite.some(name => typeof name !== 'string' || !catalog.some(item => item.name === name)) ||
+      new Set(overwrite).size !== overwrite.length)
+  )
+    throw new Error('Invalid skill overwrite list; choose unique catalog names.');
+  const overwriteList = overwrite ? [...overwrite].sort() : [];
+  const overwriteSet = new Set(overwriteList);
   const perform = async (): Promise<SkillManagementResult> => {
     if (options.apply !== undefined) recoverSkillTransaction(home);
     const stateSnapshot = read(path.join(root, 'setup.json'));
@@ -380,6 +403,7 @@ export async function manageSkills(options: SkillManagementOptions): Promise<Ski
         state: stateSnapshot,
         catalog: catalog.map(pkg => [pkg.name, pkg.digest]),
         desired,
+        ...(overwriteList.length ? { overwrite: overwriteList } : {}),
         observations,
       }),
     );
@@ -397,6 +421,7 @@ export async function manageSkills(options: SkillManagementOptions): Promise<Ski
       skills.some(
         item =>
           item.state === 'conflict' &&
+          !overwriteSet.has(item.name) &&
           item.desired !==
             (current.installed.includes(item.name) ? (current.disabled.includes(item.name) ? 'disabled' : 'enabled') : 'absent'),
       )
@@ -405,7 +430,7 @@ export async function manageSkills(options: SkillManagementOptions): Promise<Ski
     const same = JSON.stringify(configured ?? current) === JSON.stringify(desired);
     // Desired intent is durable first. If an apply fails, repair retries it; actual state is reported separately.
     if (!same || configured === undefined) await setBackendSkills(client, desired, file, configSnapshot);
-    reconcileSkills(client, home, catalog, saved, desired, options.origin, stateSnapshot);
+    reconcileSkills(client, home, catalog, saved, desired, options.origin, stateSnapshot, overwriteList);
     return { ...result, applied: true, skills: inventory(client, home, catalog, saved, desired) };
   };
   if (options.apply === undefined) return perform();

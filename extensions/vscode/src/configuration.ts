@@ -45,6 +45,8 @@ export interface SetupState {
   welcomed?: boolean;
   /** The runtime (`<version>#<sha-256>`) whose outdated CLI chat registrations were last offered for update. */
   updateOffered?: string;
+  /** The bundled skill catalog digest whose outdated packages were last offered for update. */
+  skillsOffered?: string;
   /** Vendor extensions whose removal the user started from a CLI menu, finished once VS Code has removed them. */
   removingExtensions?: string[];
   /** State of the PATH opt-in prompt. */
@@ -104,6 +106,7 @@ export function readSetupState(storage: string): SetupState {
   const record = readObject(setupStateFile(storage));
   const state: SetupState = record.welcomed === true ? { welcomed: true } : {};
   if (typeof record.updateOffered === 'string') state.updateOffered = record.updateOffered;
+  if (typeof record.skillsOffered === 'string') state.skillsOffered = record.skillsOffered;
   const removing = strings(record.removingExtensions);
   if (removing?.length) state.removingExtensions = removing;
   if (

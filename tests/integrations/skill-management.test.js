@@ -359,3 +359,68 @@ test('a redirected ownership directory is rejected before any setup or cleanup l
   await assert.rejects(cleanupClients({ home: p.home, env: p.env, apply: 'invalid' }), /Linked skill root/);
   assert.deepEqual(fs.readdirSync(outside), [], 'no lease, journal, state or runtime is written through the junction');
 });
+
+test('manageSkills overwrite is bound to the preview token and overwrites only confirmed conflicts', async t => {
+  const p = profile(t);
+  await apply(p.options, 'install', [names[0], names[1]]);
+  await apply(p.options, 'disable', [names[1]]);
+  const catalogEnabled = fs.readFileSync(path.join(catalog, names[0], 'SKILL.md'), 'utf8');
+  const catalogDisabled = fs.readFileSync(path.join(catalog, names[1], 'SKILL.md'), 'utf8');
+  fs.writeFileSync(file(p.home, 'agy', names[0]), 'external enabled edit');
+  fs.writeFileSync(file(p.home, 'agy', names[1], true), 'external disabled edit');
+
+  const current = await manageSkills(p.options);
+  assert.equal(current.skills.find(item => item.name === names[0]).state, 'conflict');
+  assert.equal(current.skills.find(item => item.name === names[1]).state, 'conflict');
+
+  // Token binds overwrite: preview without overwrite cannot apply with overwrite, and vice versa.
+  const previewWithout = await manageSkills({ ...p.options, selection: current.selection });
+  await assert.rejects(
+    manageSkills({ ...p.options, selection: current.selection, overwrite: [names[0]], apply: previewWithout.token }),
+    /preview changed/,
+  );
+  const previewOne = await manageSkills({ ...p.options, selection: current.selection, overwrite: [names[0]] });
+  await assert.rejects(manageSkills({ ...p.options, selection: current.selection, apply: previewOne.token }), /preview changed/);
+  await assert.rejects(
+    manageSkills({ ...p.options, selection: current.selection, overwrite: [names[1]], apply: previewOne.token }),
+    /preview changed/,
+  );
+
+  // Refusal still applies to conflicting packages not in overwrite when changing desired state.
+  const disableUnconfirmed = skillSelectionForAction(current.selection, [names[0]], 'disable');
+  const previewUnconfirmed = await manageSkills({ ...p.options, selection: disableUnconfirmed, overwrite: [names[1]] });
+  await assert.rejects(
+    manageSkills({ ...p.options, selection: disableUnconfirmed, overwrite: [names[1]], apply: previewUnconfirmed.token }),
+    /Conflicting/,
+  );
+
+  // Overwriting only names[0] restores names[0] and leaves names[1] untouched.
+  const appliedOne = await manageSkills({
+    ...p.options,
+    selection: current.selection,
+    overwrite: [names[0]],
+    apply: previewOne.token,
+  });
+  assert.equal(appliedOne.applied, true);
+  assert.equal(fs.readFileSync(file(p.home, 'agy', names[0]), 'utf8'), catalogEnabled);
+  assert.equal(fs.readFileSync(file(p.home, 'agy', names[1], true), 'utf8'), 'external disabled edit');
+  assert.equal(appliedOne.skills.find(item => item.name === names[0]).state, 'enabled');
+  assert.equal(appliedOne.skills.find(item => item.name === names[1]).state, 'conflict');
+
+  // Overwriting the disabled conflict restores it in the disabled location without enabling it.
+  const previewDisabled = await manageSkills({ ...p.options, selection: current.selection, overwrite: [names[1]] });
+  const appliedDisabled = await manageSkills({
+    ...p.options,
+    selection: current.selection,
+    overwrite: [names[1]],
+    apply: previewDisabled.token,
+  });
+  assert.equal(fs.readFileSync(file(p.home, 'agy', names[1], true), 'utf8'), catalogDisabled);
+  assert.equal(fs.existsSync(file(p.home, 'agy', names[1])), false);
+  assert.equal(appliedDisabled.skills.find(item => item.name === names[1]).state, 'disabled');
+
+  await assert.rejects(
+    manageSkills({ ...p.options, selection: current.selection, overwrite: ['unknown-skill'] }),
+    /Invalid skill overwrite/,
+  );
+});
