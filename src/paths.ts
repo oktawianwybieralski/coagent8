@@ -25,6 +25,16 @@ export function getDataDir(): string {
 }
 
 /**
+ * Resolves the agy profile directory CoAgent8 owns: on Windows every agy call gets it as
+ * `USERPROFILE`, so agy loads none of the user's own MCP servers and plugins (#224).
+ *
+ * @returns Absolute path to `<data directory>/agy-profile`; the directory may not exist yet.
+ */
+export function getAgyProfileDir(): string {
+  return path.join(getDataDir(), 'agy-profile');
+}
+
+/**
  * Resolves the active runtime script or bundle path executing CoAgent8.
  *
  * @returns Absolute normalized path to the running entrypoint file.

@@ -3,7 +3,12 @@ const args = process.argv.slice(2);
 if (process.env.coagent8_FIXTURE_LAUNCH_LOG) {
   fs.appendFileSync(
     process.env.coagent8_FIXTURE_LAUNCH_LOG,
-    JSON.stringify({ args, autoUpdate: process.env.AGY_CLI_DISABLE_AUTO_UPDATE ?? null }) + '\n',
+    JSON.stringify({
+      args,
+      autoUpdate: process.env.AGY_CLI_DISABLE_AUTO_UPDATE ?? null,
+      userProfile: process.env.USERPROFILE ?? null,
+      home: process.env.HOME ?? null,
+    }) + '\n',
   );
 }
 const mode = process.env.AGY_FIXTURE_MODE || process.env.coagent8_FIXTURE_MODE || 'success';
@@ -20,6 +25,10 @@ if (args[0] === 'mcp' && args[1] === 'list') {
     setInterval(() => {}, 1000);
     return;
   }
+  if (mode === 'fail-mcp') {
+    console.error('mcp list failed');
+    process.exit(1);
+  }
   // `agy mcp list` of agy 1.3.1 (2026-10-07); coagent8_FIXTURE_AGY_MCP lists [name, status] rows.
   const rows = JSON.parse(process.env.coagent8_FIXTURE_AGY_MCP || '[]');
   if (!rows.length) {
@@ -31,6 +40,18 @@ if (args[0] === 'mcp' && args[1] === 'list') {
       'NAME          TYPE   STATUS    COMMAND/URL',
       ...rows.map(([name, status]) => `${name.padEnd(12)}  stdio  ${status.padEnd(8)}  npx.cmd -y ${name}`),
     ].join('\n'),
+  );
+  process.exit(0);
+}
+if (args[0] === 'plugin' && args[1] === 'list') {
+  // `agy plugin list --json` of agy 1.5.18 (2026-11-27); coagent8_FIXTURE_AGY_PLUGINS lists names.
+  const names = JSON.parse(process.env.coagent8_FIXTURE_AGY_PLUGINS || '[]');
+  console.log(
+    JSON.stringify(
+      names.map(name => ({ name, enabled: true, version: '0.1.0', path: `plugins/${name}` })),
+      null,
+      2,
+    ),
   );
   process.exit(0);
 }

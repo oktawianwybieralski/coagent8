@@ -177,7 +177,7 @@ consent (`"hostExecution": "accepted"` in the configuration, or the form).
 | --- | --- |
 | **Codex** | `app-server` with `sandbox_mode="danger-full-access"` and `approval_policy="never"`; the thread's access is verified, every inherited MCP server is disabled and verified per thread, server approval requests are rejected, interrupt via `turn/interrupt` |
 | **Claude Code** (2.1.289+) | `-p --restricted --tools Read,Glob,Grep,Edit,Write,Bash,WebFetch,WebSearch --permission-mode dontAsk`, hooks disabled, strict empty MCP configuration; startup tools, MCP and permission mode verified before any content; native session resume and control interrupt |
-| **Antigravity** (`agy`) | Headless `--dangerously-skip-permissions --output-format stream-json`, prompt on stdin, explicit model, native `--conversation` resume; inherits your agy MCP servers and plugins (see [known limitations](#known-limitations)), recursion into CoAgent8 refused |
+| **Antigravity** (`agy`) | Headless `--dangerously-skip-permissions --output-format stream-json`, prompt on stdin, explicit model, native `--conversation` resume; on Windows runs with CoAgent8's own agy profile and starts only when it has no MCP servers or plugins, elsewhere inherits yours (see [known limitations](#known-limitations)); recursion into CoAgent8 refused |
 
 ### Routing
 
@@ -508,9 +508,14 @@ error.
 
 ## Known limitations
 
-- **Antigravity's own tools.** agy gives the other agent your agy MCP servers
-  and plugins, which CoAgent8 cannot turn off; `doctor` lists them. Calls back
-  into CoAgent8 are refused.
+- **Antigravity's own tools.** On Windows agy runs with CoAgent8's own profile
+  (`~/.coagent8/agy-profile` as `USERPROFILE`), so it offers none of your agy MCP
+  servers and plugins, your agy `settings.json` does not apply, and commands in
+  an agy turn see that folder as their user profile (git and bash keep `HOME`).
+  An agy session from before this change cannot be continued; start a new one.
+  On macOS and Linux agy still gives the other agent your agy MCP servers and
+  plugins, which CoAgent8 cannot turn off; `doctor` lists them. Calls back into
+  CoAgent8 are refused.
 - **Antigravity readiness.** `agy` may report not ready in a cached check and
   still run a turn; `doctor` with `scope: "health"` rechecks readiness.
 - **Leftover agy processes on Windows.** Cancelling or timing out an agy turn

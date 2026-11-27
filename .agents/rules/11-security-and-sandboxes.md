@@ -39,8 +39,10 @@ and workspace-write profiles of earlier versions (owner decision 2026-11-21).
   --permission-prompts none --strict-mcp-config` with an empty `--mcp-config`,
   hooks off and an allow rule for each tool; each run is rejected unless the CLI
   reports at startup only these tools, no MCP server and `dontAsk`.
-* **agy** runs `--dangerously-skip-permissions`; it keeps its own MCP servers and
-  subagents, which no limit of the server sees (#200).
+* **agy** runs `--dangerously-skip-permissions`; it keeps its subagents, which no
+  limit of the server sees (#200). On Windows every agy call runs with CoAgent8's
+  own agy profile, which must configure no MCP server or plugin (#224, see the
+  current enforcement limits); elsewhere it keeps the user's.
 * **Roles that answer** (consult, review) are told to leave the workspace as they
   found it. A review is bound to its snapshot, which the server checks again after
   the turn; a change blocks READY.
@@ -142,12 +144,38 @@ such as `const token = getToken();` is a defect, not a privacy feature.
 This rule is implemented in `REDACTION-002` (AUD-P0-2, AUD-P2-13).
 
 **Current enforcement limits:** Claude disables hooks and inherited MCP servers;
-Codex disables and verifies them per thread. agy cannot isolate inherited
-external MCP tools or plugins (`CUR-002`). Owner decision (2026-10-08): this
-is a documented limitation of a third-party CLI. Since #211 agy turns run on the
-host with `--dangerously-skip-permissions`; CoAgent8 refuses turns from a CoAgent8 started inside a turn
-(`COAGENT8_NESTED_TURN`), names agy's inherited servers and plugins in doctor,
-and must not describe agy turns as isolated from them.
+Codex disables and verifies them per thread. agy cannot disable MCP servers or
+plugins itself (`--settings` cannot, agy 1.5.18), so CoAgent8 gives it another
+profile (`CUR-002`, owner decision 2026-11-27, #224):
+
+* **Windows.** Every agy call (turns, resume, `/usage`, `models`, `mcp list`,
+  `plugin list`) gets `USERPROFILE` set to `<data directory>/agy-profile`, created
+  for the user only; agy 1.5.18 finds its configuration there, not through `HOME`.
+  Before the first agy turn of a server process, CoAgent8 runs `agy mcp list` and
+  `agy plugin list --json` there and also reads the profile's plugin directory; a
+  configured MCP server (disabled ones included) or a plugin other than agy's
+  built-ins refuses the turn with `POLICY_DENIED` naming them, and so does a check
+  that cannot run. A passing check is kept for the process; a refusal is checked
+  again on the next turn. Doctor runs the same check and reports the profile as
+  verified, refusing or unverified. agy's built-in skills and its built-in plugin
+  `swarm` stay. The sign-in carries over (Windows Credential Manager), and the
+  user's own agy `settings.json` does not apply to CoAgent8 turns. Commands run
+  inside an agy turn see the profile as `USERPROFILE`, so `os.homedir()` in Node
+  and what is found through it (`~/.npmrc`, `~/.ssh` for tools that read
+  `USERPROFILE`) differ from the user's; git and bash use `HOME`, which stays.
+  A conversation started in the user's own profile before #224 cannot be resumed
+  there: its continuation is refused with `SESSION_INVALID` and a request to start
+  a new session, never resumed without its context. CoAgent8 marks each
+  conversation agy starts in the profile.
+* **macOS and Linux.** Unchanged for now: agy's lookup there is unverified and
+  changing `HOME` would also move git and the shell. Turns offer the user's agy
+  MCP servers and plugins, doctor names them, and agy turns there must not be
+  described as isolated from them. Owner decision (2026-10-08): a documented
+  limitation of a third-party CLI.
+
+Since #211 agy turns run on the host with `--dangerously-skip-permissions`;
+CoAgent8 refuses turns from a CoAgent8 started inside a turn
+(`COAGENT8_NESTED_TURN`).
 
 **Consent transport:** implemented in `EXEC-001` (AUD-P1-7); the explicit
 `approve: true` requirement closed `CUR-003`. The contract is in

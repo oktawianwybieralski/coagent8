@@ -751,25 +751,42 @@ test('gemini-adapter: a window without remaining_fraction is unmeasured, not ful
 });
 
 test('every agy launch disables its auto-updater, whose console window takes the focus on Windows (WINDOWS-001)', async () => {
-  const { listModels } = require('../../../src/backends/agy/adapter.ts');
+  const { listModels, resetAgyProfileVerification } = require('../../../src/backends/agy/adapter.ts');
+  const { getAgyProfileDir } = require('../../../src/paths.ts');
   const log = path.join(tempDir, 'launches.jsonl');
   const inherited = process.env.AGY_CLI_DISABLE_AUTO_UPDATE;
   // agy 1.3.1 honours only 'true'; an inherited '1' must not leave the updater on.
   process.env.AGY_CLI_DISABLE_AUTO_UPDATE = '1';
   process.env.coagent8_FIXTURE_LAUNCH_LOG = log;
+  const windows = process.platform === 'win32';
+  resetAgyProfileVerification();
   try {
     const probed = await probeGemini();
     await inspectGeminiQuota(probed);
     assert.ok(await listModels());
+    assert.ok(await inheritedAgyTools());
     const result = await executeGemini('question', { model: MODEL, cwd: tempDir, onEvent: () => {} });
     assert.equal(result.status, 'completed', JSON.stringify(result.error));
+    const resumed = await executeGemini('again', { model: MODEL, cwd: tempDir, nativeSessionId: result.nativeSessionId });
+    assert.equal(resumed.status, 'completed', JSON.stringify(resumed.error));
     const launches = fs
       .readFileSync(log, 'utf8')
       .trim()
       .split('\n')
       .map(line => JSON.parse(line));
-    assert.equal(launches.length, 4, 'probe, quota read, catalog and turn');
-    for (const launch of launches) assert.equal(launch.autoUpdate, 'true', JSON.stringify(launch.args));
+    // The inherited tools read lists MCP servers (and plugins on Windows); the first turn of the
+    // process verifies the profile on Windows, the resumed one does not again.
+    assert.equal(
+      launches.length,
+      windows ? 9 : 6,
+      `probe, quota read, catalog, inherited tools, ${windows ? 'profile check, ' : ''}turn and resume`,
+    );
+    for (const launch of launches) {
+      assert.equal(launch.autoUpdate, 'true', JSON.stringify(launch.args));
+      // #224: every agy call sees CoAgent8's profile on Windows; HOME, which git and bash read, stays.
+      assert.equal(launch.userProfile, windows ? getAgyProfileDir() : (process.env.USERPROFILE ?? null), JSON.stringify(launch.args));
+      assert.equal(launch.home, process.env.HOME ?? null, JSON.stringify(launch.args));
+    }
     assert.equal(process.env.AGY_CLI_DISABLE_AUTO_UPDATE, '1', 'the server environment is not changed');
   } finally {
     delete process.env.coagent8_FIXTURE_LAUNCH_LOG;
@@ -811,12 +828,192 @@ test('agy inherited tools: enabled MCP servers from `agy mcp list` and enabled d
     ['coagent8', 'enabled'],
     ['context7', 'disabled'],
   ]);
+  process.env.coagent8_FIXTURE_AGY_PLUGINS = JSON.stringify(['team-kit']);
   try {
-    assert.deepEqual(await inheritedTools(), { mcpServers: ['coagent8'], plugins: [] });
+    // On Windows the read is the profile check of #224: every configured server counts, as do
+    // the plugins `agy plugin list` names; elsewhere the enabled servers of the user's own agy.
+    assert.deepEqual(
+      await inheritedTools(),
+      process.platform === 'win32'
+        ? { mcpServers: ['coagent8', 'context7'], plugins: ['team-kit'] }
+        : { mcpServers: ['coagent8'], plugins: [] },
+    );
   } finally {
     delete process.env.coagent8_FIXTURE_AGY_MCP;
+    delete process.env.coagent8_FIXTURE_AGY_PLUGINS;
   }
 });
+
+test('agy profile (#224): the Windows environment carries the profile as USERPROFILE, other platforms are unchanged', () => {
+  const { agyEnvironment, agyConfigDir, usesAgyProfile } = require('../../../src/backends/agy/adapter.ts');
+  const { getAgyProfileDir } = require('../../../src/paths.ts');
+  const dataDir = fs.mkdtempSync(path.join(tempDir, 'profile-env-'));
+  process.env.coagent8_DIR = dataDir;
+  try {
+    assert.equal(getAgyProfileDir(), path.join(dataDir, 'agy-profile'));
+    assert.equal(usesAgyProfile('win32'), true);
+    assert.equal(usesAgyProfile('linux'), false);
+    assert.equal(usesAgyProfile('darwin'), false);
+
+    const windows = agyEnvironment('win32');
+    assert.equal(windows.USERPROFILE, getAgyProfileDir());
+    assert.equal(Object.keys(windows).filter(key => key.toUpperCase() === 'USERPROFILE').length, 1);
+    assert.equal(windows.HOME, process.env.HOME, 'git and bash keep their home');
+    assert.equal(windows.AGY_CLI_DISABLE_AUTO_UPDATE, 'true');
+    assert.ok(fs.statSync(getAgyProfileDir()).isDirectory(), 'the profile is created on use');
+    assert.equal(agyConfigDir('win32'), path.join(getAgyProfileDir(), '.gemini'));
+
+    for (const platform of ['linux', 'darwin']) {
+      const env = agyEnvironment(platform);
+      assert.equal(env.USERPROFILE, process.env.USERPROFILE, platform);
+      assert.equal(env.HOME, process.env.HOME, platform);
+    }
+    assert.equal(agyConfigDir('linux'), path.join(process.env.GEMINI_CLI_HOME, '.gemini'));
+  } finally {
+    process.env.coagent8_DIR = tempDir;
+  }
+});
+
+test('agy profile (#224): plugin and MCP lists of agy 1.5.18 parse to every configured name', () => {
+  const { parseAgyPluginList, configuredAgyMcpServers } = require('../../../src/backends/agy/adapter.ts');
+  // Recorded from agy 1.5.18 (2026-11-27) on a scratch profile.
+  assert.deepEqual(parseAgyPluginList('[]\n'), []);
+  assert.deepEqual(
+    parseAgyPluginList(
+      '[\n  {\n    "name": "demo-plugin",\n    "enabled": true,\n    "version": "0.1.0",\n    "path": "C:\\\\p\\\\demo-plugin"\n  }\n]\n',
+    ),
+    ['demo-plugin'],
+  );
+  assert.equal(parseAgyPluginList('No plugins installed.\n'), undefined);
+  assert.deepEqual(configuredAgyMcpServers('No MCP servers configured.\n'), []);
+  assert.deepEqual(
+    configuredAgyMcpServers(
+      'NAME         TYPE   STATUS    COMMAND/URL\ndemo-server  stdio  enabled   node demo.js\nold          http   disabled  http://127.0.0.1:9/mcp\n',
+    ),
+    ['demo-server', 'old'],
+  );
+});
+
+/** Runs `body` with a fresh data directory, so the profile, its markers and the verification start empty. */
+async function withFreshProfile(body) {
+  const { resetAgyProfileVerification } = require('../../../src/backends/agy/adapter.ts');
+  const dataDir = fs.mkdtempSync(path.join(tempDir, 'profile-'));
+  const log = path.join(dataDir, 'launches.jsonl');
+  process.env.coagent8_DIR = dataDir;
+  process.env.coagent8_FIXTURE_LAUNCH_LOG = log;
+  resetAgyProfileVerification();
+  const launches = () =>
+    fs.existsSync(log)
+      ? fs
+          .readFileSync(log, 'utf8')
+          .trim()
+          .split('\n')
+          .map(line => JSON.parse(line).args)
+      : [];
+  try {
+    await body({ dataDir, launches });
+  } finally {
+    process.env.coagent8_DIR = tempDir;
+    delete process.env.coagent8_FIXTURE_LAUNCH_LOG;
+    delete process.env.coagent8_FIXTURE_AGY_MCP;
+    delete process.env.coagent8_FIXTURE_AGY_PLUGINS;
+    delete process.env.coagent8_FIXTURE_MODE;
+    resetAgyProfileVerification();
+  }
+}
+
+const isTurn = args => args.includes('--output-format');
+const isCheck = args => (args[0] === 'mcp' || args[0] === 'plugin') && args[1] === 'list';
+
+test(
+  'agy profile (#224): the first turn verifies an empty profile once per process',
+  { skip: process.platform !== 'win32' && 'the profile is used on Windows only' },
+  async () => {
+    await withFreshProfile(async ({ launches }) => {
+      const first = await execute('first', { model: MODEL, cwd: tempDir });
+      assert.equal(first.status, 'completed', JSON.stringify(first.error));
+      const second = await execute('second', { model: MODEL, cwd: tempDir });
+      assert.equal(second.status, 'completed', JSON.stringify(second.error));
+      const args = launches();
+      assert.deepEqual(
+        args
+          .filter(isCheck)
+          .map(a => a.slice(0, 2).join(' '))
+          .sort(),
+        ['mcp list', 'plugin list'],
+        'checked once',
+      );
+      assert.equal(args.filter(isTurn).length, 2);
+      assert.ok(args.findIndex(isCheck) < args.findIndex(isTurn), 'verified before the first turn');
+    });
+  },
+);
+
+test(
+  'agy profile (#224): a configured MCP server, a listed or a discovered plugin, or a failed check refuses the turn',
+  { skip: process.platform !== 'win32' && 'the profile is used on Windows only' },
+  async () => {
+    const { getAgyProfileDir } = require('../../../src/paths.ts');
+    const cases = [
+      ['MCP server', () => (process.env.coagent8_FIXTURE_AGY_MCP = JSON.stringify([['context7', 'disabled']])), /MCP servers context7/],
+      ['listed plugin', () => (process.env.coagent8_FIXTURE_AGY_PLUGINS = JSON.stringify(['team-kit', 'swarm'])), /plugins team-kit,/],
+      [
+        'discovered plugin',
+        () => {
+          const dir = path.join(getAgyProfileDir(), '.gemini', 'config', 'plugins', 'kit');
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify({ name: 'kit' }));
+        },
+        /plugins kit,/,
+      ],
+      ['failed check', () => (process.env.coagent8_FIXTURE_MODE = 'fail-mcp'), /could not verify .*agy mcp list ended/],
+    ];
+    for (const [label, arrange, message] of cases) {
+      await withFreshProfile(async ({ launches }) => {
+        arrange();
+        const refused = await execute('refused', { model: MODEL, cwd: tempDir });
+        assert.equal(refused.status, 'failed', label);
+        assert.equal(refused.error.code, 'POLICY_DENIED', label);
+        assert.match(refused.error.message, message, label);
+        assert.ok(!/swarm/.test(refused.error.message), `${label}: agy's own plugin is not named`);
+        assert.equal(launches().filter(isTurn).length, 0, `${label}: no turn started`);
+
+        // A refusal is not cached: once the profile is empty again, the next turn runs.
+        delete process.env.coagent8_FIXTURE_AGY_MCP;
+        delete process.env.coagent8_FIXTURE_AGY_PLUGINS;
+        delete process.env.coagent8_FIXTURE_MODE;
+        fs.rmSync(path.join(getAgyProfileDir(), '.gemini', 'config', 'plugins'), { recursive: true, force: true });
+        const accepted = await execute('accepted', { model: MODEL, cwd: tempDir });
+        assert.equal(accepted.status, 'completed', `${label}: ${JSON.stringify(accepted.error)}`);
+      });
+    }
+  },
+);
+
+test(
+  'agy profile (#224): a session started before the profile is refused for continuation, a new one resumes',
+  { skip: process.platform !== 'win32' && 'the profile is used on Windows only' },
+  async () => {
+    await withFreshProfile(async ({ launches }) => {
+      // The fixture's new conversation id, as a session of the user's own profile would carry it.
+      const legacy = '11111111-aaaa-bbbb-cccc-123456789012';
+      const refused = await execute('continue', { model: MODEL, cwd: tempDir, nativeSessionId: legacy });
+      assert.equal(refused.status, 'failed');
+      assert.equal(refused.error.code, 'SESSION_INVALID');
+      assert.match(refused.error.message, /started in your own agy profile.*Start a new session/);
+      assert.equal(refused.continuationAvailable, false);
+      assert.equal(launches().length, 0, 'nothing launched, not even the profile check');
+
+      const fresh = await execute('new', { model: MODEL, cwd: tempDir });
+      assert.equal(fresh.status, 'completed', JSON.stringify(fresh.error));
+      assert.equal(fresh.nativeSessionId, legacy);
+      const resumed = await execute('continue', { model: MODEL, cwd: tempDir, nativeSessionId: fresh.nativeSessionId });
+      assert.equal(resumed.status, 'completed', JSON.stringify(resumed.error));
+      const turn = launches().filter(isTurn).at(-1);
+      assert.equal(turn[turn.indexOf('--conversation') + 1], legacy);
+    });
+  },
+);
 
 test('EXEC-001-T08e: bound agy reads support backward compatibility when context is omitted', async () => {
   const normalProbe = await probeAgy();

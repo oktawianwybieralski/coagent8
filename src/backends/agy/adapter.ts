@@ -11,6 +11,7 @@ import { isValidModelIdentifier } from '../../models/identifier.js';
 import { resolveCliCommand } from '../../execution/cli-resolver.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
 import { configuredBackendCommand, probeCommand } from '../executable.js';
+import { getAgyProfileDir } from '../../paths.js';
 import {
   DEFAULT_PROBE_TIMEOUT_MS,
   DEFAULT_MODEL_LIST_TIMEOUT_MS,
@@ -30,7 +31,6 @@ export const name = 'Google Gemini (Antigravity agy)';
 /** POSIX time agy gets between `SIGTERM` and `SIGKILL` to shut down its session and commands. */
 const AGY_SIGNAL_GRACE_MS = 2000;
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-const GEMINI_CONFIG_DIR = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 /**
  * Sent once on `--conversation <id>` when a turn ends without an answer because headless
@@ -163,9 +163,162 @@ export function resolveModelAndEffort(model?: string, reasoningEffort?: string):
  * @remarks agy 1.3.1 starts a background updater on its first launch after 15 minutes. On
  * Windows that updater starts another agy with a new console window, which takes the keyboard
  * focus for about half a second (WINDOWS-001, measured 2026-10-07). agy honours only `true`.
+ * On Windows `USERPROFILE` is CoAgent8's own agy profile ({@link usesAgyProfile}); `HOME`
+ * stays, because git and bash read it and agy does not (agy 1.5.18, 2026-11-27, #224).
+ * @param platform - The platform whose rules apply; the running one by default.
+ * @returns A copy of this process's environment for one agy launch.
  */
-function agyEnvironment(): NodeJS.ProcessEnv {
-  return { ...process.env, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' };
+export function agyEnvironment(platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' };
+  if (!usesAgyProfile(platform)) return env;
+  // Windows environment names ignore case: a second spelling would leave two values for the child.
+  for (const key of Object.keys(env)) if (key.toUpperCase() === 'USERPROFILE') delete env[key];
+  env.USERPROFILE = ensureAgyProfile();
+  return env;
+}
+
+/**
+ * Whether agy runs with CoAgent8's own profile on this platform (#224, owner decision 2026-11-27).
+ * @param platform - The platform to decide for; the running one by default.
+ * @remarks Only Windows: there agy finds its configuration through `USERPROFILE` (agy 1.5.18).
+ * On macOS and Linux its lookup is unverified and `HOME` would also move git and the shell, so
+ * turns there still offer the user's MCP servers and plugins (CUR-002).
+ */
+export function usesAgyProfile(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === 'win32';
+}
+
+/** Creates CoAgent8's agy profile, readable by the user only, and returns its path. */
+function ensureAgyProfile(): string {
+  const dir = getAgyProfileDir();
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return dir;
+}
+
+/**
+ * The `.gemini` directory whose configuration agy loads in a CoAgent8 call: the profile's on
+ * Windows, otherwise the user's own (`GEMINI_CLI_HOME` or the home directory).
+ */
+export function agyConfigDir(platform: NodeJS.Platform = process.platform): string {
+  return usesAgyProfile(platform)
+    ? path.join(getAgyProfileDir(), '.gemini')
+    : path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
+}
+
+/**
+ * Marker of a conversation agy started in CoAgent8's profile. A session without one was started
+ * in the user's own profile before #224, and agy cannot resume it from this profile.
+ */
+function profileConversationMarker(conversationId: string): string {
+  return path.join(getAgyProfileDir(), '.coagent8', 'conversations', conversationId.toLowerCase());
+}
+
+/** Records that a conversation lives in CoAgent8's profile; a failed write only blocks its resume. */
+function recordProfileConversation(conversationId: string): void {
+  try {
+    const marker = profileConversationMarker(conversationId);
+    fs.mkdirSync(path.dirname(marker), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(marker, '', { mode: 0o600 });
+  } catch {
+    // The next continuation is refused with a clear message instead; the answer stays valid.
+  }
+}
+
+/** Plugins agy ships itself; agy 1.5.18 lists none of them, `swarm` is kept should one be listed. */
+const AGY_BUILTIN_PLUGINS = new Set(['swarm']);
+
+/** What the profile offers agy's model: configured MCP servers and plugins beyond agy's built-ins. */
+export interface AgyProfileContents {
+  mcpServers: string[];
+  plugins: string[];
+}
+
+/**
+ * Reads every MCP server and plugin configured in the profile that a CoAgent8 agy call loads.
+ * @returns The contents, or the reason they could not be read.
+ * @remarks `agy plugin list --json` names imported and discovered plugins (agy 1.5.18); the
+ * directory scan also covers an agy that cannot list them as JSON.
+ */
+async function readAgyProfileContents(
+  resolved: ReturnType<typeof resolveCliCommand>,
+  timeoutMs: number,
+  abortSignal: AbortSignal | undefined,
+): Promise<{ contents: AgyProfileContents } | { failure: string; aborted?: boolean }> {
+  const run = (args: string[]) =>
+    runCommand(resolved.command, [...resolved.argsPrefix, ...args], { timeoutMs, abortSignal, env: agyEnvironment() });
+  const [mcp, plugins] = await Promise.all([run(['mcp', 'list']), run(['plugin', 'list', '--json'])]);
+  if (abortSignal?.aborted || mcp.status === 'cancelled') return { failure: 'cancelled', aborted: true };
+  if (mcp.status !== 'completed' || mcp.exitCode !== 0) {
+    return { failure: `agy mcp list ended with status ${mcp.status} (exit code ${mcp.exitCode})` };
+  }
+  let listed: string[] = [];
+  if (plugins.status === 'completed' && plugins.exitCode === 0) listed = parseAgyPluginList(plugins.stdout) ?? [];
+  let discovered: string[];
+  try {
+    discovered = listAgyPlugins();
+  } catch (err) {
+    return { failure: `the profile's plugin directory could not be read: ${redactDiagnostic((err as Error).message, 256)}` };
+  }
+  return {
+    contents: {
+      mcpServers: configuredAgyMcpServers(mcp.stdout),
+      plugins: [...new Set([...listed, ...discovered])].filter(plugin => !AGY_BUILTIN_PLUGINS.has(plugin)),
+    },
+  };
+}
+
+/** Profiles and agy commands verified empty in this server process; a refusal is checked again. */
+const verifiedProfiles = new Set<string>();
+
+/** Forgets the verified profiles, so the next turn checks again; for tests. */
+export function resetAgyProfileVerification(): void {
+  verifiedProfiles.clear();
+}
+
+/** Names what the profile contains, for an error or a doctor note. */
+export function describeAgyProfileContents(contents: AgyProfileContents): string {
+  return [
+    contents.mcpServers.length ? `MCP servers ${contents.mcpServers.join(', ')}` : '',
+    contents.plugins.length ? `plugins ${contents.plugins.join(', ')}` : '',
+  ]
+    .filter(Boolean)
+    .join(' and ');
+}
+
+/**
+ * Requires that CoAgent8's agy profile configures no MCP server and no plugin beyond agy's own,
+ * once per server process and profile, before the first turn (#224).
+ * @returns The refusal, or undefined when the profile is verified.
+ * @remarks Not at server start: the first launch stays fast and starts no agy process.
+ */
+async function verifyAgyProfile(
+  resolved: ReturnType<typeof resolveCliCommand>,
+  timeoutMs: number,
+  abortSignal: AbortSignal | undefined,
+): Promise<TerminalExecutionResult | undefined> {
+  const key = `${getAgyProfileDir()}\n${resolved.command}\n${resolved.argsPrefix.join('\n')}`;
+  if (verifiedProfiles.has(key)) return undefined;
+  const read = await readAgyProfileContents(resolved, Math.min(timeoutMs, DEFAULT_MODEL_LIST_TIMEOUT_MS), abortSignal);
+  if ('failure' in read) {
+    if (read.aborted) return { ...failed({ code: 'ABORTED', message: 'Cancelled before launch.', retryable: false }), status: 'cancelled' };
+    return failed({
+      code: 'POLICY_DENIED',
+      message: `CoAgent8 could not verify that its agy profile ${getAgyProfileDir()} has no MCP servers or plugins (${read.failure}), so the turn did not start.`,
+      retryable: true,
+    });
+  }
+  const named = describeAgyProfileContents(read.contents);
+  if (named) {
+    return failed({
+      code: 'POLICY_DENIED',
+      message:
+        `CoAgent8's agy profile ${getAgyProfileDir()} contains ${named}, which agy would offer in this turn, so the turn did not start. ` +
+        `Remove them with 'agy mcp remove <name>' and 'agy plugin uninstall <name>' run with USERPROFILE set to that directory, then retry.`,
+      retryable: false,
+    });
+  }
+  verifiedProfiles.add(key);
+  return undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -221,11 +374,12 @@ export async function probe(context?: BackendReadContext): Promise<AdapterProbeR
   }
 
   const authEvidence: string[] = [];
-  const home = process.env.GEMINI_CLI_HOME || os.homedir();
-  const antigravityDir = path.join(home, '.gemini', 'antigravity');
-  const antigravityState = path.join(antigravityDir, 'antigravity_state.pbtxt');
-  const oauthCreds = path.join(GEMINI_CONFIG_DIR, 'oauth_creds.json');
-  const googleAccounts = path.join(GEMINI_CONFIG_DIR, 'google_accounts.json');
+  // The user's own profile: the sign-in lives outside it (Windows Credential Manager) and
+  // carries over to CoAgent8's agy profile, whose files appear only after its first turn.
+  const userGeminiDir = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
+  const antigravityState = path.join(userGeminiDir, 'antigravity', 'antigravity_state.pbtxt');
+  const oauthCreds = path.join(userGeminiDir, 'oauth_creds.json');
+  const googleAccounts = path.join(userGeminiDir, 'google_accounts.json');
 
   const hasApiKey = Boolean(process.env.GEMINI_API_KEY);
   const hasAntigravityState = fs.existsSync(antigravityState);
@@ -353,6 +507,21 @@ export async function execute(
       retryable: false,
     });
   }
+
+  // A conversation of the user's own profile cannot be resumed from CoAgent8's; continuing
+  // it would start agy without its context, so the session ends here instead (#224).
+  if (native && usesAgyProfile() && !fs.existsSync(profileConversationMarker(native))) {
+    return failed({
+      code: 'SESSION_INVALID',
+      message:
+        'This agy session was started in your own agy profile, before CoAgent8 ran agy with its own profile, so agy cannot resume it. Start a new session (without session_handle).',
+      retryable: false,
+    });
+  }
+  const refusal = usesAgyProfile()
+    ? await verifyAgyProfile(resolved, options.timeoutMs ?? DEFAULT_TIMEOUT_MS, options.abortSignal)
+    : undefined;
+  if (refusal) return refusal;
 
   const { model: targetModel, effort: targetEffort } = resolveModelAndEffort(model, options.reasoningEffort);
 
@@ -561,6 +730,8 @@ export async function execute(
     sessionMismatch || error?.code === 'SESSION_INVALID' || error?.code === 'PROTOCOL_ERROR'
       ? null
       : (s.nativeSessionId ?? expectedSessionId ?? null);
+  // Only a UUID names a marker file: the identifier comes from agy's output.
+  if (effectiveSessionId && UUID.test(effectiveSessionId) && usesAgyProfile()) recordProfileConversation(effectiveSessionId);
 
   const status =
     !sessionMismatch && (processResult.status === 'cancelled' || processResult.status === 'timed_out')
@@ -643,6 +814,30 @@ export function parseAgyMcpList(stdout: string): string[] {
     .map(columns => columns[0]);
 }
 
+/** Names of every server in an `agy mcp list` table, a disabled one included: agy or the user can enable it. */
+export function configuredAgyMcpServers(stdout: string): string[] {
+  return stdout
+    .split(/\r?\n/)
+    .map(line => line.trim().split(/\s{2,}/))
+    .filter(columns => columns.length >= 3 && columns[0] !== 'NAME')
+    .map(columns => columns[0]);
+}
+
+/**
+ * Names of the plugins in `agy plugin list --json` (agy 1.5.18: an array of `{ name, enabled }`).
+ * @returns The names, or undefined when the output is not that array.
+ */
+export function parseAgyPluginList(stdout: string): string[] | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(parsed)) return undefined;
+  return parsed.map(entry => asRecord(entry)?.name).filter((plugin): plugin is string => typeof plugin === 'string');
+}
+
 function readJsonObject(file: string): Record<string, unknown> | undefined {
   try {
     return asRecord(JSON.parse(fs.readFileSync(file, 'utf8')));
@@ -657,7 +852,7 @@ function readJsonObject(file: string): Record<string, unknown> | undefined {
  * `plugins` entry in `config.json` wins, otherwise the plugin's own `disabled` declaration.
  * @remarks `agy plugin list` names only imported plugins, not discovered ones (agy 1.3.1).
  */
-export function listAgyPlugins(configDir = path.join(GEMINI_CONFIG_DIR, 'config')): string[] {
+export function listAgyPlugins(configDir = path.join(agyConfigDir(), 'config')): string[] {
   const root = path.join(configDir, 'plugins');
   let entries: fs.Dirent[];
   try {
@@ -679,9 +874,12 @@ export function listAgyPlugins(configDir = path.join(GEMINI_CONFIG_DIR, 'config'
 }
 
 /**
- * Reads the MCP servers and plugins agy offers its model in every turn, `--sandbox` included,
- * without a model call. CoAgent8 cannot disable them (CUR-002); doctor names them.
+ * Reads the MCP servers and plugins agy would offer its model in a CoAgent8 turn, without a
+ * model call; doctor names them (CUR-002).
  * @returns The inherited tools, or undefined when agy cannot be run or read.
+ * @remarks On Windows this is the check that gates the first turn ({@link usesAgyProfile}):
+ * anything listed there refuses agy turns. Elsewhere they are the user's own servers and
+ * plugins, which turns offer and CoAgent8 cannot disable.
  */
 export async function inheritedTools(context?: BackendReadContext): Promise<InheritedTools | undefined> {
   checkPreflight(context, 'Gemini inherited tools read');
@@ -690,6 +888,16 @@ export async function inheritedTools(context?: BackendReadContext): Promise<Inhe
     resolved = resolveCliCommand(configuredBackendCommand('agy'));
   } catch {
     return undefined;
+  }
+  if (usesAgyProfile()) {
+    const read = await readAgyProfileContents(
+      resolved,
+      boundReadTimeout(context, DEFAULT_MODEL_LIST_TIMEOUT_MS),
+      effectiveAbortSignal(context),
+    );
+    const status = 'contents' in read ? 'completed' : read.aborted ? 'cancelled' : 'failed';
+    checkPostRun({ status }, context, 'Gemini inherited tools read');
+    return 'contents' in read ? read.contents : undefined;
   }
   const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'mcp', 'list'], {
     timeoutMs: boundReadTimeout(context, DEFAULT_MODEL_LIST_TIMEOUT_MS),
