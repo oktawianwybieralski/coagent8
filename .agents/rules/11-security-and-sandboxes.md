@@ -152,9 +152,10 @@ profile (`CUR-002`, owner decision 2026-11-27, #224):
   loads (turns, recovery, resume, `/usage`, `models`, `mcp list`, `plugin list`)
   gets `USERPROFILE` set to `<data directory>/agy-profile`; agy 1.5.18 finds its
   configuration there, not through `HOME`. Setup's version, help and sign-in
-  checks (`AGY_CLI_CDE_AUTH_ACTION=check`) start no turn and offer no tools, so
-  they keep the user's own environment and a read-only status creates no profile. The profile lives in the CoAgent8 data directory and has its
-  permissions, like CoAgent8's sessions there (on Windows `mode` sets no ACL).
+  checks (`AGY_CLI_CDE_AUTH_ACTION=check`) and the backend probe's `--version`
+  start no turn and offer no tools, so they keep the user's own environment and a
+  read-only setup status or doctor creates no profile. The profile lives in the
+  CoAgent8 data directory and has its permissions, like CoAgent8's sessions there (on Windows `mode` sets no ACL).
   Before every agy launch of a turn (its automatic recovery turn after an empty
   denial included), CoAgent8 runs `agy mcp list` and `agy plugin list --json`
   there, in the turn's directory (so workspace-scoped agy configuration counts),

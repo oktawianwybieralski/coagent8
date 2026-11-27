@@ -166,7 +166,7 @@ export function resolveModelAndEffort(model?: string, reasoningEffort?: string):
  * focus for about half a second (WINDOWS-001, measured 2026-10-07). agy honours only `true`.
  * On Windows `USERPROFILE` is CoAgent8's own agy profile ({@link usesAgyProfile}); `HOME`
  * stays, because git and bash read it and agy does not (agy 1.5.18, 2026-11-27, #224).
- * Setup's version, help and sign-in checks (`cli-readiness.ts`) do not use it: they start no
+ * Setup's version, help and sign-in checks (`cli-readiness.ts`) and {@link probe}'s `--version` do not use it: they start no
  * model turn and read nothing a turn loads, so they keep the user's own environment and a
  * read-only status creates no profile.
  * @param platform - The platform whose rules apply; the running one by default.
@@ -400,7 +400,9 @@ export async function probe(context?: BackendReadContext): Promise<AdapterProbeR
   const res = await runCommand(rawCommand, ['--version'], {
     timeoutMs: boundReadTimeout(context, DEFAULT_PROBE_TIMEOUT_MS),
     abortSignal: effectiveAbortSignal(context),
-    env: agyEnvironment(),
+    // The user's own environment, as setup's checks: `--version` runs no turn and reads nothing a
+    // turn loads, so a read-only doctor creates no agy profile (#224). The updater stays off.
+    env: { ...process.env, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' },
   });
   checkPostRun(res, context, 'Gemini probe');
   if (res.exitCode === 0) {
@@ -630,6 +632,8 @@ export async function execute(
   let processResult = first.processResult;
   let s = first.snapshot;
   let retriedAfterDenial = false;
+  // The profile check before the recovery used up the turn's time: no recovery, the turn timed out.
+  let timedOutBeforeRecovery = false;
 
   // A writer runs no command either, so it gets its own recovery prompt that keeps it in the workspace.
   const canRetryEmptyDenial =
@@ -659,7 +663,6 @@ export async function execute(
     const elapsedMs = Math.max(0, Math.round(clock() - startedAtMs));
     const remainingTimeoutMs = effectiveTimeoutMs - elapsedMs;
     if (remainingTimeoutMs > 0) {
-      retriedAfterDenial = true;
       const retrySessionId = s.nativeSessionId!;
       const mapRetryId = createRetryIdMapper(initialEventIds);
       const retryOnEvent = options.onEvent
@@ -682,26 +685,41 @@ export async function execute(
         : undefined;
       if (recoveryRefusal) {
         // The first turn's conversation lives in the profile and can be continued once it is clean.
-        if (UUID.test(retrySessionId)) recordProfileConversation(retrySessionId);
-        return recoveryRefusal.error
-          ? {
-              ...recoveryRefusal,
-              error: { ...recoveryRefusal.error, message: `The automatic recovery turn did not start. ${recoveryRefusal.error.message}` },
-              errorDetail: `The automatic recovery turn did not start. ${recoveryRefusal.errorDetail ?? recoveryRefusal.error.message}`,
-            }
-          : recoveryRefusal;
+        const sessionId = UUID.test(retrySessionId) ? retrySessionId : null;
+        if (sessionId) recordProfileConversation(sessionId);
+        const error = recoveryRefusal.error && {
+          ...recoveryRefusal.error,
+          message: `The automatic recovery turn did not start. ${recoveryRefusal.error.message}`,
+        };
+        return {
+          ...recoveryRefusal,
+          ...(error ? { error, errorDetail: error.message } : {}),
+          nativeSessionId: sessionId,
+          threadId: sessionId,
+          continuationAvailable: Boolean(sessionId),
+          usage: s.usage,
+          model: s.model ?? targetModel,
+        };
       }
-      const second = await runTurn(recoveryPrompt, retrySessionId, remainingTimeoutMs, retryOnEvent);
-      processResult = second.processResult;
-      const s2 = second.snapshot;
-      s = {
-        ...s2,
-        model: s2.model ?? s.model,
-        sandboxDenied: s.sandboxDenied || s2.sandboxDenied,
-        deniedActions: [...new Set([...s.deniedActions, ...s2.deniedActions])].slice(0, MAX_DENIED_ACTIONS),
-        truncated: s.truncated || s2.truncated,
-        usage: mergeUsage(s.usage, s2.usage),
-      };
+      // The check took part of the turn's time: the recovery gets only what is left after it, and
+      // none starts when nothing is left (#20: at most once within the remaining `timeoutMs`).
+      const recoveryTimeoutMs = effectiveTimeoutMs - Math.max(0, Math.round(clock() - startedAtMs));
+      if (recoveryTimeoutMs <= 0) {
+        timedOutBeforeRecovery = true;
+      } else {
+        retriedAfterDenial = true;
+        const second = await runTurn(recoveryPrompt, retrySessionId, recoveryTimeoutMs, retryOnEvent);
+        processResult = second.processResult;
+        const s2 = second.snapshot;
+        s = {
+          ...s2,
+          model: s2.model ?? s.model,
+          sandboxDenied: s.sandboxDenied || s2.sandboxDenied,
+          deniedActions: [...new Set([...s.deniedActions, ...s2.deniedActions])].slice(0, MAX_DENIED_ACTIONS),
+          truncated: s.truncated || s2.truncated,
+          usage: mergeUsage(s.usage, s2.usage),
+        };
+      }
     }
   }
 
@@ -782,6 +800,14 @@ export async function execute(
       retryable: false,
     };
   }
+  // The first turn ended without an answer and the profile check took the rest of its time.
+  if (timedOutBeforeRecovery && !sessionMismatch) {
+    error = {
+      code: 'TIMEOUT',
+      message: `agy ended the turn without an answer after headless mode ${deniedSummary(s.deniedActions)}, and the turn's time ran out while CoAgent8 verified its agy profile, so no automatic recovery turn started.`,
+      retryable: true,
+    };
+  }
   const effectiveSessionId =
     sessionMismatch || error?.code === 'SESSION_INVALID' || error?.code === 'PROTOCOL_ERROR'
       ? null
@@ -790,11 +816,13 @@ export async function execute(
   if (effectiveSessionId && UUID.test(effectiveSessionId) && usesAgyProfile()) recordProfileConversation(effectiveSessionId);
 
   const status =
-    !sessionMismatch && (processResult.status === 'cancelled' || processResult.status === 'timed_out')
-      ? processResult.status
-      : error
-        ? 'failed'
-        : 'completed';
+    !sessionMismatch && timedOutBeforeRecovery
+      ? 'timed_out'
+      : !sessionMismatch && (processResult.status === 'cancelled' || processResult.status === 'timed_out')
+        ? processResult.status
+        : error
+          ? 'failed'
+          : 'completed';
   return {
     ...s,
     nativeSessionId: effectiveSessionId,

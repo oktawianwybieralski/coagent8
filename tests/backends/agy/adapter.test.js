@@ -782,8 +782,10 @@ test('every agy launch disables its auto-updater, whose console window takes the
     );
     for (const launch of launches) {
       assert.equal(launch.autoUpdate, 'true', JSON.stringify(launch.args));
-      // #224: every agy call sees CoAgent8's profile on Windows; HOME, which git and bash read, stays.
-      assert.equal(launch.userProfile, windows ? getAgyProfileDir() : (process.env.USERPROFILE ?? null), JSON.stringify(launch.args));
+      // #224: every agy call that runs a turn or reads what a turn loads sees CoAgent8's profile on
+      // Windows; the `--version` probe runs no turn and keeps the user's. HOME, which git and bash read, stays.
+      const own = !windows || launch.args.includes('--version');
+      assert.equal(launch.userProfile, own ? (process.env.USERPROFILE ?? null) : getAgyProfileDir(), JSON.stringify(launch.args));
       assert.equal(launch.home, process.env.HOME ?? null, JSON.stringify(launch.args));
     }
     assert.equal(process.env.AGY_CLI_DISABLE_AUTO_UPDATE, '1', 'the server environment is not changed');
@@ -1060,9 +1062,45 @@ test(
         const args = launches();
         assert.equal(args.filter(isTurn).length, 1, 'only the first turn ran');
         assert.equal(args.filter(isCheck).length, 4, 'checked before the first turn and before the recovery');
+        // The first turn's conversation, its usage and model stay, so it can be continued.
+        assert.equal(result.nativeSessionId, '11111111-aaaa-bbbb-cccc-123456789012');
+        assert.equal(result.threadId, result.nativeSessionId);
+        assert.equal(result.continuationAvailable, true);
+        assert.equal(result.usage.totalTokens, 10);
+        assert.equal(result.model, MODEL);
+
+        // Once the profile is clean again, a later turn resumes that conversation.
+        fs.rmSync(process.env.coagent8_FIXTURE_MCP_STATE, { force: true });
+        delete process.env.coagent8_FIXTURE_MCP_STATE;
+        delete process.env.coagent8_FIXTURE_MODE;
+        const resumed = await execute('continue', { model: MODEL, cwd: tempDir, nativeSessionId: result.nativeSessionId });
+        assert.equal(resumed.status, 'completed', JSON.stringify(resumed.error));
+        const turn = launches().filter(isTurn).at(-1);
+        assert.equal(turn[turn.indexOf('--conversation') + 1], result.nativeSessionId);
       } finally {
         delete process.env.coagent8_FIXTURE_MCP_STATE;
       }
+    });
+  },
+);
+
+test(
+  'agy profile (#224): when the recovery check uses up the turn time, no recovery starts and the turn times out with its session',
+  { skip: process.platform !== 'win32' && 'the profile is used on Windows only' },
+  async () => {
+    const { DEFAULT_TIMEOUT_MS } = require('../../../src/execution/process.ts');
+    await withFreshProfile(async ({ launches }) => {
+      process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-recover';
+      // The clock jumps past the deadline once the second profile check (before the recovery) ran.
+      const clock = () => (launches().filter(isCheck).length >= 4 ? 1000 + DEFAULT_TIMEOUT_MS : 1000);
+      const result = await execute('denied', { model: MODEL, cwd: tempDir, clock });
+      assert.equal(result.status, 'timed_out', JSON.stringify(result));
+      assert.equal(result.error.code, 'TIMEOUT');
+      assert.match(result.error.message, /time ran out while CoAgent8 verified its agy profile, so no automatic recovery turn started/);
+      assert.equal(launches().filter(isTurn).length, 1, 'no recovery turn launched');
+      assert.equal(launches().filter(isCheck).length, 4);
+      assert.equal(result.nativeSessionId, '11111111-aaaa-bbbb-cccc-123456789012');
+      assert.equal(result.continuationAvailable, true);
     });
   },
 );
