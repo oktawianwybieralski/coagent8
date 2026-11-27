@@ -209,9 +209,11 @@ export function validateConfig(value: unknown): CoAgent8Config {
     }
     for (const [key, value] of Object.entries(rootLimits)) {
       const most = Object.hasOwn(ROOT_LIMIT_BOUNDS, key) ? ROOT_LIMIT_BOUNDS[key as keyof RootLimits] : undefined;
-      if (most === undefined || !Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > most) {
+      // Only the grace may be 0: no time beyond the limit.
+      const least = key === 'graceMinutes' ? 0 : 1;
+      if (most === undefined || !Number.isSafeInteger(value) || (value as number) < least || (value as number) > most) {
         throw new Error(
-          `Configuration Error: Invalid rootLimits.${key.slice(0, 40)}: expected a whole number from 1${most ? ` to ${most}` : ''}.`,
+          `Configuration Error: Invalid rootLimits.${key.slice(0, 40)}: expected a whole number from ${least}${most ? ` to ${most}` : ''}.`,
         );
       }
     }

@@ -37,10 +37,58 @@ core rule; it never relaxes one (agent-standards README "Precedence").
 Native CLI behavior that no documentation states is recorded with the CLI
 version and date of the run that observed it.
 
+## Agent roles
+
+Owner decision 2026-11-26 (adopted from the owner's practice of 2026-11-25 in
+another repository): the agent the owner talks to coordinates, another agent
+implements and a third reviews, so the coordinator spends its effort on
+judgement rather than typing code.
+
+- Coordinator (the owner's session): picks the next issue, writes the task
+  spec, delegates, checks the result, commits, pushes, opens and merges the PR,
+  watches CI and keeps the rules, docs and issues current. It is answerable for
+  every change it commits; the owner stays the author (core rule 02).
+- Implementer: CoAgent8 `delegate` with backend `agy`. It edits code, tests and
+  docs and drafts the PR body; it does not commit, push or open PRs.
+- Reviewer: CoAgent8 `review` with backend `codex` (see "Reviewers"), and
+  CoAgent8 `consult` with backend `codex` on the plan of a non-trivial issue.
+
+Critical areas: the boundaries of [rule 11](rules/11-security-and-sandboxes.md)
+(host execution and its consent, `delegate` sessions and claims, model cost
+governance and consent, secret redaction), process teardown and the Windows job
+helper ([rule 15](rules/15-cross-platform.md)), and the release and publication
+tooling ([rule 12](rules/12-release-workflow.md)). A change that touches one of
+them is implemented by CoAgent8 `delegate` with backend `claude`, a session
+independent of the coordinator's, and its every reviewed head gets, besides the
+`codex` review, a CoAgent8 `review` with backend `claude` in a session that did
+not write it.
+
+The task spec is self-contained: the issue, its `Acceptance criteria` and dated
+decisions quoted; the branch and base commit; the allowed paths (`scope`) and
+what is out of scope, with "stop and report" when the task needs more; the
+pattern to follow and the rules that apply; the exact check commands
+(`checks`); and what to return: changed paths, assumptions, each check as PASS,
+FAIL or NOT_RUN with its reason, and a PR body draft. One delegate session per
+workspace at a time; the coordinator runs the long suites itself.
+
+The coordinator reads the whole diff and the list of changed and untracked
+files against the scope; the implementer's summary is an index, not proof. A
+confirmed review finding goes back to the implementer's session
+(`session_handle`) quoted with its severity and location. The coordinator does
+the work itself, or narrows the task first, when it updates dependencies or the
+implementer fails twice on the same task; in a critical area it only narrows
+the task and delegates it to `claude` again. After the review is READY, the
+coordinator still judges the change itself: it solves the issue, follows the
+pattern and the rules, is not overbuilt, and its tests prove the acceptance
+criteria. A READY review alone never merges a change.
+
 ## Reviewers
 
-- Required: CoAgent8 `review` with backend `codex` and with backend `agy`, in
-  parallel, on every reviewed head.
+- Required: CoAgent8 `review` with backend `codex` on every reviewed head
+  (owner instruction 2026-11-26). The `agy` review is no longer required, since
+  `agy` now implements the change (Agent roles).
+- Also required on a change in a critical area: CoAgent8 `review` with backend
+  `claude`, in parallel with `codex` (Agent roles).
 - P2 deferral: allowed with the owner's dated decision.
 
 Owner decision 2026-11-21 (#208, #211): reviewers run on the host without a
@@ -60,7 +108,8 @@ tool's configuration, for CoAgent8 `~/.coagent8/config.json`.
   publication, force pushes and repository settings stay with the owner.
 - 2026-11-02 (the owner's instruction for every topic PR it covers): the agent
   squash-merges a topic PR into `develop` without asking again once its gate and
-  CI pass and every required reviewer above is READY on its head. A reviewer that
+  CI pass, every required reviewer above is READY on its head and the
+  coordinator has judged the change (Agent roles). A reviewer that
   cannot finish (quota, deadline) is waited for, or the owner decides; the
   others never replace it (core rule 03). Bugs another agent reports are fixed
   as they come. Tags, releases, publication, force pushes and repository

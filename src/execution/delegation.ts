@@ -47,7 +47,10 @@ import {
   refundRootTask,
   removeUnusedRoot,
   reserveRootCall,
+  touchRootTask,
   reserveRootTask,
+  ROOT_SEEN_TICKS,
+  ROOT_WATCH_MS,
 } from '../sessions/roots.js';
 import {
   captureWorkspace,
@@ -295,10 +298,9 @@ export function stopActiveDelegations(): Promise<unknown> {
   return Promise.allSettled([...activeDelegations.keys()]);
 }
 
-/** How often a running delegation looks for a cancellation of its root by another server process. */
-const ROOT_WATCH_MS = 1000;
 /** Reads of a root that may fail in a row before its worker is stopped: a root nobody can read cannot cancel it. */
 const ROOT_WATCH_FAILURES = 5;
+// ROOT_WATCH_MS and ROOT_SEEN_TICKS come from the roots, which charge a clock set back by that note interval.
 const ROOT_SETTLE_POLL_MS = 100;
 /** Attempts to mark a task ended in its root, so a passing failure does not keep its place. */
 const ROOT_END_ATTEMPTS = 3;
@@ -476,10 +478,13 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     await giveUpNewRoot();
     throw err;
   }
+  // Measured here, monotonically, so a clock set back while the task runs cannot shorten its time in the root.
+  const reservedAt = performance.now();
+  const elapsedMs = () => Math.max(0, performance.now() - reservedAt);
   /** Returns the charge of a start that never reached a turn; a failure here must not hide its reason. */
   const refund = async () => {
     try {
-      await refundRootTask(rootHandle, taskHandle);
+      await refundRootTask(rootHandle, taskHandle, elapsedMs());
       await giveUpNewRoot();
     } catch (err) {
       process.stderr.write(`CoAgent8: root ${rootHandle} was not updated: ${redactDiagnostic((err as Error).message, 512)}\n`);
@@ -502,7 +507,7 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
   // Owned by the task from the first Git read on, so cancellation and timeout_ms bound all of it.
   const timeoutMs = start.args.timeout_ms;
   const budget = createExecutionBudget({
-    // The root's time is shared: no task runs past it, whatever it asked for.
+    // The root's running time is shared: no task runs past what is left of it, whatever it asked for.
     totalBudgetMs: Math.min(
       typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_EXECUTION_TIMEOUT_MS,
       Math.max(1, reservation.deadlineMs - Date.now()),
@@ -543,7 +548,7 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     // A lock held by another reservation can time out once; a root that stays unwritable refuses every reservation anyway.
     for (let attempt = 1; ; attempt++) {
       try {
-        await endRootTask(rootHandle, taskHandle);
+        await endRootTask(rootHandle, taskHandle, elapsedMs());
         return;
       } catch (err) {
         if (attempt >= ROOT_END_ATTEMPTS) {
@@ -555,7 +560,20 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     }
   };
   let watchFailures = 0;
+  let watchTicks = 0;
+  let touching = false;
   const watch = setInterval(() => {
+    // Notes the task as running once a minute, so a crash of this server stops its time near the crash.
+    if (++watchTicks % ROOT_SEEN_TICKS === 0 && !touching) {
+      touching = true;
+      touchRootTask(rootHandle, { taskHandle, elapsedMs: elapsedMs() })
+        .catch(err =>
+          process.stderr.write(`CoAgent8: root ${rootHandle} was not updated: ${redactDiagnostic((err as Error).message, 512)}\n`),
+        )
+        .finally(() => {
+          touching = false;
+        });
+    }
     try {
       const root = readRoot(rootHandle);
       watchFailures = root ? 0 : watchFailures + 1;
@@ -595,7 +613,7 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     start.requestSignal?.removeEventListener('abort', abortStart);
     announce();
   };
-  const beforeRound = () => reserveRootCall(rootHandle);
+  const beforeRound = () => reserveRootCall(rootHandle, taskHandle);
   const operation = executeDelegation(start.prompt, start.publicInput, start.args, start.cwd, start.scope, controller.signal, null, {
     ...start.options,
     supervise: start.supervise,

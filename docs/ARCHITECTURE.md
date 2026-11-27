@@ -1373,10 +1373,24 @@ does not see changes outside it. A check a worker runs sees the half-finished wo
 **Root.** `delegate` without `root_handle` starts a root, in `<data>/delegations/roots/`. The limits
 are `rootLimits` of the user's configuration when the root is created: `maxCalls` 64 (first
 turns, every later backend turn of a loop and agy's recovery turn), `maxConcurrent` 8 (owner decision
-2026-11-06, with `maxCalls`), `maxChildren` 16, `maxDepth` 3 and
-`maxMinutes` 240. A calling agent cannot raise them. Every reservation runs under the record's
+2026-11-06, with `maxCalls`), `maxChildren` 16, `maxDepth` 3, `maxMinutes` 240 and
+`graceMinutes` 60. A calling agent cannot raise them. Every reservation runs under the record's
 lock, also across server processes; a task's budget is its `timeout_ms` or the default, cut to
-what is left of the root's time. At a limit a start fails with `ROOT_LIMIT` and a loop ends with
+what is left of the root's running time.
+
+`maxMinutes` counts running time (#228): the union of the tasks' intervals, from a reservation to
+its end, so idle time between calls does not count and tasks running side by side count once; the
+call limit and `maxConcurrent` bound how much work runs in parallel. Every write of the record notes
+the tasks it sees running (`seenAt`), and a running task's server notes it once a minute, so a task
+whose server died without recording its end counts up to the last time it was seen; what a write counted stays counted, a refused reservation included. Times of a root are read on its own timeline: the clock plus the record's `clockOffsetMs` (absent in older records, meaning 0). Every write, under the record's lock, raises the offset when the clock is behind the latest time the record holds, so after a clock is set back the timeline goes on from there: a recorded interval is not shortened, a new task starts after the recorded ones, and new work counts at its real length. A clock set forward counts the jump as running time, which fails closed. A task's own server measures its running time monotonically and passes it with every note and its end, so a clock set back while it runs loses no time, also by less than the time since the last write; a measured time ahead of the clock raises the offset by as much, so a later write does not read it as a clock set back. Only a task whose server died counts to its last note. Since that time reaches the root only with the next note, a clock found set back while tasks run moves the timeline a full note interval (a minute) past the latest written time and notes them up to there, at most one interval too many per change, so another task cannot reserve time they may have used. A task's deadline is what is left of the running time, measured on its server's clock. A reservation that reached no turn gives its call back and leaves the record, but the time only it covered, such as a form left open, stays in `refundedMs`. A worker that
+outlives its server on POSIX counts while it is seen and up to its last note after that. Past
+`maxMinutes`, a new task or child is refused; a continuation of a session of the root, its rounds and
+its recovery turn may run until `maxMinutes + graceMinutes` (0 allows none), so a task stopped by the
+limit can be finished. A task running when the limit is reached stops then; finishing it takes a
+continuation. The `ROOT_LIMIT` message names running time, the grace (also a grace of 0), the
+configuration keys and the file, and that a change applies to new roots; it advises continuing a
+session only while the grace is left. Records written before #228 keep a `deadlineAt` that is
+no longer read and get the default grace. At a limit a start fails with `ROOT_LIMIT` and a loop ends with
 `needs_input`. A continued session keeps its root and depth even without naming it, by
 reading the root records; a parent names its root; conflicting names are refused, as is another parent for a
 continued session. Root records are kept for 7 days without a running task, past any root's time; a session continued

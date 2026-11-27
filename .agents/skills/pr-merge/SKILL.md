@@ -103,7 +103,7 @@ list for the agent's own clean topic PRs; it does not cover force-pushing.
    only if it names head `headRefOid`, scope `<base>...<head>` with base equal
    to `git merge-base origin/develop <headRefOid>` (the whole PR, not one
    commit), coverage `COMPLETE` and 0 unresolved P1/P2, for every required
-   reviewer in [`project.md`](../../project.md#reviewers) (Codex and agy). Otherwise,
+   reviewer in [`project.md`](../../project.md#reviewers) (Codex, and Claude in a critical area). Otherwise,
    for each required reviewer without such a review:
    - `git fetch origin`, `git checkout <branch>`, `git pull --ff-only`;
      `git rev-parse HEAD` must equal `headRefOid`;

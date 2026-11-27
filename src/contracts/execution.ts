@@ -132,8 +132,10 @@ export interface RootLimits {
   maxChildren: number;
   /** Tasks in a chain of parents, the first level included. */
   maxDepth: number;
-  /** Minutes from the root's creation to the end of its last task. */
+  /** Minutes of running time: the union of the tasks' intervals, idle time between calls not counted (#228). */
   maxMinutes: number;
+  /** Minutes a continued session may run beyond `maxMinutes` to finish its task; 0 allows none. */
+  graceMinutes: number;
 }
 
 /** Limits of a root when the user's configuration sets none. */
@@ -143,6 +145,7 @@ export const DEFAULT_ROOT_LIMITS: Readonly<RootLimits> = Object.freeze({
   maxChildren: 16,
   maxDepth: 3,
   maxMinutes: 240,
+  graceMinutes: 60,
 });
 
 /** Highest value the configuration accepts for each limit. */
@@ -152,6 +155,7 @@ export const ROOT_LIMIT_BOUNDS: Readonly<RootLimits> = Object.freeze({
   maxChildren: 256,
   maxDepth: 16,
   maxMinutes: 1440,
+  graceMinutes: 240,
 });
 
 /** The last round of the server-owned loop of a delegated change. */
