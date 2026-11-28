@@ -88,12 +88,14 @@ const acceptance = mode === 'acceptance' || mode === 'acceptance-slow';
 function acceptanceAnswer(prompt) {
   const snapshot = /^SNAPSHOT: (\S+)$/m.exec(prompt || '');
   if (prompt && prompt.includes('CHECKS: typecheck=<PASS|FAIL|NOT_RUN>') && snapshot) {
+    const file = /from the file (.+?) \(\d+ lines/.exec(prompt)?.[1];
+    const mark = file ? /\[END OF DIFF (\w+)\]/.exec(fs.readFileSync(file, 'utf8'))?.[1] : null;
     return [
       'REVIEW: 1',
       `SNAPSHOT: ${snapshot[1]}`,
       'COVERAGE: COMPLETE',
       'VERDICT: READY',
-      'Reviewed: fixture review of the diff.',
+      `Reviewed: fixture review of the diff${mark ? ` (${mark})` : ''}.`,
       'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
       'END_REVIEW',
     ].join('\n');

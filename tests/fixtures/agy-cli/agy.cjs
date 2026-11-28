@@ -1,4 +1,6 @@
 const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const args = process.argv.slice(2);
 if (process.env.coagent8_FIXTURE_LAUNCH_LOG) {
   fs.appendFileSync(
@@ -352,7 +354,15 @@ function run() {
         setInterval(() => {}, 1000);
         return;
       }
-      const recoveredText = process.env.coagent8_FIXTURE_RECOVER_RESPONSE || 'Recovered answer from read_file without shell commands.';
+      const rawRecovered = process.env.coagent8_FIXTURE_RECOVER_RESPONSE || 'Recovered answer from read_file without shell commands.';
+      const markFile = path.join(process.env.coagent8_DIR || os.tmpdir(), `agy-fixture-mark-${sid}`);
+      const refFile = /from the file (.+?) \(\d+ lines/.exec(prompt)?.[1];
+      let readMark = refFile ? (/\[END OF DIFF (\w+)\]/.exec(fs.readFileSync(refFile, 'utf8'))?.[1] ?? '') : '';
+      if (!readMark && fs.existsSync(markFile)) {
+        readMark = fs.readFileSync(markFile, 'utf8').trim();
+        fs.rmSync(markFile, { force: true });
+      }
+      const recoveredText = rawRecovered.replace(/\{\{READ_MARK\}\}/g, readMark);
       send({
         event: 'step_update',
         step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'tool', tool_name: 'read_file' },
@@ -379,6 +389,13 @@ function run() {
       return;
     }
     if (mode === 'sandbox-denied-recover') {
+      const refFile = /from the file (.+?) \(\d+ lines/.exec(prompt)?.[1];
+      const readMark = refFile ? (/\[END OF DIFF (\w+)\]/.exec(fs.readFileSync(refFile, 'utf8'))?.[1] ?? '') : '';
+      if (readMark) {
+        const markFile = path.join(process.env.coagent8_DIR || os.tmpdir(), `agy-fixture-mark-${sid}`);
+        fs.mkdirSync(path.dirname(markFile), { recursive: true });
+        fs.writeFileSync(markFile, readMark);
+      }
       send({
         event: 'step_update',
         step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'tool', tool_name: 'run_command' },

@@ -31,6 +31,10 @@ test.after(() => {
 });
 
 const approve = { askConsent: async () => ({ approved: true, remember: false }) };
+const readMark = prompt => {
+  const file = /from the file (.+?) \(\d+ lines/.exec(prompt)?.[1];
+  return file ? (/\[END OF DIFF (\w+)\]/.exec(fs.readFileSync(file, 'utf8'))?.[1] ?? '') : '';
+};
 
 function fixtureRepo(name) {
   const repo = path.join(tempDir, name);
@@ -48,12 +52,13 @@ function fixtureRepo(name) {
 
 /** Fixture reviewers that count their turns; `answer` builds the reply from the prompt. */
 function installReviewers(
-  answer = snapshot =>
+  answer = (snapshot, mark) =>
     [
       'REVIEW: 1',
       `SNAPSHOT: ${snapshot}`,
       'COVERAGE: COMPLETE',
       'VERDICT: READY',
+      `Reviewed: a.ts (${mark})`,
       'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
       'END_REVIEW',
     ].join('\n'),
@@ -74,7 +79,7 @@ function installReviewers(
           continuationAvailable: true,
           nativeSessionId,
           model: options.model,
-          output: answer(prompt.match(/^SNAPSHOT: (.+)$/m)[1]),
+          output: answer(prompt.match(/^SNAPSHOT: (.+)$/m)[1], readMark(prompt)),
         };
       },
     };
@@ -249,7 +254,7 @@ test('disabled history still refuses an unchanged repeat: the outcome lives in t
 test('a review ending with PARTIAL coverage and BLOCKED is retried without and with session_handle', async () => {
   const { repo } = fixtureRepo('partial-blocked-retry');
   let round = 0;
-  const turns = installReviewers(snapshot => {
+  const turns = installReviewers((snapshot, mark) => {
     round++;
     if (round === 1) {
       return [
@@ -267,6 +272,7 @@ test('a review ending with PARTIAL coverage and BLOCKED is retried without and w
       `SNAPSHOT: ${snapshot}`,
       'COVERAGE: COMPLETE',
       'VERDICT: READY',
+      `Reviewed: a.ts (${mark})`,
       'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
       'END_REVIEW',
     ].join('\n');
@@ -287,14 +293,14 @@ test('a review ending with PARTIAL coverage and BLOCKED is retried without and w
   // Retry with session_handle on a separate partial review
   const { repo: repo2 } = fixtureRepo('partial-blocked-handle');
   round = 0;
-  const turns2 = installReviewers(snapshot => {
+  const turns2 = installReviewers((snapshot, mark) => {
     round++;
     return [
       `REVIEW: ${round}`,
       `SNAPSHOT: ${snapshot}`,
       round === 1 ? 'COVERAGE: PARTIAL' : 'COVERAGE: COMPLETE',
       round === 1 ? 'VERDICT: BLOCKED' : 'VERDICT: READY',
-      ...(round === 1 ? ['Blocked: Read-only filesystem access was denied'] : []),
+      ...(round === 1 ? ['Blocked: Read-only filesystem access was denied'] : [`Reviewed: a.ts (${mark})`]),
       'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
       'END_REVIEW',
     ].join('\n');
@@ -314,12 +320,13 @@ test('a review ending with PARTIAL coverage and BLOCKED is retried without and w
 test('incomplete collected input is retried even if reviewer reported COVERAGE: COMPLETE', async () => {
   const { repo } = fixtureRepo('incomplete-input-retry');
   fs.writeFileSync(path.join(repo, 'too-large.txt'), 'x'.repeat(256 * 1024 + 1));
-  const turns = installReviewers(snapshot =>
+  const turns = installReviewers((snapshot, mark) =>
     [
       'REVIEW: 1',
       `SNAPSHOT: ${snapshot}`,
       'COVERAGE: COMPLETE',
       'VERDICT: READY',
+      `Reviewed: image.png (${mark})`,
       'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
       'END_REVIEW',
     ].join('\n'),
@@ -339,12 +346,13 @@ test('incomplete collected input is retried even if reviewer reported COVERAGE: 
 test('a READY with a binary change repeats only while the binary bytes are unchanged (FEEDBACK-070d)', async () => {
   const { repo } = fixtureRepo('binary-identity-repeat');
   fs.writeFileSync(path.join(repo, 'image.png'), Buffer.from([0x89, 0x50, 0, 1, 2, 3]));
-  const turns = installReviewers(snapshot =>
+  const turns = installReviewers((snapshot, mark) =>
     [
       'REVIEW: 1',
       `SNAPSHOT: ${snapshot}`,
       'COVERAGE: COMPLETE',
       'VERDICT: READY',
+      `Reviewed: image.png (${mark})`,
       'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
       'END_REVIEW',
     ].join('\n'),
@@ -387,6 +395,7 @@ test('a typed execution failure is retried and starts a new model turn', async (
           `SNAPSHOT: ${prompt.match(/^SNAPSHOT: (.+)$/m)[1]}`,
           'COVERAGE: COMPLETE',
           'VERDICT: READY',
+          `Reviewed: a.ts (${readMark(prompt)})`,
           'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
           'END_REVIEW',
         ].join('\n'),
@@ -432,6 +441,7 @@ test('a review that failed before a native thread existed is retried with its se
           `SNAPSHOT: ${prompt.match(/^SNAPSHOT: (.+)$/m)[1]}`,
           'COVERAGE: COMPLETE',
           'VERDICT: READY',
+          `Reviewed: a.ts (${readMark(prompt)})`,
           'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
           'END_REVIEW',
         ].join('\n'),
@@ -485,12 +495,13 @@ test('a legacy session record without coverage is ignored and retried', async ()
 
 test('an unchanged complete BLOCKED review with findings still deduplicates (AX-007c)', async () => {
   const { repo } = fixtureRepo('complete-blocked-dedup');
-  const turns = installReviewers(snapshot =>
+  const turns = installReviewers((snapshot, mark) =>
     [
       'REVIEW: 1',
       `SNAPSHOT: ${snapshot}`,
       'COVERAGE: COMPLETE',
       'VERDICT: BLOCKED',
+      `Reviewed: a.ts (${mark})`,
       '[P1] a.ts:1',
       'Problem: Security flaw',
       'Evidence: a.ts:1',
@@ -522,6 +533,7 @@ test('an unchanged repeat after a review blocked by filesystem denials starts a 
     execute: async (prompt, options) => {
       round++;
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)[1];
+      const mark = readMark(prompt);
       if (round === 1) {
         return {
           status: 'completed',
@@ -535,6 +547,7 @@ test('an unchanged repeat after a review blocked by filesystem denials starts a 
             `SNAPSHOT: ${snapshot}`,
             'COVERAGE: COMPLETE',
             'VERDICT: READY',
+            `Reviewed: a.ts (${mark})`,
             'CHECKS: typecheck=PASS; tests=PASS',
             'END_REVIEW',
           ].join('\n'),
@@ -553,6 +566,7 @@ test('an unchanged repeat after a review blocked by filesystem denials starts a 
           `SNAPSHOT: ${snapshot}`,
           'COVERAGE: COMPLETE',
           'VERDICT: READY',
+          `Reviewed: a.ts (${mark})`,
           'CHECKS: typecheck=PASS; tests=PASS',
           'END_REVIEW',
         ].join('\n'),
@@ -590,8 +604,15 @@ test('ENVELOPE-001: a server-terminated review is judged and deduplicated; a len
   await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy', 'codex'] } });
   // No END_REVIEW from the model: CHECKS is last and the turn completed.
   const { repo } = fixtureRepo('server-terminated');
-  const turns = installReviewers(snapshot =>
-    ['REVIEW: 1', `SNAPSHOT: ${snapshot}`, 'COVERAGE: COMPLETE', 'VERDICT: READY', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN'].join('\n'),
+  const turns = installReviewers((snapshot, mark) =>
+    [
+      'REVIEW: 1',
+      `SNAPSHOT: ${snapshot}`,
+      'COVERAGE: COMPLETE',
+      'VERDICT: READY',
+      `Reviewed: a.ts (${mark})`,
+      'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+    ].join('\n'),
   );
   const first = await handleReview('review', {}, repo, null, null, approve);
   assert.equal(readResult(first).verdict, 'READY');
@@ -622,6 +643,7 @@ test('ENVELOPE-001: a server-terminated review is judged and deduplicated; a len
           `SNAPSHOT: ${snapshot}`,
           'COVERAGE: COMPLETE',
           'VERDICT: READY',
+          `Reviewed: a.ts (${readMark(prompt)})`,
           'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
           'END_REVIEW',
         ].join('\n'),

@@ -18,6 +18,10 @@ const { createExecutionBudget } = require('../../../src/execution/runtime/budget
 const { ToolError } = require('../../../src/contracts/error.ts');
 /** The server verdict and the checks it names as not run. */
 const pick = ({ verdict, reason }) => ({ verdict, reason });
+const readMark = prompt => {
+  const file = /from the file (.+?) \(\d+ lines/.exec(prompt)?.[1];
+  return file ? (/\[END OF DIFF (\w+)\]/.exec(fs.readFileSync(file, 'utf8'))?.[1] ?? '') : '';
+};
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('review prompt names the snapshot, asks for the bounded envelope, and a matching answer passes the gate', async () => {
@@ -34,12 +38,17 @@ test('review prompt names the snapshot, asks for the bounded envelope, and a mat
   const head = git('rev-parse', '--short', 'HEAD');
   const original = adapterRegistry.agy;
   let prompt = '';
+  let diffFile = '';
+  let diffContent = '';
   adapterRegistry.agy = {
     id: 'agy',
     name: 'fixture',
     probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async received => {
       prompt = received;
+      diffFile = /from the file (.+?) \(\d+ lines/.exec(received)?.[1] ?? '';
+      diffContent = diffFile ? fs.readFileSync(diffFile, 'utf8') : '';
+      const mark = /\[END OF DIFF (\w+)\]/.exec(diffContent)?.[1] ?? '';
       return {
         status: 'completed',
         isError: false,
@@ -52,6 +61,7 @@ test('review prompt names the snapshot, asks for the bounded envelope, and a mat
           received.match(/^SNAPSHOT: .+$/m)[0],
           'COVERAGE: COMPLETE',
           'VERDICT: READY',
+          `Reviewed: a.ts (${mark})`,
           '[P3] a.ts:1',
           'Problem: The constant name is short.',
           'CHECKS: typecheck=PASS; tests=PASS',
@@ -84,7 +94,10 @@ test('review prompt names the snapshot, asks for the bounded envelope, and a mat
       ),
       'the envelope ends with CHECKS before the diff',
     );
-    assert.ok(prompt.includes('+export const a = 2;'));
+    assert.match(prompt, /The diff is not inlined/);
+    assert.ok(!prompt.includes('+export const a = 2;'), 'small diff is not inlined in the prompt');
+    assert.ok(diffContent.includes('+export const a = 2;'), 'diff file holds the change');
+    assert.equal(fs.existsSync(diffFile), false, 'diff file is removed after the review');
     assert.equal(readResult(result).verdict, 'READY', result.content[0].text);
     // #62: every round asks for all findings, and a follow-up round re-reviews the whole diff.
     assert.ok(prompt.includes('Report every P1 and P2 finding in the whole diff, not the first few.'));
@@ -126,13 +139,14 @@ test('CUR-001 reproductions cannot turn fake COMPLETE/READY into approval', asyn
     probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async prompt => {
       const snapshot = wrongSnapshot ? 'not-the-requested-snapshot' : prompt.match(/^SNAPSHOT: (.+)$/m)[1];
+      const mark = readMark(prompt);
       if (mutate) fs.appendFileSync(path.join(repo, 'README.md'), 'Changed during review.\n');
       return {
         status: 'completed',
         isError: false,
         truncated: false,
         continuationAvailable: false,
-        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nCHECKS: ${checks}\nEND_REVIEW`,
+        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nReviewed: files (${mark})\nCHECKS: ${checks}\nEND_REVIEW`,
       };
     },
   };
@@ -290,6 +304,7 @@ test('recheck failure or workspace mutation during review turn blocks READY verd
     probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async prompt => {
       // Simulate workspace change during turn execution
+      const mark = readMark(prompt);
       fs.writeFileSync(path.join(repo, 'file.ts'), 'const x = 3;\n');
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)[1];
       return {
@@ -300,7 +315,7 @@ test('recheck failure or workspace mutation during review turn blocks READY verd
           `SNAPSHOT: ${snapshot}`,
           'COVERAGE: COMPLETE',
           'VERDICT: READY',
-          'Reviewed: file.ts',
+          `Reviewed: file.ts (${mark})`,
           'CHECKS: typecheck=PASS; tests=PASS',
           'END_REVIEW',
         ].join('\n'),
@@ -341,6 +356,7 @@ test('an untracked binary is named to the reviewer and READY says it was not rev
     execute: async prompt => {
       seenPrompt = prompt;
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)[1];
+      const mark = readMark(prompt);
       return {
         status: 'completed',
         isError: false,
@@ -349,7 +365,7 @@ test('an untracked binary is named to the reviewer and READY says it was not rev
           `SNAPSHOT: ${snapshot}`,
           'COVERAGE: COMPLETE',
           'VERDICT: READY',
-          'Reviewed: file.ts',
+          `Reviewed: file.ts (${mark})`,
           'CHECKS: typecheck=PASS; tests=PASS',
           'END_REVIEW',
         ].join('\n'),
@@ -460,10 +476,11 @@ test('handleReview passes remaining monotonic execution time to adapter after Gi
     execute: async (prompt, options) => {
       receivedTimeoutMs = options.timeoutMs;
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)?.[1] ?? 'snapshot';
+      const mark = readMark(prompt);
       return {
         status: 'completed',
         isError: false,
-        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nReviewed: checked a.ts\nCHECKS: typecheck=PASS; tests=PASS\nEND_REVIEW`,
+        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nReviewed: checked a.ts (${mark})\nCHECKS: typecheck=PASS; tests=PASS\nEND_REVIEW`,
         nativeSessionId: '11111111-2222-3333-4444-555555555555',
         model: 'fixture-model',
         truncated: false,
@@ -516,10 +533,11 @@ test('handleReview verifyReviewSnapshot succeeds during teardown allowance when 
       // Past executionDeadlineMs (46000) and inside teardown allowance (deadlineMs 61000), leaving 11s for real Git recheck under load.
       now = 50000;
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)?.[1] ?? 'snapshot';
+      const mark = readMark(prompt);
       return {
         status: 'completed',
         isError: false,
-        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nReviewed: checked a.ts\nCHECKS: typecheck=PASS; tests=PASS\nEND_REVIEW`,
+        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nReviewed: checked a.ts (${mark})\nCHECKS: typecheck=PASS; tests=PASS\nEND_REVIEW`,
         nativeSessionId: '11111111-2222-3333-4444-555555555555',
         model: 'fixture-model',
         truncated: false,
@@ -571,7 +589,7 @@ test('Issue #20: handleReview on agy recovers automatically from an initial sand
     `SNAPSHOT: ${input.context.expectedSnapshot}`,
     'COVERAGE: COMPLETE',
     'VERDICT: READY',
-    'Reviewed: a.ts',
+    'Reviewed: a.ts ({{READ_MARK}})',
     'CHECKS: typecheck=PASS; tests=PASS',
     'END_REVIEW',
   ].join('\n');
@@ -636,6 +654,7 @@ test('review mode: async returns a task handle, runs checks/snapshot/gate identi
       }
       if (mutateDuringTurn) fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 99;\n');
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)[1];
+      const mark = readMark(prompt);
       return {
         status: 'completed',
         isError: false,
@@ -648,7 +667,7 @@ test('review mode: async returns a task handle, runs checks/snapshot/gate identi
           `SNAPSHOT: ${snapshot}`,
           'COVERAGE: COMPLETE',
           'VERDICT: READY',
-          'Reviewed: a.ts',
+          `Reviewed: a.ts (${mark})`,
           'CHECKS: typecheck=PASS; tests=PASS',
         ].join('\n'),
       };
@@ -772,6 +791,7 @@ test('review mode: async fails closed on failed server check and invalid State E
     probe: async () => ({ id: 'agy', installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async prompt => {
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)[1];
+      const mark = readMark(prompt);
       return {
         status: 'completed',
         isError: false,
@@ -786,7 +806,7 @@ test('review mode: async fails closed on failed server check and invalid State E
               `SNAPSHOT: ${snapshot}`,
               'COVERAGE: COMPLETE',
               'VERDICT: READY',
-              'Reviewed: a.ts',
+              `Reviewed: a.ts (${mark})`,
               'CHECKS: typecheck=PASS; tests=PASS',
             ].join('\n'),
       };
@@ -1078,6 +1098,7 @@ test('MCP server deducts pre-launch setup and consent time from async deadline a
         }
       }
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)[1];
+      const mark = readMark(prompt);
       return {
         status: 'completed',
         isError: false,
@@ -1090,7 +1111,7 @@ test('MCP server deducts pre-launch setup and consent time from async deadline a
           `SNAPSHOT: ${snapshot}`,
           'COVERAGE: COMPLETE',
           'VERDICT: READY',
-          'Reviewed: a.ts',
+          `Reviewed: a.ts (${mark})`,
           'CHECKS: typecheck=PASS; tests=PASS',
         ].join('\n'),
       };
