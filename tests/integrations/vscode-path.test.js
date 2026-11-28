@@ -55,8 +55,8 @@ class MockPathAdapter {
   }
 }
 
-function fixture(t, { product = 'Code' } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-path-test-'));
+function fixture(t, { product = 'Code', prefix = 'coagent8-path-test-' } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const storage = path.join(root, product, 'User/globalStorage/okidev.coagent8-mcp');
   const installation = path.join(root, product === 'Code' ? '.vscode' : '.vscode-insiders', 'extensions');
@@ -658,7 +658,7 @@ test(
   'Windows PATH shim executes the real bundle across an extension update without changing shim bytes',
   { skip: process.platform !== 'win32' },
   async t => {
-    const f = fixture(t);
+    const f = fixture(t, { prefix: 'coagent8 path test ' });
     const cp = require('node:child_process');
     const distBundle = path.resolve(__dirname, '../../dist/index.cjs');
     const bundleV1 = path.join(f.root, 'ext-v1', 'dist', 'index.cjs');
@@ -675,10 +675,11 @@ test(
       adapter,
     );
     const shimPath = path.join(f.home, '.coagent8', 'bin', 'coagent8.cmd');
+    assert.ok(shimPath.includes(' '), 'shim path contains a space to verify safe cmd quoting');
     const shimBytesBefore = fs.readFileSync(shimPath, 'utf8');
     const childEnv = { ...process.env, HOME: f.home, USERPROFILE: f.home, coagent8_DIR: path.join(f.home, 'data') };
 
-    const run1 = cp.spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', `${shimPath} doctor --scope health --json`], {
+    const run1 = cp.spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'call', shimPath, 'doctor', '--scope', 'health', '--json'], {
       env: childEnv,
       encoding: 'utf8',
       windowsHide: true,
@@ -694,7 +695,7 @@ test(
     assert.equal(syncRes.action, 'noop');
     assert.equal(fs.readFileSync(shimPath, 'utf8'), shimBytesBefore, 'shim bytes unchanged on update');
 
-    const run2 = cp.spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', `${shimPath} doctor --scope health --json`], {
+    const run2 = cp.spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'call', shimPath, 'doctor', '--scope', 'health', '--json'], {
       env: childEnv,
       encoding: 'utf8',
       windowsHide: true,

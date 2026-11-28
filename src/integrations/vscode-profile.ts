@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { copyJobHelperBeside } from './runtime-files.js';
-import { cleanupUnreferencedRuntimes, markRuntimeLeaseCapable, PRE_LEASE_RETENTION_MS } from './runtime-manager.js';
+import { cleanupUnreferencedRuntimes, markRuntimeLeaseCapable } from './runtime-manager.js';
 import { parse, applyEdits, modify, type ParseError } from 'jsonc-parser';
 import { readBoundedFileSync } from '../storage/read.js';
 import { withFileLock } from '../storage/lock.js';
@@ -209,15 +209,13 @@ function runtimeCopy(storagePath: string, bundle: string): string {
  *
  * @remarks
  * Pre-lease retention rule: copies without `.lease-capable` may still be executing in servers
- * started by earlier extension versions (which acquire no per-process lease files) or unmigrated
- * host registrations. Cleanup conservatively retains those copies for `PRE_LEASE_RETENTION_MS`
- * (7 days) after they first become unreferenced before deleting them.
+ * started by earlier extension versions (which acquire no per-process lease files). Profile sync
+ * never deletes pre-lease copies; VS Code removes globalStorage on full extension uninstall.
  */
 async function pruneRuntimes(storagePath: string, home: string, keep: string): Promise<void> {
   const keepDigest = path.basename(path.dirname(keep));
   await cleanupUnreferencedRuntimes(storagePath, home, process.env, {
     extraReferencedDigests: /^[a-f0-9]{64}$/.test(keepDigest) ? [keepDigest] : [],
-    preLeaseGraceMs: PRE_LEASE_RETENTION_MS,
   });
 }
 

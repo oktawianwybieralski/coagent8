@@ -32,14 +32,8 @@ const POINTER_LIMIT = 64 * 1024;
 const BUNDLE_LIMIT = 16 * 1024 * 1024;
 const LEASE_LIMIT = 16 * 1024;
 const LEASE_CAPABLE_MARKER = '.lease-capable';
-const PRE_LEASE_RETIRED_MARKER = '.pre-lease-retired';
 /** Maximum age (ms) of an unrenewed runtime lease before identity re-verification runs. */
 export const RUNTIME_LEASE_MAX_AGE_MS = 60_000;
-/**
- * Conservative retention window (7 days) for unreferenced runtime copies installed by older
- * pre-lease versions (which write no per-process lease files) before cleanup deletes them.
- */
-export const PRE_LEASE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 /** Shared lock timeout for runtime pointer and lease operations. */
 const RUNTIME_LOCK_TIMEOUT_MS = 5_000;
 
@@ -117,8 +111,11 @@ export interface RuntimeCleanupOptions {
   keepStableNamespaces?: boolean;
   /** Additional runtime digests that must be preserved (for example active VS Code globalStorage copy). */
   extraReferencedDigests?: string[];
-  /** Retention grace (ms) for pre-lease copies lacking `.lease-capable` after becoming unreferenced. */
-  preLeaseGraceMs?: number;
+  /**
+   * Allow deleting pre-lease copies lacking `.lease-capable`. Only full uninstall should set this;
+   * automatic and explicit runtime cleanups keep pre-lease copies because older servers write no leases.
+   */
+  removePreLeaseCopies?: boolean;
   /** Maximum time to wait for the runtime lock (ms). */
   leaseTimeoutMs?: number;
   /** Override for testing OS process identity checks on aged leases. */
@@ -625,36 +622,16 @@ export function installAndVerifyRuntimeCopy(options: RuntimeCopyOptions): Instal
   return { root, runtimeRoot, digest, version, runtimeDir, runtimePath };
 }
 
-/** Marks a runtime copy directory as lease-capable and clears any stale pre-lease retirement marker. */
+/** Marks a runtime copy directory as lease-capable so future cleanups can rely on per-process leases. */
 export function markRuntimeLeaseCapable(runtimeDir: string): void {
   const marker = path.join(runtimeDir, LEASE_CAPABLE_MARKER);
   if (!fs.existsSync(marker)) {
     atomicWriteText(marker, '1\n', 0o600);
   }
-  fs.rmSync(path.join(runtimeDir, PRE_LEASE_RETIRED_MARKER), { force: true });
 }
 
-function shouldRetainPreLeaseCopy(runtimeDir: string, graceMs: number, now = Date.now()): boolean {
-  if (graceMs <= 0) return false;
-  if (fs.existsSync(path.join(runtimeDir, LEASE_CAPABLE_MARKER))) return false;
-  // Copies without `.lease-capable` may have been started by pre-lease extension or CLI versions
-  // that write no per-process lease files. Keep them for `graceMs` after first seen unreferenced.
-  const retiredFile = path.join(runtimeDir, PRE_LEASE_RETIRED_MARKER);
-  if (!fs.existsSync(retiredFile)) {
-    try {
-      atomicWriteText(retiredFile, JSON.stringify({ retiredAt: now }) + '\n', 0o600);
-    } catch {
-      // Conservative retention on write failure.
-    }
-    return true;
-  }
-  try {
-    const parsed = JSON.parse(readBoundedFileSync(retiredFile, POINTER_LIMIT)) as { retiredAt?: unknown };
-    if (typeof parsed?.retiredAt !== 'number' || !Number.isFinite(parsed.retiredAt)) return true;
-    return now - parsed.retiredAt < graceMs;
-  } catch {
-    return true;
-  }
+function isLeaseCapableCopy(runtimeDir: string): boolean {
+  return fs.existsSync(path.join(runtimeDir, LEASE_CAPABLE_MARKER));
 }
 
 function ensureLauncherFile(root: string, namespace: RuntimeNamespace): string {
@@ -905,8 +882,9 @@ export async function probeRuntime(
 }
 
 /**
- * Installs, reserves against concurrent cleanup, probes the installed candidate and stable launcher,
- * and publishes the pointer under the shared lock, restoring the incumbent pointer on probe failure.
+ * Installs, reserves candidate and incumbent copies against concurrent cleanup, probes the installed
+ * candidate and stable launcher, and publishes the pointer under the shared lock, restoring the
+ * incumbent pointer only if its target still exists on probe failure.
  */
 export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeInstallOptions): Promise<VerifiedRuntimeInstallResult> {
   const root = coagentRootForHome(options.home);
@@ -917,7 +895,29 @@ export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeIn
   let copy!: InstalledRuntimeCopy;
   let namespace!: RuntimeNamespace;
   let wouldSwitch = false;
-  let reservationLeaseFile: string | null = null;
+  const reservedDigests = new Set<string>();
+  const reservationLeaseFiles: string[] = [];
+
+  const reserveDigestLocked = (digest: string) => {
+    if (!SHA256_HEX.test(digest) || reservedDigests.has(digest)) return;
+    const leasesDir = runtimeLeasesDir(root);
+    fs.mkdirSync(leasesDir, { recursive: true, mode: 0o700 });
+    const leaseToken = randomUUID();
+    const leasePath = path.join(leasesDir, `${process.pid}-reserve-${leaseToken}.json`);
+    const linuxStartTime = readLinuxProcessStartTime(process.pid);
+    const lease: RuntimeLease = {
+      schemaVersion: 1,
+      pid: process.pid,
+      token: leaseToken,
+      digest,
+      execPath: process.execPath,
+      createdAt: Date.now(),
+      ...(typeof linuxStartTime === 'string' ? { linuxStartTime } : {}),
+    };
+    atomicWriteText(leasePath, JSON.stringify(lease) + '\n', 0o600);
+    reservedDigests.add(digest);
+    reservationLeaseFiles.push(leasePath);
+  };
 
   await withFileLock(
     runtimeLockResource(root),
@@ -933,22 +933,16 @@ export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeIn
         Boolean(options.unpin && existingPointer.pinned) ||
         compareSemver(copy.version, existingPointer.version) === 1;
 
-      const leasesDir = runtimeLeasesDir(root);
-      fs.mkdirSync(leasesDir, { recursive: true, mode: 0o700 });
-      const leaseToken = randomUUID();
-      const leasePath = path.join(leasesDir, `${process.pid}-reserve-${leaseToken}.json`);
-      const linuxStartTime = readLinuxProcessStartTime(process.pid);
-      const lease: RuntimeLease = {
-        schemaVersion: 1,
-        pid: process.pid,
-        token: leaseToken,
-        digest: copy.digest,
-        execPath: process.execPath,
-        createdAt: Date.now(),
-        ...(typeof linuxStartTime === 'string' ? { linuxStartTime } : {}),
-      };
-      atomicWriteText(leasePath, JSON.stringify(lease) + '\n', 0o600);
-      reservationLeaseFile = leasePath;
+      reserveDigestLocked(copy.digest);
+      if (existingPointer) {
+        if (existingTarget?.exists) reserveDigestLocked(existingPointer.digest);
+        if (existingPointer.pinned) {
+          const pinnedTarget = path.join(copy.runtimeRoot, existingPointer.pinned.digest, 'index.cjs');
+          if (fs.statSync(pinnedTarget, { throwIfNoEntry: false })?.isFile()) {
+            reserveDigestLocked(existingPointer.pinned.digest);
+          }
+        }
+      }
     },
     RUNTIME_LOCK_TIMEOUT_MS,
   );
@@ -967,6 +961,17 @@ export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeIn
       runtimeLockResource(root),
       async () => {
         previousPointerRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
+        if (previousPointerRaw !== null) {
+          try {
+            const parsedPrev = validateRuntimePointer(JSON.parse(previousPointerRaw));
+            const prevTarget = path.join(copy.runtimeRoot, parsedPrev.digest, 'index.cjs');
+            if (fs.statSync(prevTarget, { throwIfNoEntry: false })?.isFile()) {
+              reserveDigestLocked(parsedPrev.digest);
+            }
+          } catch {
+            // Invalid previous pointer cannot be restored safely; handled during rollback.
+          }
+        }
         selected = selectRuntimePointerLocked(copy, options);
         if (selected.action === 'installed' || selected.action === 'updated') {
           writtenPointerRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
@@ -990,8 +995,21 @@ export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeIn
           async () => {
             const currentRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
             if (currentRaw === writtenPointerRaw) {
-              if (previousPointerRaw === null) fs.rmSync(pointerFile, { force: true });
-              else atomicWriteText(pointerFile, previousPointerRaw, 0o600);
+              let canRestore = false;
+              if (previousPointerRaw !== null) {
+                try {
+                  const parsedPrev = validateRuntimePointer(JSON.parse(previousPointerRaw));
+                  const prevTarget = path.join(copy.runtimeRoot, parsedPrev.digest, 'index.cjs');
+                  canRestore = Boolean(fs.statSync(prevTarget, { throwIfNoEntry: false })?.isFile());
+                } catch {
+                  canRestore = false;
+                }
+              }
+              if (canRestore) {
+                atomicWriteText(pointerFile, previousPointerRaw!, 0o600);
+              } else {
+                fs.rmSync(pointerFile, { force: true });
+              }
             }
           },
           RUNTIME_LOCK_TIMEOUT_MS,
@@ -1000,8 +1018,8 @@ export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeIn
       throw err;
     }
   } finally {
-    if (reservationLeaseFile) {
-      fs.rmSync(reservationLeaseFile, { force: true });
+    for (const leaseFile of reservationLeaseFiles) {
+      fs.rmSync(leaseFile, { force: true });
     }
   }
 }
@@ -1245,7 +1263,7 @@ export async function cleanupUnreferencedRuntimes(
   const runtimes = runtimeRootDir(resolvedRoot);
   const sharedRoot = coagentRootForHome(home);
   const isSharedRoot = sameOrInside(resolvedRoot, sharedRoot) && resolvedRoot === sharedRoot;
-  const preLeaseGraceMs = options.preLeaseGraceMs ?? (options.keepStableNamespaces ? PRE_LEASE_RETENTION_MS : 0);
+  const removePreLeaseCopies = options.removePreLeaseCopies === true;
 
   return withFileLock(
     runtimeLockResource(resolvedRoot),
@@ -1290,16 +1308,39 @@ export async function cleanupUnreferencedRuntimes(
         }
         if (!allowEmbedded) return;
         const normalized = normalizeMatch(trimmed);
-        if (!normalized.includes(runtimesNorm) && !normalized.includes(rootHint)) return;
-        const matches = [...trimmed.matchAll(/runtime[\\/]([a-f0-9]{64}|current|dev)(?=[\\/]|$|[\s'"])/gi)];
+        const mentionsRuntimeRoot =
+          normalized.includes(runtimesNorm) || normalized.includes(rootHint) || (resolved === runtimes && !throwOnUnknown);
+        if (!mentionsRuntimeRoot) return;
+        const matches = [...trimmed.matchAll(/(?:^|[^a-z0-9_-])runtime(?:[\\/]([^\\/'\"\s;:,]+)|(?=[\\/\s'"]|$))/gi)];
         if (matches.length === 0) {
           uncertainReference = true;
           return;
         }
         for (const match of matches) {
-          const segment = match[1]!.toLowerCase();
-          if (SHA256_HEX.test(segment)) referencedDigests.add(segment);
-          else if (segment === 'current' || segment === 'dev') referencedNamespaces.add(segment);
+          const segment = match[1]?.toLowerCase();
+          if (!segment) {
+            uncertainReference = true;
+          } else if (SHA256_HEX.test(segment)) {
+            referencedDigests.add(segment);
+          } else if (segment === 'current' || segment === 'dev') {
+            referencedNamespaces.add(segment);
+          } else {
+            uncertainReference = true;
+          }
+        }
+      };
+
+      const inspectEntryStrings = (value: unknown) => {
+        if (typeof value === 'string') {
+          recordRuntimeString(value, true);
+          return;
+        }
+        if (Array.isArray(value)) {
+          for (const item of value) inspectEntryStrings(item);
+          return;
+        }
+        if (value && typeof value === 'object') {
+          for (const nested of Object.values(value)) inspectEntryStrings(nested);
         }
       };
 
@@ -1309,51 +1350,24 @@ export async function cleanupUnreferencedRuntimes(
           return;
         }
         const obj = entry as Record<string, unknown>;
-        if (
-          obj.command === undefined &&
-          obj.args === undefined &&
-          (obj.type === 'http' || obj.type === 'sse' || typeof obj.url === 'string')
-        ) {
+        if (obj.command !== undefined && typeof obj.command !== 'string') {
+          uncertainReference = true;
           return;
         }
-        if (obj.command !== undefined) {
-          if (typeof obj.command !== 'string') {
-            uncertainReference = true;
-            return;
-          }
-          recordRuntimeString(obj.command, true);
+        if (obj.args !== undefined && (!Array.isArray(obj.args) || !obj.args.every(arg => typeof arg === 'string'))) {
+          uncertainReference = true;
+          return;
         }
-        if (obj.args !== undefined) {
-          if (!Array.isArray(obj.args)) {
-            uncertainReference = true;
-            return;
-          }
-          for (const arg of obj.args) {
-            if (typeof arg !== 'string') {
-              uncertainReference = true;
-              return;
-            }
-            recordRuntimeString(arg, true);
-          }
+        if (obj.env !== undefined && (!obj.env || typeof obj.env !== 'object' || Array.isArray(obj.env))) {
+          uncertainReference = true;
+          return;
         }
-        if (obj.env !== undefined) {
-          if (!obj.env || typeof obj.env !== 'object' || Array.isArray(obj.env)) {
-            uncertainReference = true;
-            return;
-          }
-          for (const val of Object.values(obj.env)) {
-            if (typeof val === 'string') recordRuntimeString(val, false);
-          }
-        }
+        inspectEntryStrings(obj);
       };
 
-      // Inspect CLI host configs (both environment-resolved and home-default locations) for shared or globalStorage references.
+      // Inspect only the CLI host config locations that CoAgent8 setup itself writes (env-configured root and home default).
       for (const client of SETUP_CLIENTS as readonly SetupClient[]) {
-        const candidates = new Set([
-          configPath(client, home, env),
-          configPath(client, home, {}),
-          ...(client === 'codex' && env.CODEX_CONFIG_PATH ? [path.resolve(env.CODEX_CONFIG_PATH)] : []),
-        ]);
+        const candidates = new Set([configPath(client, home, env), configPath(client, home, {})]);
         for (const file of candidates) {
           try {
             const text = read(file);
@@ -1514,7 +1528,9 @@ export async function cleanupUnreferencedRuntimes(
           if (SHA256_HEX.test(name)) {
             if (referencedDigests.has(name)) {
               kept.push(name);
-            } else if (shouldRetainPreLeaseCopy(dirPath, preLeaseGraceMs)) {
+            } else if (!removePreLeaseCopies && !isLeaseCapableCopy(dirPath)) {
+              // Copies without `.lease-capable` may still be executing in pre-lease processes (no leases);
+              // automatic and explicit runtime cleanups keep them indefinitely, and only full uninstall removes them.
               kept.push(name);
             } else if (removeRuntimeDirectory(dirPath)) {
               removed.push(name);

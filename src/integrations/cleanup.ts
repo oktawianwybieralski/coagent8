@@ -119,7 +119,7 @@ export async function pruneUnreferencedRuntimes(
  * backup files with the extension prefix and, when no registrations or skills remain, the state file.
  */
 async function removeUnreferencedSetup(root: string, home: string, env: NodeJS.ProcessEnv, stateFile: string): Promise<void> {
-  await cleanupUnreferencedRuntimes(root, home, env, { keepStableNamespaces: false });
+  await cleanupUnreferencedRuntimes(root, home, env, { keepStableNamespaces: false, removePreLeaseCopies: true });
   const backups = path.join(root, 'setup-backups');
   if (fs.existsSync(backups)) {
     for (const name of fs.readdirSync(backups)) {
