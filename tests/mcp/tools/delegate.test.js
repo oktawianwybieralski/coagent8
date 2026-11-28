@@ -666,10 +666,13 @@ test('turn limits: async defaults to 60m and caps at 4h, sync keeps 15m/30m, roo
       null,
       approve,
     );
-    assert.equal(startedCap.structuredContent.timeoutMs, 14_400_000);
-    assert.equal(startedCap.structuredContent.timeoutBound, 'timeout_ms');
+    assert.ok(
+      startedCap.structuredContent.timeoutMs > 14_300_000 && startedCap.structuredContent.timeoutMs <= 14_400_000,
+      `expected ~4h, got ${startedCap.structuredContent.timeoutMs}`,
+    );
+    assert.ok(['timeout_ms', 'root_remaining'].includes(startedCap.structuredContent.timeoutBound));
     const doneCap = await waitTask(startedCap.structuredContent.taskHandle);
-    assert.match(doneCap.result.text, /Budget: 14400000 ms \(timeout_ms\)/);
+    assert.match(doneCap.result.text, /Budget: \d+ ms \((timeout_ms|root remaining time)\)/);
     const adapterCap = recordedTimeouts.at(-1);
     assert.ok(adapterCap > 14_300_000 && adapterCap <= 14_400_000, `expected ~4h, got ${adapterCap}`);
 
@@ -924,6 +927,44 @@ test('deducts post-reservation elapsed time from root remaining duration and ref
     );
     assert.equal(recordedTimeouts.length, executedBeforeRefusal, 'no model turn may start when root time is exhausted');
     assert.equal(readRoot(root.rootHandle).calls, callsBeforeRefusal, 'refused start must refund its root call');
+
+    // 4. Delay injected during reserveRootTask's atomic persistence write is included in the deduction.
+    const fsp = require('node:fs/promises');
+    const realRename = fsp.rename;
+    const forWriteDelay = readRoot(root.rootHandle);
+    forWriteDelay.refundedMs = 0;
+    forWriteDelay.tasks[0].startedAt = atMsAgo(20 * 60_000);
+    forWriteDelay.tasks[0].endedAt = atMsAgo(12 * 60_000); // 8m used -> 120_000 ms left
+    await atomicWrite(rootFile, JSON.stringify(forWriteDelay));
+
+    let writeNow = 1_000;
+    let writeDelayCount = 0;
+    fsp.rename = async (src, dest) => {
+      if (dest === rootFile && writeDelayCount === 0) {
+        writeDelayCount++;
+        writeNow += 30_000;
+      }
+      return realRename.call(fsp, src, dest);
+    };
+    try {
+      const writeDeducted = await startDelegate(
+        { task: 'Reservation write delay', backend: 'codex', model: MODEL, root_handle: root.rootHandle, timeout_ms: 100_000 },
+        repo,
+        null,
+        null,
+        { ...approve, clock: () => writeNow },
+      );
+      assert.equal(writeDelayCount, 1, 'atomic write during reserveRootTask must have been intercepted');
+      assert.equal(writeDeducted.structuredContent.timeoutBound, 'root_remaining');
+      assert.ok(
+        writeDeducted.structuredContent.timeoutMs <= 90_000 && writeDeducted.structuredContent.timeoutMs > 85_000,
+        `expected <= 90000 ms after 30000 ms write delay, got ${writeDeducted.structuredContent.timeoutMs}`,
+      );
+      assert.ok(recordedTimeouts.at(-1) <= 90_000);
+      await waitTask(writeDeducted.structuredContent.taskHandle);
+    } finally {
+      fsp.rename = realRename;
+    }
   } finally {
     await stopActiveDelegations();
     adapterRegistry.codex = originalCodex;

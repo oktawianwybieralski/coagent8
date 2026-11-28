@@ -638,15 +638,19 @@ async function launchTask(start: BackgroundTaskStart, taskHandle: string, finger
   const joined = requestedRoot(start);
   try {
     pruneTasks();
-    pruneRoots();
+    pruneRoots(undefined, joined ?? undefined);
   } catch (err) {
     // Old records are housekeeping; a new task does not depend on removing them.
     process.stderr.write(`CoAgent8: old tasks were not removed: ${redactDiagnostic((err as Error).message, 512)}\n`);
   }
+  const clock = start.options.clock ?? (() => performance.now());
   const rootHandle = joined ?? (await createRoot(start.root?.limits)).rootHandle;
   const giveUpNewRoot = async () => {
     if (!joined) await removeUnusedRoot(rootHandle);
   };
+  // Measured before reserveRootTask so lock acquisition and atomic persistence are conservatively included.
+  const reservedAt = clock();
+  const elapsedMs = () => Math.max(0, clock() - reservedAt);
   let reservation: Awaited<ReturnType<typeof reserveRootTask>>;
   try {
     reservation = await reserveRootTask(rootHandle, {
@@ -658,10 +662,6 @@ async function launchTask(start: BackgroundTaskStart, taskHandle: string, finger
     await giveUpNewRoot();
     throw err;
   }
-  const clock = start.options.clock ?? (() => performance.now());
-  // Measured here, monotonically, so a clock set back while the task runs cannot shorten its time in the root.
-  const reservedAt = clock();
-  const elapsedMs = () => Math.max(0, clock() - reservedAt);
   /** Returns the charge of a start that never reached a turn; a failure here must not hide its reason. */
   const refund = async () => {
     try {

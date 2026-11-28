@@ -1088,3 +1088,42 @@ test('a limit met before a later turn ends the loop with the change as it was', 
   });
   assert.equal(cancelledFix.loop.outcome, 'cancelled');
 });
+
+test('continuing an old idle root via root_handle or session_handle is not defeated by pruneRoots (#246)', async () => {
+  const repo = fixtureRepo();
+  const finish = async started => {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const task = readTask(started.structuredContent.taskHandle);
+      if (task && task.state !== 'running') return task;
+      assert.ok(Date.now() < deadline, 'task finished in time');
+      await delay(25);
+    }
+  };
+
+  const first = await handleDelegate({ ...REQUEST, scope: ['a'] }, repo, null, null, approve);
+  const firstDone = await finish(first);
+  const rootHandle = first.structuredContent.rootHandle;
+  const rootFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${rootHandle}.json`);
+
+  // Create an unrelated old idle root so we prove pruning still removes unselected old idle roots.
+  const unrelated = await createRoot();
+  const unrelatedFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${unrelated.rootHandle}.json`);
+  const eightDaysAgo = new Date(Date.now() - 8 * 24 * 3600_000).toISOString();
+  await atomicWrite(unrelatedFile, JSON.stringify({ ...unrelated, createdAt: eightDaysAgo }));
+
+  // Age the idle target root past retention (7 days), then join it explicitly via root_handle.
+  await atomicWrite(rootFile, JSON.stringify({ ...readRoot(rootHandle), createdAt: eightDaysAgo }));
+  const byRoot = await handleDelegate({ ...REQUEST, scope: ['a'], root_handle: rootHandle }, repo, null, null, approve);
+  assert.equal(byRoot.structuredContent.rootHandle, rootHandle);
+  await finish(byRoot);
+  assert.ok(readRoot(rootHandle), 'selected root must not be pruned');
+  assert.equal(readRoot(unrelated.rootHandle), null, 'unrelated old idle root is still pruned');
+
+  // Keep it aged past retention and idle, then continue via session_handle without passing root_handle.
+  await atomicWrite(rootFile, JSON.stringify({ ...readRoot(rootHandle), createdAt: eightDaysAgo }));
+  const bySession = await handleDelegate({ ...REQUEST, scope: ['a'], session_handle: firstDone.sessionHandle }, repo, null, null, approve);
+  assert.equal(bySession.structuredContent.rootHandle, rootHandle);
+  await finish(bySession);
+  assert.equal(readRoot(rootHandle).tasks.at(-1).continuation, true);
+});

@@ -570,9 +570,11 @@ export function findRootOfTask(taskHandle: string): RootRecord | null {
 /**
  * Removes roots past their retention that no running task uses.
  * @param now - Reference time in epoch milliseconds.
+ * @param keep - Root handle to spare, such as one the caller is about to reserve.
  */
-export function pruneRoots(now = Date.now()): void {
+export function pruneRoots(now = Date.now(), keep?: string): void {
   for (const root of eachRoot()) {
+    if (root.rootHandle === keep) continue;
     if (now - Date.parse(root.createdAt) >= ROOT_RETENTION_MS && !root.tasks.some(isRootTaskActive)) {
       fs.rmSync(rootFile(root.rootHandle), { force: true });
     }
