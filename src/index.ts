@@ -13,6 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { withFileLock } from './storage/lock.js';
 import { redactDiagnostic } from './security/redaction.js';
 import { BRAND } from './brand.js';
 import { serveStdio } from './mcp/stdio-server.js';
@@ -154,8 +155,9 @@ function readSelfLinuxStartTime(): string | undefined {
 /**
  * Registers a per-process runtime lease when running directly from an immutable `<sha256>/index.cjs`
  * (for example `wait` child commands or unmigrated legacy registrations) without the stable launcher.
+ * Acquires the shared runtime lock and publishes the lease before starting; fails safely if impossible.
  */
-function ensureDirectRuntimeLease(): void {
+async function ensureDirectRuntimeLease(): Promise<void> {
   const globals = globalThis as Record<symbol, unknown>;
   if (globals[RUNTIME_LEASE_SYMBOL]) return;
   const candidate = path.resolve(__filename);
@@ -166,67 +168,55 @@ function ensureDirectRuntimeLease(): void {
   if (!DIRECT_SHA256_RE.test(digest) || path.basename(runtimeRoot) !== 'runtime') return;
 
   const coagentRoot = path.dirname(runtimeRoot);
-  const lockFile = path.join(coagentRoot, 'runtime-lock.lease');
+  const lockResource = path.join(coagentRoot, 'runtime-lock');
   const leasesDir = path.join(runtimeRoot, 'leases');
-  const lockToken = randomUUID();
-  const payload = JSON.stringify({ token: lockToken, pid: process.pid, createdAt: Date.now() });
-  const temp = `${lockFile}.tmp.${randomUUID()}`;
-  let locked = false;
   try {
-    fs.mkdirSync(path.dirname(lockFile), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(temp, payload, { flag: 'wx', mode: 0o600 });
-    fs.linkSync(temp, lockFile);
-    locked = true;
-  } catch {
-    // If contended, proceed best-effort rather than blocking startup when unmigrated; cleanup also checks OS locks/files.
-  } finally {
-    fs.rmSync(temp, { force: true });
-  }
-  try {
-    if (!fs.existsSync(candidate)) return;
-    fs.mkdirSync(leasesDir, { recursive: true, mode: 0o700 });
-    const leaseToken = randomUUID();
-    const leaseFile = path.join(leasesDir, `${process.pid}-${leaseToken}.json`);
-    const linuxStartTime = readSelfLinuxStartTime();
-    const lease = {
-      schemaVersion: 1,
-      pid: process.pid,
-      token: leaseToken,
-      digest,
-      execPath: process.execPath,
-      createdAt: Date.now(),
-      ...(linuxStartTime ? { linuxStartTime } : {}),
-    };
-    fs.writeFileSync(leaseFile, JSON.stringify(lease) + '\n', { flag: 'wx', mode: 0o600 });
-    const release = () => {
-      try {
-        fs.rmSync(leaseFile, { force: true });
-      } catch {
-        // Best-effort cleanup on exit.
-      }
-    };
-    process.once('exit', release);
-    const timer = setInterval(() => {
-      try {
-        const now = new Date();
-        fs.utimesSync(leaseFile, now, now);
-      } catch {
-        // Ignore if lease was removed during shutdown.
-      }
-    }, 15_000);
-    timer.unref();
-    globals[RUNTIME_LEASE_SYMBOL] = { leaseFile, digest, release };
-  } catch {
-    // Non-fatal if data directory is read-only.
-  } finally {
-    if (locked) {
-      try {
-        const parsed = JSON.parse(fs.readFileSync(lockFile, 'utf8')) as { token?: unknown };
-        if (parsed?.token === lockToken) fs.rmSync(lockFile, { force: true });
-      } catch {
-        // Ignore lock cleanup failure.
-      }
-    }
+    await withFileLock(
+      lockResource,
+      async () => {
+        const stat = fs.statSync(candidate, { throwIfNoEntry: false });
+        if (!stat || !stat.isFile()) {
+          throw new Error(`Direct runtime copy missing: ${digest}`);
+        }
+        fs.mkdirSync(leasesDir, { recursive: true, mode: 0o700 });
+        const leaseToken = randomUUID();
+        const leaseFile = path.join(leasesDir, `${process.pid}-${leaseToken}.json`);
+        const linuxStartTime = readSelfLinuxStartTime();
+        const lease = {
+          schemaVersion: 1,
+          pid: process.pid,
+          token: leaseToken,
+          digest,
+          execPath: process.execPath,
+          createdAt: Date.now(),
+          ...(linuxStartTime ? { linuxStartTime } : {}),
+        };
+        fs.writeFileSync(leaseFile, JSON.stringify(lease) + '\n', { flag: 'wx', mode: 0o600 });
+        const release = () => {
+          try {
+            fs.rmSync(leaseFile, { force: true });
+          } catch {
+            // Best-effort cleanup on exit.
+          }
+        };
+        process.once('exit', release);
+        const timer = setInterval(() => {
+          try {
+            const now = new Date();
+            fs.utimesSync(leaseFile, now, now);
+          } catch {
+            // Ignore if lease was removed during shutdown.
+          }
+        }, 15_000);
+        timer.unref();
+        globals[RUNTIME_LEASE_SYMBOL] = { leaseFile, digest, release };
+      },
+      5_000,
+    );
+  } catch (error) {
+    throw new Error(
+      `Failed to acquire runtime lease for ${digest.slice(0, 12)}: ${redactDiagnostic(error instanceof Error ? error.message : String(error))}`,
+    );
   }
 }
 
@@ -263,7 +253,7 @@ export async function runCli(
       streams.stdout.write(formatRootHelp());
       return 0;
     }
-    if (!deps.serveStdio) ensureDirectRuntimeLease();
+    if (!deps.serveStdio) await ensureDirectRuntimeLease();
     const serve = deps.serveStdio ?? serveStdio;
     await serve();
     return 0;
@@ -274,7 +264,7 @@ export async function runCli(
   // 4. Explicit mcp
   if (cmd === 'mcp') {
     if (rest.length === 0) {
-      if (!deps.serveStdio) ensureDirectRuntimeLease();
+      if (!deps.serveStdio) await ensureDirectRuntimeLease();
       const serve = deps.serveStdio ?? serveStdio;
       await serve();
       return 0;
@@ -307,7 +297,7 @@ export async function runCli(
 
   // Blocks until a delegation finishes; a client runs it as a background command.
   if (cmd === 'wait') {
-    ensureDirectRuntimeLease();
+    await ensureDirectRuntimeLease();
     return await runWaitCli(rest, streams.stdout as unknown as NodeJS.WritableStream, streams.stderr as unknown as NodeJS.WritableStream);
   }
 
@@ -341,7 +331,7 @@ export async function runCli(
   streams.stderr.write(
     `Warning: unrecognized arguments [${redactCliArguments(args).join(', ')}] ignored; starting legacy MCP stdio server.\n`,
   );
-  if (!deps.serveStdio) ensureDirectRuntimeLease();
+  if (!deps.serveStdio) await ensureDirectRuntimeLease();
   const serve = deps.serveStdio ?? serveStdio;
   await serve();
   return 0;

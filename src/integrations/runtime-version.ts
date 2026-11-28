@@ -80,9 +80,9 @@ export function compareSemver(a: string, b: string): -1 | 0 | 1 | null {
     const numA = NUMERIC_IDENT.test(idA);
     const numB = NUMERIC_IDENT.test(idB);
     if (numA && numB) {
-      const nA = Number(idA);
-      const nB = Number(idB);
-      if (nA !== nB) return nA > nB ? 1 : -1;
+      // NUMERIC_IDENT forbids leading zeroes, so digit length then lexical order avoids Number precision loss above 2^53.
+      if (idA.length !== idB.length) return idA.length > idB.length ? 1 : -1;
+      if (idA !== idB) return idA > idB ? 1 : -1;
     } else if (numA !== numB) {
       // Numeric identifiers always have lower precedence than non-numeric identifiers.
       return numA ? -1 : 1;

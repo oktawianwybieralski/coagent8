@@ -17,20 +17,29 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { BRAND } from '../brand.js';
+import { resolveCliCommand } from '../execution/cli-resolver.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
+import { object, withStdioRpc } from './rpc.js';
 import { copyJobHelperBeside, removeRuntimeDirectory } from './runtime-files.js';
 import { compareSemver, isDevSemver, parseSemver, type RuntimeNamespace } from './runtime-version.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
-import { configPath, document, read, servers } from './setup-storage.js';
+import { configPath, document, json, read, servers } from './setup-storage.js';
 
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const POINTER_LIMIT = 64 * 1024;
 const BUNDLE_LIMIT = 16 * 1024 * 1024;
 const LEASE_LIMIT = 16 * 1024;
+const LEASE_CAPABLE_MARKER = '.lease-capable';
+const PRE_LEASE_RETIRED_MARKER = '.pre-lease-retired';
 /** Maximum age (ms) of an unrenewed runtime lease before identity re-verification runs. */
 export const RUNTIME_LEASE_MAX_AGE_MS = 60_000;
+/**
+ * Conservative retention window (7 days) for unreferenced runtime copies installed by older
+ * pre-lease versions (which write no per-process lease files) before cleanup deletes them.
+ */
+export const PRE_LEASE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 /** Shared lock timeout for runtime pointer and lease operations. */
 const RUNTIME_LOCK_TIMEOUT_MS = 5_000;
 
@@ -108,10 +117,29 @@ export interface RuntimeCleanupOptions {
   keepStableNamespaces?: boolean;
   /** Additional runtime digests that must be preserved (for example active VS Code globalStorage copy). */
   extraReferencedDigests?: string[];
+  /** Retention grace (ms) for pre-lease copies lacking `.lease-capable` after becoming unreferenced. */
+  preLeaseGraceMs?: number;
   /** Maximum time to wait for the runtime lock (ms). */
   leaseTimeoutMs?: number;
   /** Override for testing OS process identity checks on aged leases. */
   checkProcessIdentity?: (lease: RuntimeLease) => 'alive' | 'dead' | 'uncertain';
+}
+
+/** Options for probing and selecting a candidate runtime with incumbent rollback on failure. */
+export interface VerifiedRuntimeInstallOptions extends RuntimeInstallOptions {
+  /** Node executable supplied by VS Code or caller; defaults to `process.execPath`. */
+  nodePath?: string;
+  /** Environment used to resolve `nodePath` and spawn runtime probes. */
+  env?: NodeJS.ProcessEnv;
+  /** Working directory for runtime probes. */
+  cwd?: string;
+  /** Additional environment variables injected into the probed runtime (e.g. `coagent8_CONFIG`). */
+  probeEnv?: Record<string, string>;
+}
+
+/** Result returned by {@link installAndSelectVerifiedRuntime}, including discovered tool names when probed. */
+export interface VerifiedRuntimeInstallResult extends RuntimeInstallResult {
+  tools?: string[];
 }
 
 function sha256(data: Buffer | string): string {
@@ -592,8 +620,41 @@ export function installAndVerifyRuntimeCopy(options: RuntimeCopyOptions): Instal
   if (!fs.existsSync(versionFile)) {
     atomicWriteText(versionFile, JSON.stringify({ version }) + '\n', 0o600);
   }
+  markRuntimeLeaseCapable(runtimeDir);
 
   return { root, runtimeRoot, digest, version, runtimeDir, runtimePath };
+}
+
+/** Marks a runtime copy directory as lease-capable and clears any stale pre-lease retirement marker. */
+export function markRuntimeLeaseCapable(runtimeDir: string): void {
+  const marker = path.join(runtimeDir, LEASE_CAPABLE_MARKER);
+  if (!fs.existsSync(marker)) {
+    atomicWriteText(marker, '1\n', 0o600);
+  }
+  fs.rmSync(path.join(runtimeDir, PRE_LEASE_RETIRED_MARKER), { force: true });
+}
+
+function shouldRetainPreLeaseCopy(runtimeDir: string, graceMs: number, now = Date.now()): boolean {
+  if (graceMs <= 0) return false;
+  if (fs.existsSync(path.join(runtimeDir, LEASE_CAPABLE_MARKER))) return false;
+  // Copies without `.lease-capable` may have been started by pre-lease extension or CLI versions
+  // that write no per-process lease files. Keep them for `graceMs` after first seen unreferenced.
+  const retiredFile = path.join(runtimeDir, PRE_LEASE_RETIRED_MARKER);
+  if (!fs.existsSync(retiredFile)) {
+    try {
+      atomicWriteText(retiredFile, JSON.stringify({ retiredAt: now }) + '\n', 0o600);
+    } catch {
+      // Conservative retention on write failure.
+    }
+    return true;
+  }
+  try {
+    const parsed = JSON.parse(readBoundedFileSync(retiredFile, POINTER_LIMIT)) as { retiredAt?: unknown };
+    if (typeof parsed?.retiredAt !== 'number' || !Number.isFinite(parsed.retiredAt)) return true;
+    return now - parsed.retiredAt < graceMs;
+  } catch {
+    return true;
+  }
 }
 
 function ensureLauncherFile(root: string, namespace: RuntimeNamespace): string {
@@ -603,6 +664,178 @@ function ensureLauncherFile(root: string, namespace: RuntimeNamespace): string {
     atomicWriteText(launcherPath, content, 0o755);
   }
   return launcherPath;
+}
+
+/**
+ * Switches the stable pointer to an already-installed and verified runtime copy; caller MUST hold `runtimeLockResource`.
+ */
+function selectRuntimePointerLocked(
+  copy: InstalledRuntimeCopy,
+  options: { namespace?: RuntimeNamespace; allowDevInCurrent?: boolean; pin?: boolean; unpin?: boolean; reason?: string } = {},
+): RuntimeInstallResult {
+  const namespace = resolveRuntimeNamespace(copy.version, options);
+  const targetStat = fs.statSync(copy.runtimePath, { throwIfNoEntry: false });
+  if (!targetStat || !targetStat.isFile()) {
+    throw new Error(`Runtime copy ${copy.digest.slice(0, 12)} is missing before pointer selection.`);
+  }
+  if (sha256(fs.readFileSync(copy.runtimePath)) !== copy.digest) {
+    throw new Error(`Runtime copy ${copy.digest.slice(0, 12)} failed integrity verification before pointer selection.`);
+  }
+  const launcherPath = ensureLauncherFile(copy.root, namespace);
+  const pointerFile = runtimePointerPath(copy.root, namespace);
+  const existing = readRuntimePointer(copy.root, namespace);
+  const existingTarget = existing ? path.join(copy.runtimeRoot, existing.digest, 'index.cjs') : null;
+  const existingHealthy = Boolean(existing && existingTarget && fs.statSync(existingTarget, { throwIfNoEntry: false })?.isFile());
+
+  const writePointer = (pointer: RuntimePointer) => {
+    atomicWriteText(pointerFile, JSON.stringify(pointer, null, 2) + '\n', 0o600);
+  };
+  const nowIso = new Date().toISOString();
+
+  if (options.pin) {
+    writePointer({
+      schemaVersion: 1,
+      digest: copy.digest,
+      version: copy.version,
+      updatedAt: nowIso,
+      pinned: {
+        digest: copy.digest,
+        version: copy.version,
+        pinnedAt: nowIso,
+        ...(options.reason ? { reason: options.reason } : {}),
+      },
+    });
+    return {
+      namespace,
+      launcherPath,
+      pointerFile,
+      runtimePath: copy.runtimePath,
+      digest: copy.digest,
+      version: copy.version,
+      action: existingHealthy ? 'updated' : 'installed',
+      ...(existing && existingHealthy
+        ? { incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned } }
+        : {}),
+      message: `Pinned ${namespace} runtime to ${copy.version} (${copy.digest.slice(0, 12)}).`,
+    };
+  }
+
+  if (!existing || !existingHealthy) {
+    writePointer({
+      schemaVersion: 1,
+      digest: copy.digest,
+      version: copy.version,
+      updatedAt: nowIso,
+    });
+    return {
+      namespace,
+      launcherPath,
+      pointerFile,
+      runtimePath: copy.runtimePath,
+      digest: copy.digest,
+      version: copy.version,
+      action: existing ? 'updated' : 'installed',
+      message: existing
+        ? `Repaired dangling ${namespace} runtime pointer to ${copy.version} (${copy.digest.slice(0, 12)}).`
+        : `Installed ${namespace} runtime ${copy.version} (${copy.digest.slice(0, 12)}).`,
+    };
+  }
+
+  if (existing.pinned && !options.unpin) {
+    if (existing.pinned.digest === copy.digest && compareSemver(copy.version, existing.pinned.version) === 0) {
+      return {
+        namespace,
+        launcherPath,
+        pointerFile,
+        runtimePath: copy.runtimePath,
+        digest: copy.digest,
+        version: copy.version,
+        action: 'noop',
+        incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
+        message: `Runtime ${namespace} already points to pinned ${copy.version}.`,
+      };
+    }
+    return {
+      namespace,
+      launcherPath,
+      pointerFile,
+      runtimePath: existingTarget!,
+      digest: existing.digest,
+      version: existing.version,
+      action: 'pinned-blocked',
+      incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
+      message: `Kept pinned ${namespace} runtime ${existing.version} (${existing.digest.slice(0, 12)}) instead of ${copy.version}.`,
+    };
+  }
+
+  const cmp = compareSemver(copy.version, existing.version);
+  if (cmp === 1) {
+    writePointer({
+      schemaVersion: 1,
+      digest: copy.digest,
+      version: copy.version,
+      updatedAt: nowIso,
+    });
+    return {
+      namespace,
+      launcherPath,
+      pointerFile,
+      runtimePath: copy.runtimePath,
+      digest: copy.digest,
+      version: copy.version,
+      action: 'updated',
+      incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
+      message: `Updated ${namespace} runtime from ${existing.version} to ${copy.version} (${copy.digest.slice(0, 12)}).`,
+    };
+  }
+
+  if (cmp === 0) {
+    if (copy.digest === existing.digest) {
+      if (existing.pinned && options.unpin) {
+        writePointer({
+          schemaVersion: 1,
+          digest: existing.digest,
+          version: existing.version,
+          updatedAt: nowIso,
+        });
+      }
+      return {
+        namespace,
+        launcherPath,
+        pointerFile,
+        runtimePath: copy.runtimePath,
+        digest: copy.digest,
+        version: copy.version,
+        action: 'noop',
+        incumbent: { digest: existing.digest, version: existing.version },
+        message: `Runtime ${namespace} already points to ${copy.version} (${copy.digest.slice(0, 12)}).`,
+      };
+    }
+    return {
+      namespace,
+      launcherPath,
+      pointerFile,
+      runtimePath: existingTarget!,
+      digest: existing.digest,
+      version: existing.version,
+      action: 'kept-incumbent',
+      incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
+      message: `Kept incumbent ${namespace} runtime ${existing.version} (${existing.digest.slice(0, 12)}) with equal version and different hash (${copy.digest.slice(0, 12)}).`,
+    };
+  }
+
+  // Downgrade guard: never switch pointer back to an older version without an explicit pin.
+  return {
+    namespace,
+    launcherPath,
+    pointerFile,
+    runtimePath: existingTarget!,
+    digest: existing.digest,
+    version: existing.version,
+    action: 'downgrade-blocked',
+    incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
+    message: `Preserved newer ${namespace} runtime ${existing.version} (${existing.digest.slice(0, 12)}); refused downgrade to ${copy.version}.`,
+  };
 }
 
 /**
@@ -616,180 +849,161 @@ export async function selectRuntimePointer(
   copy: InstalledRuntimeCopy,
   options: { namespace?: RuntimeNamespace; allowDevInCurrent?: boolean; pin?: boolean; unpin?: boolean; reason?: string } = {},
 ): Promise<RuntimeInstallResult> {
-  const namespace = resolveRuntimeNamespace(copy.version, options);
+  return withFileLock(runtimeLockResource(copy.root), async () => selectRuntimePointerLocked(copy, options), RUNTIME_LOCK_TIMEOUT_MS);
+}
+
+/**
+ * Installs and verifies the runtime copy, ensures the stable launcher, and updates the pointer
+ * continuously under the shared runtime lock subject to SemVer precedence and explicit pin rules.
+ *
+ * @param options - Runtime installation and precedence options.
+ * @returns Pointer selection result.
+ */
+export async function installAndSelectRuntime(options: RuntimeInstallOptions): Promise<RuntimeInstallResult> {
+  const root = coagentRootForHome(options.home);
   return withFileLock(
-    runtimeLockResource(copy.root),
-    async (): Promise<RuntimeInstallResult> => {
-      const launcherPath = ensureLauncherFile(copy.root, namespace);
-      const pointerFile = runtimePointerPath(copy.root, namespace);
-      const existing = readRuntimePointer(copy.root, namespace);
-      const existingTarget = existing ? path.join(copy.runtimeRoot, existing.digest, 'index.cjs') : null;
-      const existingHealthy = Boolean(existing && existingTarget && fs.statSync(existingTarget, { throwIfNoEntry: false })?.isFile());
-
-      const writePointer = (pointer: RuntimePointer) => {
-        atomicWriteText(pointerFile, JSON.stringify(pointer, null, 2) + '\n', 0o600);
-      };
-      const nowIso = new Date().toISOString();
-
-      if (options.pin) {
-        writePointer({
-          schemaVersion: 1,
-          digest: copy.digest,
-          version: copy.version,
-          updatedAt: nowIso,
-          pinned: {
-            digest: copy.digest,
-            version: copy.version,
-            pinnedAt: nowIso,
-            ...(options.reason ? { reason: options.reason } : {}),
-          },
-        });
-        return {
-          namespace,
-          launcherPath,
-          pointerFile,
-          runtimePath: copy.runtimePath,
-          digest: copy.digest,
-          version: copy.version,
-          action: existingHealthy ? 'updated' : 'installed',
-          ...(existing && existingHealthy
-            ? { incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned } }
-            : {}),
-          message: `Pinned ${namespace} runtime to ${copy.version} (${copy.digest.slice(0, 12)}).`,
-        };
-      }
-
-      if (!existing || !existingHealthy) {
-        writePointer({
-          schemaVersion: 1,
-          digest: copy.digest,
-          version: copy.version,
-          updatedAt: nowIso,
-        });
-        return {
-          namespace,
-          launcherPath,
-          pointerFile,
-          runtimePath: copy.runtimePath,
-          digest: copy.digest,
-          version: copy.version,
-          action: existing ? 'updated' : 'installed',
-          message: existing
-            ? `Repaired dangling ${namespace} runtime pointer to ${copy.version} (${copy.digest.slice(0, 12)}).`
-            : `Installed ${namespace} runtime ${copy.version} (${copy.digest.slice(0, 12)}).`,
-        };
-      }
-
-      if (existing.pinned && !options.unpin) {
-        if (existing.pinned.digest === copy.digest && compareSemver(copy.version, existing.pinned.version) === 0) {
-          return {
-            namespace,
-            launcherPath,
-            pointerFile,
-            runtimePath: copy.runtimePath,
-            digest: copy.digest,
-            version: copy.version,
-            action: 'noop',
-            incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
-            message: `Runtime ${namespace} already points to pinned ${copy.version}.`,
-          };
-        }
-        return {
-          namespace,
-          launcherPath,
-          pointerFile,
-          runtimePath: existingTarget!,
-          digest: existing.digest,
-          version: existing.version,
-          action: 'pinned-blocked',
-          incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
-          message: `Kept pinned ${namespace} runtime ${existing.version} (${existing.digest.slice(0, 12)}) instead of ${copy.version}.`,
-        };
-      }
-
-      const cmp = compareSemver(copy.version, existing.version);
-      if (cmp === 1) {
-        writePointer({
-          schemaVersion: 1,
-          digest: copy.digest,
-          version: copy.version,
-          updatedAt: nowIso,
-        });
-        return {
-          namespace,
-          launcherPath,
-          pointerFile,
-          runtimePath: copy.runtimePath,
-          digest: copy.digest,
-          version: copy.version,
-          action: 'updated',
-          incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
-          message: `Updated ${namespace} runtime from ${existing.version} to ${copy.version} (${copy.digest.slice(0, 12)}).`,
-        };
-      }
-
-      if (cmp === 0) {
-        if (copy.digest === existing.digest) {
-          if (existing.pinned && options.unpin) {
-            writePointer({
-              schemaVersion: 1,
-              digest: existing.digest,
-              version: existing.version,
-              updatedAt: nowIso,
-            });
-          }
-          return {
-            namespace,
-            launcherPath,
-            pointerFile,
-            runtimePath: copy.runtimePath,
-            digest: copy.digest,
-            version: copy.version,
-            action: 'noop',
-            incumbent: { digest: existing.digest, version: existing.version },
-            message: `Runtime ${namespace} already points to ${copy.version} (${copy.digest.slice(0, 12)}).`,
-          };
-        }
-        return {
-          namespace,
-          launcherPath,
-          pointerFile,
-          runtimePath: existingTarget!,
-          digest: existing.digest,
-          version: existing.version,
-          action: 'kept-incumbent',
-          incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
-          message: `Kept incumbent ${namespace} runtime ${existing.version} (${existing.digest.slice(0, 12)}) with equal version and different hash (${copy.digest.slice(0, 12)}).`,
-        };
-      }
-
-      // Downgrade guard: never switch pointer back to an older version without an explicit pin.
-      return {
-        namespace,
-        launcherPath,
-        pointerFile,
-        runtimePath: existingTarget!,
-        digest: existing.digest,
-        version: existing.version,
-        action: 'downgrade-blocked',
-        incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
-        message: `Preserved newer ${namespace} runtime ${existing.version} (${existing.digest.slice(0, 12)}); refused downgrade to ${copy.version}.`,
-      };
+    runtimeLockResource(root),
+    async () => {
+      const copy = installAndVerifyRuntimeCopy(options);
+      return selectRuntimePointerLocked(copy, options);
     },
     RUNTIME_LOCK_TIMEOUT_MS,
   );
 }
 
 /**
- * Installs and verifies the runtime copy, ensures the stable launcher, and updates the pointer
- * subject to SemVer precedence and explicit pin rules.
- *
- * @param options - Runtime installation and precedence options.
- * @returns Pointer selection result.
+ * Initializes a registered runtime and reads its tool catalog without claiming native host discovery.
  */
-export async function installAndSelectRuntime(options: RuntimeInstallOptions): Promise<RuntimeInstallResult> {
-  const copy = installAndVerifyRuntimeCopy(options);
-  return selectRuntimePointer(copy, options);
+export async function probeRuntime(
+  entry: { command: string; args: string[]; env?: Record<string, string> },
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): Promise<string[]> {
+  return withStdioRpc(
+    entry.command,
+    entry.args,
+    async rpc => {
+      const init = object(
+        await rpc.request('initialize', {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'coagent8-setup', version: '1' },
+        }),
+      );
+      if (object(init.serverInfo).name !== 'coagent8') throw new Error('Configured process is not CoAgent8.');
+      rpc.notify('notifications/initialized');
+      const tools = object(await rpc.request('tools/list', {})).tools;
+      if (!Array.isArray(tools)) throw new Error('Invalid tool catalog.');
+      const names = tools.map(tool => object(tool).name);
+      if (!names.every(name => typeof name === 'string') || !names.includes('doctor')) {
+        throw new Error('CoAgent8 doctor is unavailable.');
+      }
+      return names as string[];
+    },
+    { env: { ...env, ...entry.env }, cwd },
+  );
+}
+
+/**
+ * Installs, reserves against concurrent cleanup, probes the installed candidate and stable launcher,
+ * and publishes the pointer under the shared lock, restoring the incumbent pointer on probe failure.
+ */
+export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeInstallOptions): Promise<VerifiedRuntimeInstallResult> {
+  const root = coagentRootForHome(options.home);
+  const env = options.env ?? process.env;
+  const cwd = options.cwd ?? options.home;
+  const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
+
+  let copy!: InstalledRuntimeCopy;
+  let namespace!: RuntimeNamespace;
+  let wouldSwitch = false;
+  let reservationLeaseFile: string | null = null;
+
+  await withFileLock(
+    runtimeLockResource(root),
+    async () => {
+      copy = installAndVerifyRuntimeCopy(options);
+      namespace = resolveRuntimeNamespace(copy.version, options);
+      const existingPointer = readRuntimePointer(root, namespace);
+      const existingTarget = resolveStableTarget(root, namespace);
+      wouldSwitch =
+        !existingPointer ||
+        !existingTarget?.exists ||
+        Boolean(options.pin) ||
+        Boolean(options.unpin && existingPointer.pinned) ||
+        compareSemver(copy.version, existingPointer.version) === 1;
+
+      const leasesDir = runtimeLeasesDir(root);
+      fs.mkdirSync(leasesDir, { recursive: true, mode: 0o700 });
+      const leaseToken = randomUUID();
+      const leasePath = path.join(leasesDir, `${process.pid}-reserve-${leaseToken}.json`);
+      const linuxStartTime = readLinuxProcessStartTime(process.pid);
+      const lease: RuntimeLease = {
+        schemaVersion: 1,
+        pid: process.pid,
+        token: leaseToken,
+        digest: copy.digest,
+        execPath: process.execPath,
+        createdAt: Date.now(),
+        ...(typeof linuxStartTime === 'string' ? { linuxStartTime } : {}),
+      };
+      atomicWriteText(leasePath, JSON.stringify(lease) + '\n', 0o600);
+      reservationLeaseFile = leasePath;
+    },
+    RUNTIME_LOCK_TIMEOUT_MS,
+  );
+
+  try {
+    if (wouldSwitch) {
+      await probeRuntime({ command: node.command, args: [...node.argsPrefix, copy.runtimePath, 'mcp'], env: options.probeEnv }, env, cwd);
+    }
+
+    let previousPointerRaw: string | null = null;
+    let writtenPointerRaw: string | null = null;
+    let selected!: RuntimeInstallResult;
+    const pointerFile = runtimePointerPath(root, namespace);
+
+    await withFileLock(
+      runtimeLockResource(root),
+      async () => {
+        previousPointerRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
+        selected = selectRuntimePointerLocked(copy, options);
+        if (selected.action === 'installed' || selected.action === 'updated') {
+          writtenPointerRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
+        }
+      },
+      RUNTIME_LOCK_TIMEOUT_MS,
+    );
+
+    const switched = selected.action === 'installed' || selected.action === 'updated';
+    try {
+      const tools = await probeRuntime(
+        { command: node.command, args: [...node.argsPrefix, selected.launcherPath, 'mcp'], env: options.probeEnv },
+        env,
+        cwd,
+      );
+      return { ...selected, tools };
+    } catch (err) {
+      if (switched) {
+        await withFileLock(
+          runtimeLockResource(root),
+          async () => {
+            const currentRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
+            if (currentRaw === writtenPointerRaw) {
+              if (previousPointerRaw === null) fs.rmSync(pointerFile, { force: true });
+              else atomicWriteText(pointerFile, previousPointerRaw, 0o600);
+            }
+          },
+          RUNTIME_LOCK_TIMEOUT_MS,
+        ).catch(() => {});
+      }
+      throw err;
+    }
+  } finally {
+    if (reservationLeaseFile) {
+      fs.rmSync(reservationLeaseFile, { force: true });
+    }
+  }
 }
 
 /**
@@ -1029,7 +1243,9 @@ export async function cleanupUnreferencedRuntimes(
 ): Promise<{ removed: string[]; kept: string[] }> {
   const resolvedRoot = path.resolve(root);
   const runtimes = runtimeRootDir(resolvedRoot);
-  const isSharedRoot = sameOrInside(resolvedRoot, coagentRootForHome(home)) && resolvedRoot === coagentRootForHome(home);
+  const sharedRoot = coagentRootForHome(home);
+  const isSharedRoot = sameOrInside(resolvedRoot, sharedRoot) && resolvedRoot === sharedRoot;
+  const preLeaseGraceMs = options.preLeaseGraceMs ?? (options.keepStableNamespaces ? PRE_LEASE_RETENTION_MS : 0);
 
   return withFileLock(
     runtimeLockResource(resolvedRoot),
@@ -1040,68 +1256,196 @@ export async function cleanupUnreferencedRuntimes(
         referencedNamespaces.add('current');
         referencedNamespaces.add('dev');
       }
+      let uncertainReference = false;
 
-      const recordRuntimeArg = (arg: string) => {
-        const resolved = path.resolve(arg);
-        if (!sameOrInside(resolved, runtimes) || resolved === runtimes) return;
-        const firstSegment = path.relative(runtimes, resolved).split(path.sep)[0];
-        if (!firstSegment) return;
-        if (SHA256_HEX.test(firstSegment)) {
-          referencedDigests.add(firstSegment);
-        } else if (firstSegment === 'current' || firstSegment === 'dev') {
-          referencedNamespaces.add(firstSegment);
-        } else {
-          throw new Error(`Uncertain runtime reference inside ${runtimes}`);
+      const normalizeMatch = (value: string): string => {
+        const unified = value.replace(/\\/g, '/');
+        return process.platform === 'win32' ? unified.toLowerCase() : unified;
+      };
+      const runtimesNorm = normalizeMatch(runtimes);
+      const isGlobalStorage = path.basename(path.dirname(resolvedRoot)).toLowerCase() === 'globalstorage';
+      const rootHint = isSharedRoot
+        ? '.coagent8/runtime'
+        : isGlobalStorage
+          ? normalizeMatch(path.join(path.basename(resolvedRoot), 'runtime'))
+          : runtimesNorm;
+
+      const recordRuntimeString = (rawValue: string, allowEmbedded: boolean, throwOnUnknown = false) => {
+        const trimmed = rawValue.trim();
+        if (!trimmed) return;
+        const resolved = path.resolve(trimmed);
+        if (sameOrInside(resolved, runtimes) && resolved !== runtimes) {
+          const firstSegment = path.relative(runtimes, resolved).split(path.sep)[0];
+          if (!firstSegment) return;
+          if (SHA256_HEX.test(firstSegment)) {
+            referencedDigests.add(firstSegment);
+          } else if (firstSegment === 'current' || firstSegment === 'dev') {
+            referencedNamespaces.add(firstSegment);
+          } else if (throwOnUnknown) {
+            throw new Error(`Uncertain runtime reference inside ${runtimes}`);
+          } else {
+            uncertainReference = true;
+          }
+          return;
+        }
+        if (!allowEmbedded) return;
+        const normalized = normalizeMatch(trimmed);
+        if (!normalized.includes(runtimesNorm) && !normalized.includes(rootHint)) return;
+        const matches = [...trimmed.matchAll(/runtime[\\/]([a-f0-9]{64}|current|dev)(?=[\\/]|$|[\s'"])/gi)];
+        if (matches.length === 0) {
+          uncertainReference = true;
+          return;
+        }
+        for (const match of matches) {
+          const segment = match[1]!.toLowerCase();
+          if (SHA256_HEX.test(segment)) referencedDigests.add(segment);
+          else if (segment === 'current' || segment === 'dev') referencedNamespaces.add(segment);
         }
       };
 
-      if (isSharedRoot) {
-        for (const client of SETUP_CLIENTS as readonly SetupClient[]) {
-          const text = read(configPath(client, home, env));
-          if (text === null) continue;
-          const entries = servers(client, document(client, text));
-          for (const entry of Object.values(entries)) {
-            const args = (entry as { args?: unknown })?.args;
-            if (!Array.isArray(args)) continue;
-            for (const arg of args) {
-              if (typeof arg === 'string') recordRuntimeArg(arg);
+      const inspectServerEntry = (entry: unknown) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          uncertainReference = true;
+          return;
+        }
+        const obj = entry as Record<string, unknown>;
+        if (
+          obj.command === undefined &&
+          obj.args === undefined &&
+          (obj.type === 'http' || obj.type === 'sse' || typeof obj.url === 'string')
+        ) {
+          return;
+        }
+        if (obj.command !== undefined) {
+          if (typeof obj.command !== 'string') {
+            uncertainReference = true;
+            return;
+          }
+          recordRuntimeString(obj.command, true);
+        }
+        if (obj.args !== undefined) {
+          if (!Array.isArray(obj.args)) {
+            uncertainReference = true;
+            return;
+          }
+          for (const arg of obj.args) {
+            if (typeof arg !== 'string') {
+              uncertainReference = true;
+              return;
             }
+            recordRuntimeString(arg, true);
           }
         }
-
-        const installsPath = path.join(resolvedRoot, 'installs.json');
-        if (fs.existsSync(installsPath)) {
-          const raw = read(installsPath);
-          if (raw === null) throw new Error('Unreadable installs.json');
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(raw);
-          } catch {
-            throw new Error('Malformed installs.json');
+        if (obj.env !== undefined) {
+          if (!obj.env || typeof obj.env !== 'object' || Array.isArray(obj.env)) {
+            uncertainReference = true;
+            return;
           }
-          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Malformed installs.json');
-          const pathRecord = (parsed as { path?: unknown }).path;
+          for (const val of Object.values(obj.env)) {
+            if (typeof val === 'string') recordRuntimeString(val, false);
+          }
+        }
+      };
+
+      // Inspect CLI host configs (both environment-resolved and home-default locations) for shared or globalStorage references.
+      for (const client of SETUP_CLIENTS as readonly SetupClient[]) {
+        const candidates = new Set([
+          configPath(client, home, env),
+          configPath(client, home, {}),
+          ...(client === 'codex' && env.CODEX_CONFIG_PATH ? [path.resolve(env.CODEX_CONFIG_PATH)] : []),
+        ]);
+        for (const file of candidates) {
+          try {
+            const text = read(file);
+            if (text === null) continue;
+            const entries = servers(client, document(client, text));
+            for (const entry of Object.values(entries)) {
+              inspectServerEntry(entry);
+            }
+          } catch {
+            uncertainReference = true;
+          }
+        }
+      }
+
+      // Inspect VS Code profile mcp.json files (local globalStorage profile and any recorded in vscode-mcp.json).
+      const mcpFiles = new Set<string>();
+      if (isGlobalStorage) {
+        mcpFiles.add(path.join(path.dirname(path.dirname(resolvedRoot)), 'mcp.json'));
+      }
+      const vscodeMcpFile = path.join(sharedRoot, 'vscode-mcp.json');
+      if (fs.existsSync(vscodeMcpFile)) {
+        try {
+          const text = read(vscodeMcpFile);
+          if (text === null) {
+            uncertainReference = true;
+          } else {
+            const record = json(text);
+            for (const profileFile of Object.keys(record)) {
+              mcpFiles.add(profileFile);
+            }
+          }
+        } catch {
+          uncertainReference = true;
+        }
+      }
+      for (const mcpFile of mcpFiles) {
+        try {
+          const text = read(mcpFile);
+          if (text === null) continue;
+          const parsed = json(text);
+          if (parsed.servers !== undefined) {
+            if (!parsed.servers || typeof parsed.servers !== 'object' || Array.isArray(parsed.servers)) {
+              uncertainReference = true;
+              continue;
+            }
+            for (const entry of Object.values(parsed.servers as Record<string, unknown>)) {
+              inspectServerEntry(entry);
+            }
+          }
+        } catch {
+          uncertainReference = true;
+        }
+      }
+
+      const installsPath = path.join(sharedRoot, 'installs.json');
+      if (fs.existsSync(installsPath)) {
+        const raw = read(installsPath);
+        if (raw === null) throw new Error('Unreadable installs.json');
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          throw new Error('Malformed installs.json');
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Malformed installs.json');
+        for (const key of ['path', 'pathV2'] as const) {
+          const pathRecord = (parsed as Record<string, unknown>)[key];
           if (pathRecord !== undefined) {
             const pRuntime = pathRecord && typeof pathRecord === 'object' ? (pathRecord as { runtime?: unknown }).runtime : undefined;
             if (typeof pRuntime !== 'string' || !pRuntime) throw new Error('Malformed PATH record in installs.json');
-            recordRuntimeArg(pRuntime);
+            recordRuntimeString(pRuntime, false, true);
           }
         }
+      }
 
-        const shimPath = path.join(resolvedRoot, 'bin', 'coagent8.cmd');
-        if (fs.existsSync(shimPath)) {
-          let shimContent: string;
-          try {
-            shimContent = readBoundedFileSync(shimPath, POINTER_LIMIT);
-          } catch {
-            throw new Error('Unreadable PATH shim');
-          }
-          const matches = shimContent.matchAll(/runtime[\\/]([a-f0-9]{64}|current|dev)[\\/]/gi);
-          for (const match of matches) {
-            const segment = match[1]!.toLowerCase();
-            if (SHA256_HEX.test(segment)) referencedDigests.add(segment);
-            else if (segment === 'current' || segment === 'dev') referencedNamespaces.add(segment);
-          }
+      const shimPath = path.join(sharedRoot, 'bin', 'coagent8.cmd');
+      if (fs.existsSync(shimPath)) {
+        let shimContent: string;
+        try {
+          shimContent = readBoundedFileSync(shimPath, POINTER_LIMIT);
+        } catch {
+          throw new Error('Unreadable PATH shim');
+        }
+        const matches = [...shimContent.matchAll(/runtime[\\/]([a-f0-9]{64}|current|dev)[\\/]/gi)];
+        for (const match of matches) {
+          const segment = match[1]!.toLowerCase();
+          if (SHA256_HEX.test(segment)) referencedDigests.add(segment);
+          else if (segment === 'current' || segment === 'dev') referencedNamespaces.add(segment);
+        }
+        const shimNorm = normalizeMatch(shimContent);
+        if ((shimNorm.includes(runtimesNorm) || shimNorm.includes('.coagent8/runtime')) && matches.length === 0) {
+          uncertainReference = true;
         }
       }
 
@@ -1156,8 +1500,8 @@ export async function cleanupUnreferencedRuntimes(
         }
       }
 
-      if (uncertainLeasePresent) {
-        // Uncertain lease cannot safely narrow down which copy is running: preserve all copies.
+      if (uncertainReference || uncertainLeasePresent) {
+        // Uncertain host reference or lease cannot safely narrow down which copy is running: preserve all copies.
         const kept = fs.existsSync(runtimes) ? fs.readdirSync(runtimes).filter(name => SHA256_HEX.test(name)) : [];
         return { removed: [], kept };
       }
@@ -1169,6 +1513,8 @@ export async function cleanupUnreferencedRuntimes(
           const dirPath = path.join(runtimes, name);
           if (SHA256_HEX.test(name)) {
             if (referencedDigests.has(name)) {
+              kept.push(name);
+            } else if (shouldRetainPreLeaseCopy(dirPath, preLeaseGraceMs)) {
               kept.push(name);
             } else if (removeRuntimeDirectory(dirPath)) {
               removed.push(name);

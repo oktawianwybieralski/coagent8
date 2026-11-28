@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { copyJobHelperBeside } from './runtime-files.js';
-import { cleanupUnreferencedRuntimes } from './runtime-manager.js';
+import { cleanupUnreferencedRuntimes, markRuntimeLeaseCapable, PRE_LEASE_RETENTION_MS } from './runtime-manager.js';
 import { parse, applyEdits, modify, type ParseError } from 'jsonc-parser';
 import { readBoundedFileSync } from '../storage/read.js';
 import { withFileLock } from '../storage/lock.js';
@@ -190,7 +190,10 @@ function runtimeCopy(storagePath: string, bundle: string): string {
     target = path.join(directory, 'index.cjs');
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   copyJobHelperBeside(bundle, directory);
-  if (fs.existsSync(target) && hash(fs.readFileSync(target)) === path.basename(directory)) return target;
+  if (fs.existsSync(target) && hash(fs.readFileSync(target)) === path.basename(directory)) {
+    markRuntimeLeaseCapable(directory);
+    return target;
+  }
   const temp = `${target}.${randomUUID()}.tmp`;
   try {
     fs.writeFileSync(temp, content, { flag: 'wx', mode: 0o600 });
@@ -198,13 +201,23 @@ function runtimeCopy(storagePath: string, bundle: string): string {
   } finally {
     fs.rmSync(temp, { force: true });
   }
+  markRuntimeLeaseCapable(directory);
   return target;
 }
-/** Removes bundle copies in global storage that neither the profile entry nor an active runtime lease starts. */
+/**
+ * Removes bundle copies in global storage that neither the profile entry nor an active runtime lease starts.
+ *
+ * @remarks
+ * Pre-lease retention rule: copies without `.lease-capable` may still be executing in servers
+ * started by earlier extension versions (which acquire no per-process lease files) or unmigrated
+ * host registrations. Cleanup conservatively retains those copies for `PRE_LEASE_RETENTION_MS`
+ * (7 days) after they first become unreferenced before deleting them.
+ */
 async function pruneRuntimes(storagePath: string, home: string, keep: string): Promise<void> {
   const keepDigest = path.basename(path.dirname(keep));
   await cleanupUnreferencedRuntimes(storagePath, home, process.env, {
     extraReferencedDigests: /^[a-f0-9]{64}$/.test(keepDigest) ? [keepDigest] : [],
+    preLeaseGraceMs: PRE_LEASE_RETENTION_MS,
   });
 }
 

@@ -119,6 +119,14 @@ async function runExtension({
   pathAdapter = new MockPathAdapter('C:\\Tools', 'REG_SZ'),
   editorSettings = {},
   extraAgyModels = [],
+  runtimeBundle,
+  extensionVersion,
+  useRealSetup = false,
+  deferredClients = [],
+  blockedClients = [],
+  envOverrides = {},
+  nodePath = 'node',
+  awaitTimeoutMs,
 } = {}) {
   const handlers = {},
     registrationsWritten = [],
@@ -234,7 +242,7 @@ async function runExtension({
       getConfiguration() {
         return {
           get(key, fallback) {
-            return key === 'nodePath' ? 'node' : key === 'configPath' ? configPath : fallback;
+            return key === 'nodePath' ? nodePath : key === 'configPath' ? configPath : fallback;
           },
           inspect(key) {
             return Object.hasOwn(editorValues, key) ? { globalValue: editorValues[key] } : {};
@@ -483,10 +491,18 @@ async function runExtension({
               "export async function cleanupClients(options) { globalThis.setupFixture.recordCleanup({ clients: options.clients, apply: options.apply, origin: options.origin, uninstall: options.uninstall, actor: options.actor }); return { token: 'fixture-preview', results: (options.clients ?? ['codex', 'claude', 'agy']).map(client => ({ client, action: options.apply ? 'removed' : 'remove', message: 'fixture' })) }; } export function pruneUnreferencedRuntimes() {}",
             loader: 'js',
           }));
-          build.onLoad({ filter: /[\\/]integrations[\\/]setup\.ts$/ }, () => ({
-            contents: fs.readFileSync(path.resolve(__dirname, '../fixtures/vscode-extension/setup.js'), 'utf8'),
-            loader: 'js',
-          }));
+          if (!useRealSetup) {
+            build.onLoad({ filter: /[\\/]integrations[\\/]setup\.ts$/ }, () => ({
+              contents: fs.readFileSync(path.resolve(__dirname, '../fixtures/vscode-extension/setup.js'), 'utf8'),
+              loader: 'js',
+            }));
+          }
+          if (extensionVersion) {
+            build.onLoad({ filter: /[\\/]package\.json$/ }, () => ({
+              contents: JSON.stringify({ version: extensionVersion }),
+              loader: 'json',
+            }));
+          }
           // The extension's own subprocess runs the bundled runtime's `models --json`.
           build.onResolve({ filter: /execution[\\/]process\.js$/ }, args =>
             args.importer.endsWith('extension.ts') ? { path: 'model-runtime', namespace: 'fixture' } : undefined,
@@ -508,6 +524,8 @@ async function runExtension({
     missingConfigured,
     executableChecks,
     registrationStates: registrations,
+    deferredClients,
+    blockedClients,
     vendorRoots: Object.values(VENDORS).map(id => path.resolve('vendor', id)),
     installedVendors: () => vendorExtensions,
     found,
@@ -564,6 +582,8 @@ async function runExtension({
   vm.runInNewContext(output.outputFiles[0].text, {
     module,
     exports: module.exports,
+    __dirname: path.resolve(__dirname, '../../dist'),
+    __filename: path.resolve(__dirname, '../../dist/extension.js'),
     process,
     Buffer,
     setupFixture: fixture,
@@ -598,6 +618,7 @@ async function runExtension({
   const savedHome = {
     HOME: process.env.HOME,
     USERPROFILE: process.env.USERPROFILE,
+    ...Object.fromEntries(Object.keys(envOverrides).map(k => [k, process.env[k]])),
     ...(skillProfile
       ? {
           CODEX_HOME: process.env.CODEX_HOME,
@@ -610,6 +631,10 @@ async function runExtension({
   };
   process.env.HOME = homeDir;
   process.env.USERPROFILE = homeDir;
+  for (const [k, v] of Object.entries(envOverrides)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
   if (skillProfile) {
     process.env.CODEX_HOME = path.join(homeDir, '.codex');
     process.env.coagent8_CONFIG = path.join(homeDir, '.coagent8/config.json');
@@ -635,7 +660,16 @@ async function runExtension({
   const initialState = readState();
   fs.mkdirSync(path.join(extensionRoot, 'dist'));
   fs.cpSync(skillsSource, path.join(extensionRoot, 'skills'), { recursive: true });
-  fs.writeFileSync(path.join(extensionRoot, 'dist/index.cjs'), 'fixture runtime');
+  const defaultFixtureRuntime = [
+    "const rl = require('node:readline').createInterface({ input: process.stdin });",
+    "rl.on('line', line => {",
+    '  if (!line.trim()) return;',
+    '  const msg = JSON.parse(line);',
+    "  if (msg.method === 'initialize') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { serverInfo: { name: 'coagent8' } } }) + '\\n');",
+    "  else if (msg.method === 'tools/list') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'doctor' }] } }) + '\\n');",
+    '});',
+  ].join('\n');
+  fs.writeFileSync(path.join(extensionRoot, 'dist/index.cjs'), runtimeBundle ?? defaultFixtureRuntime);
   const context = {
     subscriptions: [],
     globalStorageUri: { fsPath: storage },
@@ -681,13 +715,16 @@ async function runExtension({
     // The welcome runs after activation; its locked state write completes asynchronously.
     const removing = () => (readState() ?? '').includes('removingExtensions');
     for (
-      const deadline = Date.now() + 2000;
+      const deadline = Date.now() + (awaitTimeoutMs ?? (useRealSetup ? 15_000 : 2_000));
       (awaitState && readState() === initialState) ||
       (nativeRemoval.length && removing()) ||
       notifications.length < awaitNotifications ||
       warnings.length < awaitWarnings;
     ) {
-      assert.ok(Date.now() < deadline, 'the onboarding state or notification did not arrive');
+      assert.ok(
+        Date.now() < deadline,
+        `the onboarding state or notification did not arrive: ${JSON.stringify({ errors, warnings, notifications, reports, state: readState() })}`,
+      );
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     if (typeof module.exports.whenIdle === 'function') {
@@ -909,7 +946,10 @@ test('activation migrates legacy CLI chat registrations once, then future update
   assert.match(migratedWithVendor.notifications.at(-1).message, /^CoAgent8 updated in the chats of Claude Code CLI, Antigravity CLI\./);
   assert.deepEqual(migratedWithVendor.notifications.at(-1).actions, ['Restart Extensions', 'Show Details']);
   assert.deepEqual(migratedWithVendor.requests, [['workbench.action.restartExtensionHost']]);
-  assert.match(migratedWithVendor.state.updateOffered, /#[0-9a-f]{64}$/);
+  assert.equal(Object.keys(migratedWithVendor.state.updateOffered).length, 2);
+  assert.match(migratedWithVendor.state.updateOffered.claude, /#[0-9a-f]{64}$/);
+  assert.match(migratedWithVendor.state.updateOffered.agy, /#[0-9a-f]{64}$/);
+  assert.equal(migratedWithVendor.state.updateOffered.codex, undefined);
 
   // 2. Without vendor chat extensions, migration informs without Restart Extensions.
   const migratedTerminalOnly = await runExtension({
@@ -952,6 +992,182 @@ test('activation migrates legacy CLI chat registrations once, then future update
   });
   assert.deepEqual(roots.errors, [], 'a multi-root window migrates legacy registrations too');
   assert.deepEqual(roots.registrations, [['claude']]);
+});
+
+test('activation migrates legacy CLI registration, then newer real bundle updates pointer/launcher with zero registration byte changes or prompts', async t => {
+  const cp = require('node:child_process');
+  const { createHash } = require('node:crypto');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-ext-real-update-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  const distBundle = path.resolve(__dirname, '../../dist/index.cjs');
+  const baseBytes = fs.readFileSync(distBundle, 'utf8');
+  const bundleV1 = baseBytes + '\n// real bundle v1\n';
+  const bundleV2 = baseBytes + '\n// real bundle v2\n';
+  const digestV1 = createHash('sha256').update(bundleV1).digest('hex');
+  const digestV2 = createHash('sha256').update(bundleV2).digest('hex');
+
+  const legacyRuntime = path.join(home, '.coagent8', 'runtime', digestV1, 'index.cjs');
+  fs.mkdirSync(path.dirname(legacyRuntime), { recursive: true });
+  fs.writeFileSync(legacyRuntime, bundleV1);
+  const claudeFile = path.join(home, '.claude.json');
+  const legacyEntry = { command: process.execPath, args: [legacyRuntime] };
+  fs.writeFileSync(claudeFile, JSON.stringify({ mcpServers: { coagent8: legacyEntry } }, null, 2));
+
+  const cliFixture = path.resolve(__dirname, '../fixtures/setup-cli/client.cjs');
+  const envOverrides = {
+    CODEX_PATH: cliFixture,
+    CLAUDE_PATH: cliFixture,
+    AGY_PATH: cliFixture,
+    SETUP_FIXTURE_HOME: home,
+    CODEX_HOME: undefined,
+    CODEX_CONFIG_PATH: undefined,
+    CLAUDE_CONFIG_DIR: undefined,
+    GEMINI_CLI_HOME: undefined,
+    coagent8_CONFIG: undefined,
+    coagent8_DIR: undefined,
+  };
+
+  // 1. First activation migrates legacy claude registration to stable launcher at v0.7.0
+  const first = await runExtension({
+    home,
+    activationOnly: true,
+    useRealSetup: true,
+    extensionVersion: '0.7.0',
+    runtimeBundle: bundleV1,
+    nodePath: process.execPath,
+    envOverrides,
+    awaitState: true,
+    awaitNotifications: 1,
+  });
+  assert.deepEqual(first.errors, []);
+  assert.deepEqual(first.warnings, []);
+  assert.equal(first.notifications.length, 1);
+  assert.match(first.notifications[0].message, /CoAgent8 updated in the chats of Claude Code CLI\./);
+  assert.match(first.state.updateOffered.claude, new RegExp(`^0\\.7\\.0#${digestV1}$`));
+
+  const migratedBytes = fs.readFileSync(claudeFile, 'utf8');
+  const launcherFile = path.join(home, '.coagent8', 'runtime', 'current', 'index.cjs');
+  const pointerFile = path.join(home, '.coagent8', 'runtime', 'current', 'pointer.json');
+  assert.equal(JSON.parse(migratedBytes).mcpServers.coagent8.args[0], launcherFile);
+  assert.equal(JSON.parse(fs.readFileSync(pointerFile, 'utf8')).digest, digestV1);
+
+  const childEnv = {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    coagent8_DIR: path.join(home, 'data'),
+    coagent8_CONFIG: path.join(home, 'config.json'),
+  };
+  const docV1 = cp.spawnSync(process.execPath, [launcherFile, 'doctor', '--scope', 'health', '--json'], {
+    env: childEnv,
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 15_000,
+  });
+  assert.equal(docV1.status, 0, docV1.stderr);
+  assert.equal(JSON.parse(docV1.stdout).runtime_path, path.join('~', '.coagent8', 'runtime', digestV1, 'index.cjs'));
+
+  // 2. Second activation with a newer real runtime bundle leaves registration bytes unchanged, shows no prompts, and switches launcher to v2
+  const second = await runExtension({
+    home,
+    activationOnly: true,
+    useRealSetup: true,
+    extensionVersion: '0.8.0',
+    runtimeBundle: bundleV2,
+    nodePath: process.execPath,
+    storedState: first.state,
+    envOverrides,
+  });
+  assert.deepEqual(second.errors, []);
+  assert.deepEqual(second.warnings, []);
+  assert.deepEqual(second.notifications, []);
+  assert.deepEqual(second.requests, []);
+  assert.equal(fs.readFileSync(claudeFile, 'utf8'), migratedBytes, 'registration bytes unchanged on update');
+  const pointerV2 = JSON.parse(fs.readFileSync(pointerFile, 'utf8'));
+  assert.equal(pointerV2.version, '0.8.0');
+  assert.equal(pointerV2.digest, digestV2);
+
+  const docV2 = cp.spawnSync(process.execPath, [launcherFile, 'doctor', '--scope', 'health', '--json'], {
+    env: childEnv,
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 15_000,
+  });
+  assert.equal(docV2.status, 0, docV2.stderr);
+  assert.equal(
+    JSON.parse(docV2.stdout).runtime_path,
+    path.join('~', '.coagent8', 'runtime', digestV2, 'index.cjs'),
+    'stable launcher now starts the newer runtime',
+  );
+});
+
+test('activation probes candidate before switching pointer and preserves incumbent on failure', async t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-ext-probe-fail-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  const first = await runExtension({
+    home,
+    activationOnly: true,
+    extensionVersion: '0.7.0',
+    registrations: { codex: 'owned', claude: 'owned', agy: 'owned' },
+  });
+  assert.deepEqual(first.errors, []);
+  const pointerFile = path.join(home, '.coagent8', 'runtime', 'current', 'pointer.json');
+  const incumbent = JSON.parse(fs.readFileSync(pointerFile, 'utf8'));
+  assert.equal(incumbent.version, '0.7.0');
+
+  // Activating a newer broken candidate that fails MCP probe keeps the incumbent pointer
+  const broken = await runExtension({
+    home,
+    activationOnly: true,
+    extensionVersion: '0.8.0',
+    runtimeBundle: 'process.exit(1);',
+    registrations: { codex: 'owned', claude: 'owned', agy: 'owned' },
+  });
+  assert.deepEqual(broken.errors, []);
+  const after = JSON.parse(fs.readFileSync(pointerFile, 'utf8'));
+  assert.equal(after.version, '0.7.0');
+  assert.equal(after.digest, incumbent.digest, 'incumbent pointer kept when candidate probe fails');
+  assert.ok(
+    broken.reports.some(line => line.includes('runtimeInstallError')),
+    'probe failure recorded in setup log',
+  );
+});
+
+test('migration records updateOffered per successfully migrated client and retries failed or deferred clients on later activation', async t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-ext-retry-migration-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  // First activation: claude migrates, codex is deferred (preserved), agy is blocked; legacy string updateOffered is ignored
+  const first = await runExtension({
+    home,
+    activationOnly: true,
+    registrations: { codex: 'legacy', claude: 'legacy', agy: 'legacy' },
+    deferredClients: ['codex'],
+    blockedClients: ['agy'],
+    storedState: { welcomed: true, pathPrompt: 'accepted', updateOffered: '0.7.0#legacy-string' },
+    awaitState: true,
+    awaitWarnings: 1,
+  });
+  assert.deepEqual(first.registrations, [['codex', 'claude', 'agy']]);
+  assert.equal(first.state.updateOffered.codex, undefined, 'deferred client not marked complete');
+  assert.equal(first.state.updateOffered.agy, undefined, 'blocked client not marked complete');
+  assert.match(first.state.updateOffered.claude, /#[0-9a-f]{64}$/);
+
+  // Second activation with same bundle: only codex and agy are retried, claude skipped
+  const second = await runExtension({
+    home,
+    activationOnly: true,
+    registrations: { codex: 'legacy', claude: 'legacy', agy: 'legacy' },
+    storedState: first.state,
+    awaitState: true,
+    awaitNotifications: 1,
+  });
+  assert.deepEqual(second.registrations, [['codex', 'agy']], 'only previously deferred/failed clients retried');
+  assert.match(second.state.updateOffered.codex, /#[0-9a-f]{64}$/);
+  assert.match(second.state.updateOffered.agy, /#[0-9a-f]{64}$/);
+  assert.match(second.state.updateOffered.claude, /#[0-9a-f]{64}$/);
 });
 
 test('an activation with a newer CLI chat registration offers no update or downgrade (FEEDBACK-061b2)', async () => {

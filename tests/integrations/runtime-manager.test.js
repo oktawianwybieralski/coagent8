@@ -49,6 +49,10 @@ test('full SemVer precedence including prereleases and build metadata', () => {
   }
   assert.equal(compareSemver('0.8.0+build.1', '0.8.0+build.2'), 0);
   assert.equal(newerVersion('0.8.0+build.2', '0.8.0+build.1'), false);
+  assert.equal(compareSemver('1.0.0-9', '1.0.0-10'), -1);
+  assert.equal(compareSemver('1.0.0-9007199254740992', '1.0.0-9007199254740993'), -1);
+  assert.equal(compareSemver('1.0.0-9007199254740993', '1.0.0-9007199254740992'), 1);
+  assert.equal(compareSemver('1.0.0-9007199254740992', '1.0.0-90071992547409920'), -1);
   assert.equal(isDevSemver('0.8.0-dev.1'), true);
   assert.equal(isDevSemver('0.8.0+dev'), true);
   assert.equal(isDevSemver('0.8.0-beta.1'), false);
@@ -334,4 +338,169 @@ test('cleanup reclaims dead PID leases, handles aged PID reuse checks, and prese
   assert.ok(reusedRes.removed.includes(rA2.digest));
   assert.equal(fs.existsSync(rA2.runtimePath), false);
   assert.equal(fs.existsSync(rB.runtimePath), true);
+});
+
+test('selectRuntimePointer re-verifies target exists and installAndSelectRuntime holds lock through selection', async t => {
+  const home = makeHome(t);
+  const root = coagentRootForHome(home);
+  const srcA = path.join(home, 'a.cjs');
+  const srcB = path.join(home, 'b.cjs');
+  fs.writeFileSync(srcA, '/* copy A */');
+  fs.writeFileSync(srcB, '/* copy B */');
+
+  const copyA = installAndVerifyRuntimeCopy({ home, runtimeSource: srcA, version: '0.7.0' });
+  fs.rmSync(copyA.runtimeDir, { recursive: true, force: true });
+  await assert.rejects(() => selectRuntimePointer(copyA), /missing before pointer selection/);
+  assert.equal(readRuntimePointer(root, 'current'), null, 'missing target never writes a dangling pointer');
+
+  // installAndSelectRuntime holds runtime-lock across install and selection, so cleanup cannot delete in between
+  const resB = await installAndSelectRuntime({ home, runtimeSource: srcB, version: '0.8.0' });
+  assert.equal(resB.action, 'installed');
+  assert.equal(fs.existsSync(resB.runtimePath), true);
+  assert.equal(readRuntimePointer(root, 'current').digest, resB.digest);
+});
+
+test('direct runtime lease waits for runtime lock, writes lease, and fails safely if lease creation fails', async t => {
+  const { withFileLock } = require('../../src/storage/lock.ts');
+  const home = makeHome(t);
+  const root = coagentRootForHome(home);
+  const bundleBytes = fs.readFileSync(distBundle);
+  const digest = createHash('sha256').update(bundleBytes).digest('hex');
+  const directDir = path.join(root, 'runtime', digest);
+  const directPath = path.join(directDir, 'index.cjs');
+  fs.mkdirSync(directDir, { recursive: true });
+  fs.writeFileSync(directPath, bundleBytes);
+
+  const childEnv = {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    coagent8_DIR: path.join(home, 'data'),
+    coagent8_CONFIG: path.join(home, 'config.json'),
+  };
+
+  // Hold runtime-lock briefly while launching direct runtime; child waits for lock and succeeds
+  let releaseLock;
+  let markHeld;
+  const heldPromise = new Promise(resolve => {
+    markHeld = resolve;
+  });
+  const lockGate = new Promise(resolve => {
+    releaseLock = resolve;
+  });
+  const lockTask = withFileLock(path.join(root, 'runtime-lock'), async () => {
+    markHeld();
+    await lockGate;
+  });
+  await heldPromise;
+  setTimeout(releaseLock, 250);
+
+  const conn = connect(process.execPath, [directPath, 'mcp'], { cwd: home, env: childEnv });
+  try {
+    const init = await conn.request('initialize', {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      clientInfo: { name: 'direct-lease-test', version: '1' },
+    });
+    assert.equal(init.result.serverInfo.name, 'coagent8');
+    await lockTask;
+    const status = readRuntimeStatus(home, 'current');
+    assert.ok(status.activeLeases.some(lease => lease.pid === conn.proc.pid && lease.digest === digest));
+    conn.proc.stdin.end();
+    await conn.waitForExit(5000);
+  } finally {
+    await conn.cleanup();
+  }
+
+  // If leases directory is blocked (cannot publish lease), direct runtime fails safely instead of running unleased
+  const leasesFile = runtimeLeasesDir(root);
+  fs.rmSync(leasesFile, { recursive: true, force: true });
+  fs.writeFileSync(leasesFile, 'blocked');
+  const failRun = cp.spawnSync(process.execPath, [directPath, 'wait', 'missing-handle'], {
+    env: childEnv,
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 10_000,
+  });
+  assert.notEqual(failRun.status, 0);
+  assert.match(failRun.stderr, /Failed to acquire runtime lease/);
+});
+
+test('cleanup conservatively retains unreferenced pre-lease copies until grace expires and protects all registration forms', async t => {
+  const home = makeHome(t);
+  const root = coagentRootForHome(home);
+  const bundleV1 = path.join(home, 'v1.cjs');
+  fs.writeFileSync(bundleV1, '/* v1 */');
+  const active = await installAndSelectRuntime({ home, runtimeSource: bundleV1, version: '0.8.0' });
+
+  // 1. Pre-lease copy without .lease-capable is conservatively retained until grace expires
+  const preLeaseSha = 'e'.repeat(64);
+  const preLeaseDir = path.join(root, 'runtime', preLeaseSha);
+  const preLeaseIndex = path.join(preLeaseDir, 'index.cjs');
+  fs.mkdirSync(preLeaseDir, { recursive: true });
+  fs.writeFileSync(preLeaseIndex, '/* pre-lease */');
+
+  const firstCleanup = await cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: true });
+  assert.ok(firstCleanup.kept.includes(preLeaseSha), 'pre-lease copy retained on first cleanup');
+  assert.equal(fs.existsSync(preLeaseIndex), true);
+
+  // Backdate .pre-lease-retired past retention window -> now removed
+  const retiredMarker = path.join(preLeaseDir, '.pre-lease-retired');
+  const { PRE_LEASE_RETENTION_MS } = require('../../src/integrations/runtime-manager.ts');
+  fs.writeFileSync(retiredMarker, JSON.stringify({ retiredAt: Date.now() - PRE_LEASE_RETENTION_MS - 1000 }));
+  const secondCleanup = await cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: true });
+  assert.ok(secondCleanup.removed.includes(preLeaseSha), 'pre-lease copy removed after grace expires');
+  assert.equal(fs.existsSync(preLeaseIndex), false);
+
+  // 2. Cleanup protects copies referenced via command field, shell-wrapped args, and VS Code mcp.json, and aborts on uncertain entries
+  const cmdSha = 'c'.repeat(64);
+  const shellSha = 'd'.repeat(64);
+  const mcpSha = 'f'.repeat(64);
+  for (const sha of [cmdSha, shellSha, mcpSha]) {
+    const dir = path.join(root, 'runtime', sha);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.cjs'), '/* copy */');
+    fs.writeFileSync(path.join(dir, '.lease-capable'), '1\n');
+  }
+
+  const claudeConfig = path.join(home, '.claude.json');
+  fs.writeFileSync(
+    claudeConfig,
+    JSON.stringify({
+      mcpServers: {
+        coagent8Direct: { command: path.join(root, 'runtime', cmdSha, 'index.cjs') },
+        coagent8Shell: { command: 'sh', args: ['-c', `"${path.join(root, 'runtime', shellSha, 'index.cjs')}" mcp`] },
+      },
+    }),
+  );
+  const profileMcp = path.join(home, 'User', 'mcp.json');
+  fs.mkdirSync(path.dirname(profileMcp), { recursive: true });
+  fs.writeFileSync(
+    profileMcp,
+    JSON.stringify({ servers: { CoAgent8: { command: 'node', args: [path.join(root, 'runtime', mcpSha, 'index.cjs'), 'mcp'] } } }),
+  );
+  fs.writeFileSync(path.join(root, 'vscode-mcp.json'), JSON.stringify({ [profileMcp]: { entry: 'x', installation: 'y' } }));
+
+  const protectedRun = await cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: true });
+  assert.deepEqual(protectedRun.removed, []);
+  for (const sha of [active.digest, cmdSha, shellSha, mcpSha]) {
+    assert.ok(protectedRun.kept.includes(sha), `${sha} kept`);
+  }
+
+  // Unparseable / undetermined reference in host config preserves all copies
+  const unrefSha = '1'.repeat(64);
+  fs.mkdirSync(path.join(root, 'runtime', unrefSha), { recursive: true });
+  fs.writeFileSync(path.join(root, 'runtime', unrefSha, 'index.cjs'), '/* unreferenced */');
+  fs.writeFileSync(path.join(root, 'runtime', unrefSha, '.lease-capable'), '1\n');
+  fs.writeFileSync(
+    claudeConfig,
+    JSON.stringify({
+      mcpServers: {
+        coagent8Broken: { command: 'sh', args: ['-c', `"${path.join(root, 'runtime', '$VER', 'index.cjs')}"`] },
+      },
+    }),
+  );
+  const uncertainRun = await cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: true });
+  assert.deepEqual(uncertainRun.removed, []);
+  assert.ok(uncertainRun.kept.includes(unrefSha), 'undetermined reference keeps all copies');
 });

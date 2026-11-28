@@ -432,10 +432,18 @@ test('existing legacy extension-owned profile entry migrates to modern mcp shape
   assert.equal(migrated.args.length, 2);
   assert.equal(migrated.args[1], 'mcp');
   assert.equal(fs.readFileSync(migrated.args[0], 'utf8'), 'bundle v1');
-  assert.equal(fs.existsSync(legacyTarget), false, 'legacy bundle copy is pruned');
+  assert.equal(fs.existsSync(legacyTarget), true, 'pre-lease copy is conservatively retained right after migration');
+  const retiredMarker = path.join(legacyDirectory, '.pre-lease-retired');
+  assert.equal(fs.existsSync(retiredMarker), true, 'pre-lease retirement timestamp is recorded');
   const updatedRecord = JSON.parse(fs.readFileSync(recordFile, 'utf8'))[p.file];
   assert.equal(updatedRecord.version, '0.7.0');
   assert.equal(updatedRecord.entry, hash(JSON.stringify(migrated)));
+
+  // Once the pre-lease retention grace elapses, a subsequent sync prunes the legacy copy.
+  const { PRE_LEASE_RETENTION_MS } = require('../../src/integrations/runtime-manager.ts');
+  fs.writeFileSync(retiredMarker, JSON.stringify({ retiredAt: Date.now() - PRE_LEASE_RETENTION_MS - 1000 }));
+  assert.equal(await p.sync({ version: '0.7.0' }), 'current');
+  assert.equal(fs.existsSync(legacyTarget), false, 'legacy bundle copy is pruned after grace period');
 });
 
 test('legacy extension-owned profile entry without record migrates to modern mcp shape via extensionShaped fallback', async t => {
@@ -453,7 +461,27 @@ test('legacy extension-owned profile entry without record migrates to modern mcp
   const migrated = p.entries()[VSCODE_SERVER_NAME];
   assert.deepEqual(migrated.args, [migrated.args[0], 'mcp']);
   assert.equal(fs.readFileSync(migrated.args[0], 'utf8'), 'bundle v1');
-  assert.equal(fs.existsSync(legacyTarget), false);
+  assert.equal(fs.existsSync(legacyTarget), true, 'pre-lease unrecorded copy is conservatively retained initially');
+});
+
+test('globalStorage cleanup preserves runtime copies still referenced by external CLI host registrations', async t => {
+  const { hash } = require('../../src/integrations/setup-storage.ts');
+  const p = profile(t);
+  const hostSha = hash('host referenced copy');
+  const hostDir = path.join(p.storagePath, 'runtime', hostSha);
+  const hostTarget = path.join(hostDir, 'index.cjs');
+  fs.mkdirSync(hostDir, { recursive: true });
+  fs.writeFileSync(hostTarget, 'host referenced copy');
+  fs.writeFileSync(path.join(hostDir, '.lease-capable'), '1\n');
+
+  fs.mkdirSync(p.home, { recursive: true });
+  fs.writeFileSync(
+    path.join(p.home, '.claude.json'),
+    JSON.stringify({ mcpServers: { coagent8: { command: 'node', args: [hostTarget, 'mcp'] } } }),
+  );
+
+  assert.equal(await p.sync({ version: '0.7.0' }), 'registered');
+  assert.equal(fs.existsSync(hostTarget), true, 'copy referenced by CLI host registration is preserved');
 });
 
 test('modern profile entry without record is recognized as current via extensionShaped fallback', async t => {

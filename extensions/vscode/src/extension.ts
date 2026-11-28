@@ -65,7 +65,11 @@ import {
   type PathSystemAdapter,
   DefaultWindowsPathAdapter,
 } from '../../../src/integrations/vscode-path.js';
-import { cleanupUnreferencedRuntimes, coagentRootForHome, installAndSelectRuntime } from '../../../src/integrations/runtime-manager.js';
+import {
+  cleanupUnreferencedRuntimes,
+  coagentRootForHome,
+  installAndSelectVerifiedRuntime,
+} from '../../../src/integrations/runtime-manager.js';
 
 let customPathAdapter: PathSystemAdapter | undefined;
 
@@ -2326,42 +2330,54 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }),
   );
   trackTask(finishRemovals(true).catch(removalFailed));
-  const runtimeInstall = vscode.env.remoteName
-    ? Promise.resolve()
+  const runtimeInstall: Promise<boolean> = vscode.env.remoteName
+    ? Promise.resolve(true)
     : trackTask(
-        installAndSelectRuntime({
-          home: os.homedir(),
-          runtimeSource: context.asAbsolutePath('dist/index.cjs'),
-          version,
-        })
-          .then(res => {
-            if (res.action === 'kept-incumbent' || res.action === 'downgrade-blocked' || res.action === 'pinned-blocked') {
-              report({ runtimeSelection: res });
-            }
-          })
-          .catch(error => {
-            report({ runtimeInstallError: redactDiagnostic(error instanceof Error ? error.message : 'Runtime install failed.') });
-          }),
+        (async () => {
+          const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
+          if (!nodePath) throw new Error('Configure coagent8.nodePath with a Node.js 24+ executable.');
+          const res = await installAndSelectVerifiedRuntime({
+            home: os.homedir(),
+            runtimeSource: context.asAbsolutePath('dist/index.cjs'),
+            version,
+            nodePath,
+            env: setupEnvironment(),
+            cwd: os.homedir(),
+          });
+          if (res.action === 'kept-incumbent' || res.action === 'downgrade-blocked' || res.action === 'pinned-blocked') {
+            report({ runtimeSelection: res });
+          }
+          return true;
+        })().catch(error => {
+          report({ runtimeInstallError: redactDiagnostic(error instanceof Error ? error.message : 'Runtime install failed.') });
+          return false;
+        }),
       );
   /**
    * Migrates owned CLI chat registrations once from legacy `<sha256>` paths to the stable launcher.
    * Subsequent updates switch the pointer only and show no Update CLI Chats or Restart Extensions prompt.
    */
   async function migrateLegacyRegistrations(): Promise<void> {
-    await runtimeInstall;
-    if (vscode.env.remoteName || isDeactivating || !readSetupState(storage).welcomed) return;
-    const legacy = readRegistrations(localOptions())
-      .filter(item => item.state === 'owned' && item.legacy && !item.isNewer)
-      .map(item => item.client);
-    if (!legacy.length || isDeactivating) return;
+    const runtimeReady = await runtimeInstall;
+    if (!runtimeReady || vscode.env.remoteName || isDeactivating || !readSetupState(storage).welcomed) return;
     const runtime = `${version}#${createHash('sha256')
       .update(fs.readFileSync(context.asAbsolutePath('dist/index.cjs')))
       .digest('hex')}`;
-    if (readSetupState(storage).updateOffered === runtime) return;
-    await startTracked(() => updateSetupState(storage, { updateOffered: runtime }));
-    if (isDeactivating) return;
+    const offered = readSetupState(storage).updateOffered ?? {};
+    const legacy = readRegistrations(localOptions())
+      .filter(item => item.state === 'owned' && item.legacy && !item.isNewer && offered[item.client] !== runtime)
+      .map(item => item.client);
+    if (!legacy.length || isDeactivating) return;
     const migrated = await startTracked(() => setupClients({ ...localOptions(), clients: legacy }));
     report({ migrated });
+    // Record completion only per successfully migrated client so failed or deferred clients retry on later activations.
+    const completed: Partial<Record<SetupClient, string>> = {};
+    for (const result of migrated) {
+      if (result.action === 'updated') completed[result.client] = runtime;
+    }
+    if (Object.keys(completed).length > 0 && !isDeactivating) {
+      await startTracked(() => updateSetupState(storage, { updateOffered: completed }));
+    }
     if (migrated.some(result => result.action === 'updated') && !isDeactivating) {
       void announce(migrated, [], { migrated }).catch(showLifecycleError);
     }
@@ -2436,8 +2452,9 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
   const pathSync = vscode.env.remoteName
     ? Promise.resolve()
     : runtimeInstall
-        .then(() =>
-          syncPathShim(
+        .then(runtimeReady => {
+          if (!runtimeReady) return;
+          return syncPathShim(
             {
               home: os.homedir(),
               storage,
@@ -2447,8 +2464,8 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
               version,
             },
             activePathAdapter(),
-          ),
-        )
+          );
+        })
         .catch(error => {
           report({ pathSyncError: redactDiagnostic(error instanceof Error ? error.message : 'PATH shim synchronization failed.') });
         });

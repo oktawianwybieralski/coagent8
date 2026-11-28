@@ -80,13 +80,21 @@ export async function setupClients(options) {
   if (options.origin !== 'vscode-extension') throw new Error('missing extension origin');
   if (options.statusOnly) return options.clients.map(client => scripted().statusOf(client));
   scripted().recordClients(options.clients);
-  return options.clients.map(client => ({
-    ...scripted().statusOf(client),
-    action:
-      scripted().registrationStates[client] === 'newer'
-        ? 'preserved'
-        : scripted().registrationStates[client] === 'outdated' || scripted().registrationStates[client] === 'legacy'
-          ? 'updated'
-          : 'installed',
-  }));
+  return options.clients.map(client => {
+    const state = scripted().registrationStates[client];
+    const deferred = scripted().deferredClients?.includes(client);
+    const blocked = scripted().blockedClients?.includes(client);
+    return {
+      ...scripted().statusOf(client),
+      action:
+        blocked || state === 'blocked'
+          ? 'blocked'
+          : deferred || state === 'newer'
+            ? 'preserved'
+            : state === 'outdated' || state === 'legacy'
+              ? 'updated'
+              : 'installed',
+      ...(deferred ? { message: 'Managed runtime update deferred: fixture.' } : {}),
+    };
+  });
 }

@@ -321,8 +321,16 @@ test('extension update keeps the shim working via stable path, migrates legacy s
   const legacyShim = `@echo off\r\n"node" "${missingLegacy}" %*\r\n`;
   fs.writeFileSync(shimPath, legacyShim);
   const installs = JSON.parse(fs.readFileSync(path.join(root, 'installs.json'), 'utf8'));
-  installs.path.runtime = missingLegacy;
-  installs.path.shimHash = hash(legacyShim);
+  const prevRecord = installs.pathV2 ?? installs.path;
+  installs.path = {
+    shimPath: prevRecord.shimPath,
+    pathEntry: prevRecord.pathEntry,
+    runtime: missingLegacy,
+    addedToPath: prevRecord.addedToPath,
+    shimHash: hash(legacyShim),
+    installations: prevRecord.installations,
+  };
+  delete installs.pathV2;
   fs.writeFileSync(path.join(root, 'installs.json'), JSON.stringify(installs, null, 2));
 
   const repaired = await syncPathShim(
@@ -333,6 +341,13 @@ test('extension update keeps the shim working via stable path, migrates legacy s
   assert.equal(fs.readFileSync(shimPath, 'utf8'), initialContent, 'repaired shim points at stable launcher');
   assert.ok(fs.existsSync(path.join(root, 'runtime', 'current', 'index.cjs')));
   assert.ok(fs.existsSync(path.join(root, 'runtime', readRuntimePointer(root, 'current').digest, 'index.cjs')));
+
+  // Migrated ownership representation in installs.json is unrecognizable to old writers (no legacy `path` key)
+  const migratedInstalls = JSON.parse(fs.readFileSync(path.join(root, 'installs.json'), 'utf8'));
+  assert.equal(migratedInstalls.path, undefined, 'legacy path record removed so old writers cannot recognize or overwrite shim');
+  assert.equal(typeof migratedInstalls.pathV2?.shimDigest, 'string');
+  assert.equal(migratedInstalls.pathV2?.shimHash, undefined);
+  assert.ok(readPathRecord(f.home), 'current reader still reads migrated ownership record');
 
   // If user modifies the shim, update will NOT overwrite it
   fs.appendFileSync(shimPath, '\r\n:: user edit\r\n');

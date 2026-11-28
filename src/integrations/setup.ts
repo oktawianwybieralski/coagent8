@@ -33,11 +33,11 @@ import { errorCodeOf } from '../contracts/index.js';
 import { BRAND } from '../brand.js';
 import {
   cleanupUnreferencedRuntimes,
-  installAndVerifyRuntimeCopy,
+  installAndSelectVerifiedRuntime,
+  probeRuntime,
   readRuntimePointer,
   resolveRuntimeNamespace,
   resolveStableTarget,
-  selectRuntimePointer,
   stableLauncherPath,
 } from './runtime-manager.js';
 import { compareSemver, type RuntimeNamespace } from './runtime-version.js';
@@ -352,35 +352,6 @@ function checkScopes(client: SetupClient, config: Record<string, unknown>, cwd: 
   }
 }
 
-/**
- * Initializes a registered runtime and reads its tool catalog without claiming native host discovery.
- * @remarks No tool is called: `doctor` probes every backend again and took 5-11 s on Windows,
- * once per registered client. A tool call is first exercised on actual use.
- */
-async function probeRuntime(entry: Registration, env: NodeJS.ProcessEnv, cwd: string): Promise<string[]> {
-  return withStdioRpc(
-    entry.command,
-    entry.args,
-    async rpc => {
-      const init = object(
-        await rpc.request('initialize', {
-          protocolVersion: '2025-11-25',
-          capabilities: {},
-          clientInfo: { name: 'coagent8-setup', version: '1' },
-        }),
-      );
-      if (object(init.serverInfo).name !== 'coagent8') throw new Error('Configured process is not CoAgent8.');
-      rpc.notify('notifications/initialized');
-      const tools = object(await rpc.request('tools/list', {})).tools;
-      if (!Array.isArray(tools)) throw new Error('Invalid tool catalog.');
-      const names = tools.map(tool => object(tool).name);
-      if (!names.every(name => typeof name === 'string') || !names.includes('doctor')) throw new Error('CoAgent8 doctor is unavailable.');
-      return names as string[];
-    },
-    { env: { ...env, ...entry.env }, cwd },
-  );
-}
-
 /** Verifies that Codex itself starts the registered server and discovers its tools, without a model turn. */
 async function probeCodex(cli: CliCommand, env: NodeJS.ProcessEnv, cwd: string): Promise<boolean> {
   return withStdioRpc(
@@ -693,29 +664,23 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
       // An invalid catalog is a package defect; it stops setup before any client changes.
       if (options.skillsSource) catalog = readSkillCatalog(options.skillsSource);
       const namespace = resolveRuntimeNamespace(candidateVersion, options);
-      const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
       candidate = candidateRegistration(root, namespace, options, env, cwd);
-      const copy = installAndVerifyRuntimeCopy({ home, runtimeSource: options.runtimeSource, version: candidateVersion });
-      const existingPointer = readRuntimePointer(root, namespace);
-      const existingTarget = resolveStableTarget(root, namespace);
-      const shouldProbeCopy =
-        !existingPointer ||
-        !existingTarget?.exists ||
-        Boolean(options.pin || options.unpin) ||
-        compareSemver(candidateVersion, existingPointer.version) === 1;
-      if (shouldProbeCopy) {
-        await probeRuntime({ command: node.command, args: [...node.argsPrefix, copy.runtimePath, 'mcp'], env: candidate.env }, env, cwd);
-      }
-      const selected = await selectRuntimePointer(copy, {
+      const selected = await installAndSelectVerifiedRuntime({
+        home,
+        runtimeSource: options.runtimeSource,
+        version: candidateVersion,
         namespace,
         allowDevInCurrent: options.allowDevInCurrent,
         pin: options.pin,
         unpin: options.unpin,
+        nodePath: options.nodePath,
+        env,
+        cwd,
+        probeEnv: candidate.env,
       });
       if (selected.action === 'kept-incumbent' || selected.action === 'downgrade-blocked' || selected.action === 'pinned-blocked') {
         pointerMessage = selected.message;
       }
-      await probeRuntime(candidate, env, cwd);
     }
     const results: SetupStatus[] = (selected.length ? selected : SETUP_CLIENTS).map(client => ({
       client,
