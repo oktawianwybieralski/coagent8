@@ -443,9 +443,10 @@ Changes are shown as a preview first; repeat the command for one client with
 
 To make this workflow your project's default practice, copy a short role section
 into the project's `AGENTS.md` and link it to the
-[`coagent8-coordinate`](skills/coagent8-coordinate/SKILL.md) skill (choose the
-implementer and reviewer backends in your CoAgent8 configuration or project
-rules):
+[`coagent8-coordinate`](skills/coagent8-coordinate/SKILL.md) skill. CoAgent8's
+`config.json` has a single `defaultBackend` (no per-role defaults), so to use
+distinct backends per role, name the `backend` for `delegate` and `review` in
+your project rules so the coordinator passes it on each call:
 
 ```markdown
 ## Agent roles
@@ -454,14 +455,14 @@ Follow `coagent8-coordinate`:
 
 - **Coordinator** (this session): pick the task, write a self-contained spec
   (quoted acceptance criteria, `scope`, out of scope with "stop and report",
-  the pattern to follow, exact checks), read the whole diff against `scope`,
-  run checks and judge whether a `READY` change solves the task without
-  overbuilding.
-- **Implementer** (`delegate` with your chosen backend): edit code, tests and
-  docs within `scope`; never commit, push or open PRs.
-- **Reviewer** (`review` in a separate session with your chosen reviewer
-  backend; `consult` on the plan of a non-trivial change): critical areas
-  (security, money, data, release) get an extra review.
+  the pattern to follow, exact checks), pass `scope` on `delegate`, read the
+  whole diff against `scope`, run checks and judge whether a `READY` change
+  solves the task without overbuilding.
+- **Implementer** (`delegate` with `backend: <implementer>`): edit code,
+  tests and docs within `scope`; never commit, push or open PRs.
+- **Reviewer** (`review` in a separate session with `backend: <reviewer>`;
+  `consult` on the plan of a non-trivial change): critical areas (security,
+  money, data, release) get an extra review.
 - Commit, push, merge and publication stay with the user's authority. When a
   backend hits a quota limit, tell the user immediately instead of switching
   roles.
