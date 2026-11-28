@@ -444,9 +444,10 @@ Changes are shown as a preview first; repeat the command for one client with
 To make this workflow your project's default practice, copy a short role section
 into the project's `AGENTS.md` and link it to the
 [`coagent8-coordinate`](skills/coagent8-coordinate/SKILL.md) skill. CoAgent8's
-`config.json` has a single `defaultBackend` (no per-role defaults), so to use
-distinct backends per role, name the `backend` for `delegate` and `review` in
-your project rules so the coordinator passes it on each call:
+`config.json` has no per-role defaults (omitting `backend` follows the user's
+routing configuration, with fallback when a default is unavailable), so when a
+role must use a particular backend, name it in your project rules and have the
+coordinator pass `backend` explicitly on that call:
 
 ```markdown
 ## Agent roles

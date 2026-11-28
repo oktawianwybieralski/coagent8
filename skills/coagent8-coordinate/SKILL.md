@@ -18,14 +18,15 @@ the user's authority.
      Never commits, pushes or opens PRs.
    - **Reviewer** (`review` in a separate session that did not write the
      change; `consult` on the plan of a non-trivial change before coding).
-2. **Backend choices.** `~/.coagent8/config.json` has only one
-   `defaultBackend`, which applies to every call when `backend` is omitted
-   (no per-role defaults). Make distinct implementer and reviewer choices by
-   passing `backend` on the `delegate`, `review` and `consult` calls as the
-   user or project rules say; leave `backend` and `model` unset otherwise.
-   For critical areas (security, money, data, release), keep an independent
-   implementer, get an extra review, and check the diff yourself with extra
-   care for invariants.
+2. **Backend choices.** `~/.coagent8/config.json` has no per-role defaults:
+   omitting `backend` follows the user's routing configuration (a single
+   default backend or quota-based routing, with fallback when it is
+   unavailable). When a role must use a particular backend, pass `backend`
+   explicitly on that `delegate`, `review` or `consult` call as the user or
+   project rules say; leave `backend` and `model` unset otherwise. For critical
+   areas (security, money, data, release), keep an independent implementer, get
+   an extra review, and check the diff yourself with extra care for
+   invariants.
 3. **Self-contained task spec.** Pass the allowed paths in the `delegate`
    tool's `scope` argument (it controls path claims and server warnings).
    The implementer has not seen this conversation, so include in `task`:
