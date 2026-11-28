@@ -117,9 +117,10 @@ export function formatObservedChanges(changes: WorkspaceChanges): string {
     lines.push(`Changes could not be read: ${redactDiagnostic(changes.unavailable, 256)}. Check git status yourself.`);
     return lines.join('\n');
   }
-  if (!changes.changed.length) lines.push('No file changed.');
+  if (!changes.changed.length) lines.push('No tracked or untracked file changed (Git-ignored files are not observed).');
   for (const change of changes.changed)
     lines.push(`${change.kind === 'added' ? 'A' : change.kind === 'deleted' ? 'D' : 'M'} ${p(change.path)}`);
+  if (changes.changed.length) lines.push('Note: Git-ignored files are not observed.');
   if (changes.truncated) lines.push('More paths changed than are listed.');
   if (changes.outsideScope.length) lines.push(`Warning: changed outside scope: ${changes.outsideScope.map(p).join(', ')}`);
   if (changes.possiblyOtherWriter?.length)

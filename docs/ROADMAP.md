@@ -4,14 +4,18 @@ title: Roadmap
 
 # CoAgent8 roadmap
 
-Updated 2026-11-05. CoAgent8 is becoming a client-independent MCP system for
+Updated 2026-11-28. CoAgent8 is becoming a client-independent MCP system for
 orchestrating complete agent tasks. Roles, models and providers are
-independent. Read-only consultation is one execution profile, not the product
-boundary. `consult` and `review` run read-only; `delegate` runs workspace-write
-workers in the background under one root budget, in disjoint scopes of a work
-tree or in separate linked worktrees, optionally in a server-owned loop of
-checks, review and fix rounds; the calling agent coordinates them (the delegated
-coordinator was removed, #212).
+independent. Every role runs on the host through one runner, without a sandbox,
+after the user's one-time consent (#208); nothing restricts an agent to reading
+or to the workspace. A `consult` or `review` is instructed to leave the
+workspace as it found it, and a review runs in a snapshot work tree of the
+reviewed state. `delegate` runs workers in the background under one root
+budget, in disjoint scopes of a work tree or in separate linked worktrees,
+optionally in a server-owned loop of checks, review and fix rounds; `scope` is
+an instruction and an observed-change check, not an enforced write boundary.
+The calling agent coordinates the workers (the delegated coordinator was
+removed, #212). Isolation in containers or microVMs is planned (#215).
 
 This file holds the direction and the order of the milestones. The work itself
 is in [GitHub Issues](https://github.com/oktawianwybieralski/coagent8/issues):
@@ -85,8 +89,9 @@ first after `0.8.0`, then the feature freeze and the acceptance.
 
 ## Full coagent direction
 
-Delegation delivered a first slice of the profiles and the lifecycle (one
-writer per work tree, task records, the server-owned loop); the milestones
+Delegation delivered a first slice of the lifecycle (task records, parallel
+workers, the server-owned loop); the execution profiles were replaced by one
+host runner after consent (#208), and the remaining milestones
 remain, in the order of the [0.9.0 plan](#090-plan). Contract designs are
 recorded in [ARCHITECTURE.md](ARCHITECTURE.md) (labelled unimplemented) before
 implementation issues are opened. Roles do not grant capabilities or imply
@@ -97,7 +102,7 @@ author.
 | Milestone | Issue | Deliverable and acceptance |
 | --- | --- | --- |
 | Task contract | #159 | Start/inspect/continue/cancel; stable task/root/parent IDs, role, objective, scope, acceptance, profile, context and optional model/effort. Validated status, actual identity, changes/evidence and usage availability. Test transitions, repeats, truncation and legacy calls. Worker success is not root acceptance. |
-| Profiles | #160 | Verify read-only, workspace-write and bounded commands per backend/version/OS. One writer per canonical workspace; baseline dirty files, prevent path escapes/conflicts, preserve partial work. Parallel writers need authorized separate workspaces or verified disjoint ownership. No automatic worktree/reset/cleanup. Native containment/failure tests precede claims. |
+| Profiles | #160 | Closed as obsolete (2026-11-28): read-only and workspace-write profiles were replaced by one host runner after consent (#208); isolation in containers or microVMs is planned (#215). |
 | Routing/limits | #161 | Role/task defaults independent of provider/model/effort; explicit choices and opt-in cost/latency/quality/quota preferences. Open question: whether external benchmark scores may inform an opt-in quality preference; they lag new releases, measure models through APIs rather than CLI harnesses, and could enter only as validated numbers, never as text in tool descriptions. Atomic root reservations for calls/concurrency/time/depth shared by children/retries. No silent explicit-model fallback, fabricated monetary cap or self-approved escalation. Reconcile request identity before replaying writers; test contention/lost replies. |
 | Lifecycle/evidence | #162 | Minimal durable state/leases independent of transcript archival or a daemon. Early handles, progress, inspect/cancel, recovery; disconnect cancels by default. Detached execution requires verified supervision. Preserve original requirements, bounded context/omissions. Capture checks in the actual candidate with commands/exits/logs; separate observed from reported evidence. Test interruption, stale evidence and root-incomplete results. |
 | Skills | #163 | Builds on `SKILLS-001/002` ownership records. Composable coordination/planning/work/verification/review/recovery `SKILL.md` packages; catalog/install/update/uninstall through shared integration logic. Owned manifests/digests, atomic rollback, conflict/path-traversal checks; preserve custom instructions and execute no bundled scripts. Verify discovery/use per advertised client. |
@@ -255,4 +260,5 @@ hold.
 
 Deferred unless justified: SQLite/transcript database, persistent daemon,
 arbitrary third-party skill registry, private provider hub, binary prompt
-encoding and broad UI/TUI expansion. No blanket sandbox opt-out.
+encoding and broad UI/TUI expansion. Host execution needs the user's explicit
+consent; no role runs on the host without it.

@@ -1,12 +1,14 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const { PassThrough } = require('node:stream');
 const { runIssueCli, openBrowser } = require('../../src/diagnostics/issue-cli.ts');
 const { GITHUB_BUG_REPORT_TEMPLATE_URL } = require('../../src/diagnostics/issue.ts');
 
-function createStream() {
+function createStream(isTTY = false) {
   const chunks = [];
   return {
+    isTTY,
     write(chunk) {
       chunks.push(String(chunk));
       return true;
@@ -19,7 +21,7 @@ function createStream() {
 
 const noDoctor = async () => null;
 
-test('coagent8 issue opens the form with the environment filled in and prints its link', async () => {
+test('coagent8 issue prints the report locally and does not open on non-TTY by default', async () => {
   const out = createStream();
   const err = createStream();
   const opened = [];
@@ -31,20 +33,47 @@ test('coagent8 issue opens the form with the environment filled in and prints it
 
   assert.equal(code, 0);
   assert.equal(err.output, '');
-  assert.equal(opened.length, 1, 'the form opens without a flag');
+  assert.equal(opened.length, 0, 'non-TTY default must not open the browser');
+  assert.ok(out.output.includes('[Bug]: '), 'prints title locally');
+  assert.ok(out.output.includes('### What happened'), 'prints report body locally');
+  assert.ok(out.output.includes('### Environment'), 'prints environment locally');
+  assert.ok(out.output.includes(GITHUB_BUG_REPORT_TEMPLATE_URL), 'prints form link');
+  assert.ok(!out.output.includes('```'), 'nothing to copy');
+});
+
+test('coagent8 issue --open prints the report before opening the form', async () => {
+  const out = createStream();
+  const err = createStream();
+  const opened = [];
+  let outputAtOpen = '';
+
+  const code = await runIssueCli(['--open'], out, err, {
+    openBrowser: url => {
+      outputAtOpen = out.output;
+      opened.push(url);
+    },
+    runDoctorFn: noDoctor,
+  });
+
+  assert.equal(code, 0);
+  assert.equal(err.output, '');
+  assert.equal(opened.length, 1, '--open opens the form');
   assert.ok(opened[0].startsWith(`${GITHUB_BUG_REPORT_TEMPLATE_URL}&title=`));
   const fields = new URL(opened[0]).searchParams;
   assert.match(fields.get('environment'), /CoAgent8 MCP Version/);
   assert.match(fields.get('what-happened'), /^Describe what you did/);
-  assert.ok(out.output.includes(opened[0]), 'output must contain the opened link');
-  assert.ok(!out.output.includes('```'), 'nothing to copy');
+  assert.ok(outputAtOpen.includes('### What happened'), 'report body is printed before opening');
+  assert.ok(outputAtOpen.includes('### Environment'), 'environment is printed before opening');
+  assert.ok(outputAtOpen.includes(opened[0]), 'output must contain the opened link before opening');
 });
 
-test('coagent8 issue --no-open and --open', async () => {
+test('coagent8 issue --no-open and --open flags on non-TTY', async () => {
   for (const [args, count] of [
+    [[], 0],
     [['--no-open'], 0],
     [['--open'], 1],
     [['--open', '--no-open'], 0],
+    [['--no-open', '--open'], 1],
   ]) {
     const opened = [];
     const code = await runIssueCli(args, createStream(), createStream(), {
@@ -54,6 +83,75 @@ test('coagent8 issue --no-open and --open', async () => {
     assert.equal(code, 0);
     assert.equal(opened.length, count, args.join(' '));
   }
+});
+
+test('coagent8 issue prompts on interactive TTY with default No and opens only on y/yes', async () => {
+  for (const [reply, expectedOpens, label] of [
+    ['\n', 0, 'empty enter defaults to No'],
+    ['n\n', 0, 'n declines'],
+    ['no\n', 0, 'no declines'],
+    [null, 0, 'EOF declines'],
+    ['y\n', 1, 'y opens'],
+    ['YES\n', 1, 'YES opens'],
+  ]) {
+    const out = createStream(true);
+    const err = createStream(true);
+    const input = new PassThrough();
+    input.isTTY = true;
+    const opened = [];
+    let outputAtOpen = '';
+
+    const runPromise = runIssueCli([], out, err, {
+      input,
+      openBrowser: url => {
+        outputAtOpen = out.output;
+        opened.push(url);
+      },
+      runDoctorFn: noDoctor,
+    });
+
+    if (reply === null) input.end();
+    else input.write(reply);
+
+    const code = await runPromise;
+    assert.equal(code, 0, label);
+    assert.equal(err.output, '', label);
+    assert.equal(opened.length, expectedOpens, label);
+    const reportPos = out.output.indexOf('### What happened');
+    const promptPos = out.output.indexOf('Open the GitHub form with this report? [y/N]');
+    assert.ok(reportPos >= 0 && promptPos > reportPos, `${label}: prints report before asking`);
+    if (expectedOpens) {
+      assert.ok(outputAtOpen.includes('### What happened'), `${label}: report printed before open`);
+    }
+  }
+
+  // --no-open skips the prompt even on an interactive TTY.
+  const noOpenOut = createStream(true);
+  const noOpenInput = new PassThrough();
+  noOpenInput.isTTY = true;
+  const noOpenUrls = [];
+  const noOpenCode = await runIssueCli(['--no-open'], noOpenOut, createStream(true), {
+    input: noOpenInput,
+    openBrowser: url => noOpenUrls.push(url),
+    runDoctorFn: noDoctor,
+  });
+  assert.equal(noOpenCode, 0);
+  assert.equal(noOpenUrls.length, 0);
+  assert.ok(!noOpenOut.output.includes('Open the GitHub form'));
+
+  // --open skips the prompt on an interactive TTY.
+  const openOut = createStream(true);
+  const openInput = new PassThrough();
+  openInput.isTTY = true;
+  const openUrls = [];
+  const openCode = await runIssueCli(['--open'], openOut, createStream(true), {
+    input: openInput,
+    openBrowser: url => openUrls.push(url),
+    runDoctorFn: noDoctor,
+  });
+  assert.equal(openCode, 0);
+  assert.equal(openUrls.length, 1);
+  assert.ok(!openOut.output.includes('Open the GitHub form'));
 });
 
 test('coagent8 issue --json outputs structured report without opening browser', async () => {
@@ -107,7 +205,7 @@ test('coagent8 issue --help and -h print usage', async () => {
     assert.equal(code, 0);
     assert.equal(err.output, '');
     assert.equal(opened.length, 0);
-    assert.ok(out.output.includes('Usage: coagent8 issue [--title <text>] [--no-open] [--json] [what happened...]'));
+    assert.ok(out.output.includes('Usage: coagent8 issue [--title <text>] [--open] [--no-open] [--json] [what happened...]'));
   }
 });
 
@@ -149,7 +247,7 @@ test('coagent8 issue reports warning from opener callback on stderr', async () =
   const err = createStream();
   let calledUrl = null;
 
-  const code = await runIssueCli([], out, err, {
+  const code = await runIssueCli(['--open'], out, err, {
     runDoctorFn: noDoctor,
     openBrowser: (url, onWarning) => {
       calledUrl = url;
@@ -167,6 +265,7 @@ test('coagent8 issue opens the link of the report it printed', async () => {
   const out = createStream();
   const err = createStream();
   let openedUrl = null;
+  let outputAtOpen = '';
 
   const code = await runIssueCli(['--open'], out, err, {
     generateReportFn: () => ({
@@ -178,6 +277,7 @@ test('coagent8 issue opens the link of the report it printed', async () => {
     }),
     runDoctorFn: noDoctor,
     openBrowser: url => {
+      outputAtOpen = out.output;
       openedUrl = url;
       return true;
     },
@@ -185,6 +285,9 @@ test('coagent8 issue opens the link of the report it printed', async () => {
 
   assert.equal(code, 0);
   assert.equal(openedUrl, 'https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml&title=x');
+  assert.ok(outputAtOpen.includes('custom title'));
+  assert.ok(outputAtOpen.includes('custom body'));
+  assert.ok(outputAtOpen.includes('custom prompt'));
 });
 
 test('coagent8 issue handles cancellation signal with exit code 130', async () => {

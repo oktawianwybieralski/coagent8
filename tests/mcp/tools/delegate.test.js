@@ -105,7 +105,11 @@ test('a thread that does not report full access starts no turn (#211)', async ()
   assert.equal(result.isError, true);
   assert.match(text(result), /SANDBOX_UNAVAILABLE/);
   assert.ok(!capture().records.some(r => r.method === 'turn/start'), 'no turn starts');
-  assert.match(text(result), /No file changed./, 'the observed block still follows a failed turn');
+  assert.match(
+    text(result),
+    /No tracked or untracked file changed \(Git-ignored files are not observed\)\./,
+    'the observed block still follows a failed turn',
+  );
 });
 
 test('codexSandboxMismatch requires full access without approvals, and every launch asks for it', () => {
@@ -341,6 +345,16 @@ test('observed paths, diff stats and branch names get diagnostic redaction', () 
     diffStat: ' token=private-value.txt | 2 +-',
   });
   assert.doesNotMatch(out, /private-value|hidden-branch/);
+  assert.match(out, /Git-ignored files are not observed/);
+
+  const none = formatObservedChanges({
+    changed: [],
+    outsideScope: [],
+    dirtyBefore: [],
+    truncated: false,
+  });
+  assert.match(none, /No tracked or untracked file changed \(Git-ignored files are not observed\)\./);
+  assert.doesNotMatch(none, /No file changed\./);
 });
 
 test('an unreadable writer record is never overwritten, and a credential at the diff stat limit stays redacted', async () => {
