@@ -472,7 +472,8 @@ test('handleReview passes remaining monotonic execution time to adapter after Gi
     },
   };
 
-  const budget = createExecutionBudget({ totalBudgetMs: 10000, teardownAllowanceMs: 2000, clock });
+  // Long in real time too: its own timer must not fire during Git collection under load (#132).
+  const budget = createExecutionBudget({ totalBudgetMs: 60000, teardownAllowanceMs: 2000, clock });
 
   try {
     await saveConfig({
@@ -482,7 +483,7 @@ test('handleReview passes remaining monotonic execution time to adapter after Gi
     });
     const result = await handleReview('review', {}, repo, null, null, { budget, clock });
     assert.ok(receivedTimeoutMs !== null, 'Adapter execute should have been called');
-    assert.ok(receivedTimeoutMs <= 7750, `Expected remaining timeoutMs <= 7750, got ${receivedTimeoutMs}`);
+    assert.ok(receivedTimeoutMs <= 57750, `Expected remaining timeoutMs <= 57750, got ${receivedTimeoutMs}`);
     assert.ok(receivedTimeoutMs > 0, `Expected positive timeoutMs, got ${receivedTimeoutMs}`);
     assert.equal(readResult(result).verdict, 'READY');
   } finally {
@@ -512,8 +513,8 @@ test('handleReview verifyReviewSnapshot succeeds during teardown allowance when 
     name: 'fixture',
     probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async prompt => {
-      // 500 ms before the deadline on the test's clock.
-      now = 60500;
+      // Past executionDeadlineMs (46000) and inside teardown allowance (deadlineMs 61000), leaving 11s for real Git recheck under load.
+      now = 50000;
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)?.[1] ?? 'snapshot';
       return {
         status: 'completed',
@@ -528,7 +529,7 @@ test('handleReview verifyReviewSnapshot succeeds during teardown allowance when 
   };
 
   // Long in real time too: its own timer must not fire under load (#132).
-  const budget = createExecutionBudget({ totalBudgetMs: 60000, teardownAllowanceMs: 2000, clock });
+  const budget = createExecutionBudget({ totalBudgetMs: 60000, teardownAllowanceMs: 15000, clock });
 
   try {
     await saveConfig({

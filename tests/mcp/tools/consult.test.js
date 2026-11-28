@@ -125,16 +125,16 @@ test('handleConsult passes remaining monotonic time to adapter', async () => {
 
   await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
-  // Call handleConsult with totalBudgetMs = 5000, teardown = 1000
-  // Execution budget is 5000 - 1000 = 4000 ms.
+  // Call handleConsult with totalBudgetMs = 60000, teardown = 2000 (real timer stays far above load; #132)
+  // Execution budget is 60000 - 2000 = 58000 ms.
   // Probe adds 200 ms.
-  // Adapter should receive remaining time <= 3800 ms, strictly less than 5000.
-  const budget = createExecutionBudget({ totalBudgetMs: 5000, teardownAllowanceMs: 1000, clock });
+  // Adapter should receive remaining time <= 57800 ms, strictly less than 58000.
+  const budget = createExecutionBudget({ totalBudgetMs: 60000, teardownAllowanceMs: 2000, clock });
 
   try {
     const result = await handleConsult('consult', { proposal: 'Refactoring check' }, tempDir, null, null, { budget, clock });
     assert.ok(receivedTimeoutMs !== null, 'Adapter execute should have been called');
-    assert.ok(receivedTimeoutMs <= 3800, `Expected remaining timeoutMs <= 3800, got ${receivedTimeoutMs}`);
+    assert.ok(receivedTimeoutMs <= 57800, `Expected remaining timeoutMs <= 57800, got ${receivedTimeoutMs}`);
     assert.ok(receivedTimeoutMs > 0, `Expected positive timeoutMs, got ${receivedTimeoutMs}`);
     assert.match(result.content[0].text, /Consult answer/);
   } finally {

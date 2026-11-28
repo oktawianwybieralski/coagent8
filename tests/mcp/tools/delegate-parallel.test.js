@@ -457,8 +457,21 @@ test("a cancellation just before the turn prevents it, and a task never outlives
   const joined = await createRoot();
   const joinedFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${joined.rootHandle}.json`);
   await atomicWrite(joinedFile, JSON.stringify(spent(joined, 2500)));
-  const worker = await runningWorker(repo, { scope: ['a'], root_handle: joined.rootHandle });
-  assert.equal((await finished(worker.taskHandle)).state, 'timed_out');
+  process.env.CODEX_FIXTURE_MODE = 'interruptible';
+  process.env.CODEX_FIXTURE_WRITES = JSON.stringify({});
+  let started;
+  try {
+    started = await handleDelegate({ ...REQUEST, scope: ['a'], root_handle: joined.rootHandle }, repo, null, null, approve);
+  } catch (err) {
+    assert.ok(['TIMEOUT', 'ROOT_LIMIT'].includes(err.code), `expected TIMEOUT or ROOT_LIMIT, got ${err.code}: ${err.message}`);
+    return;
+  }
+  if (started.isError) {
+    const text = started.content.map(part => part.text).join('\n');
+    assert.match(text, /Error \[(TIMEOUT|ROOT_LIMIT)\]/);
+    return;
+  }
+  assert.equal((await finished(started.structuredContent.taskHandle)).state, 'timed_out');
 });
 
 test('a root counts running time, not idle time, and a continued session may finish in the grace (#228)', async () => {

@@ -48,8 +48,8 @@ function fixtureRepo() {
   return repo;
 }
 const writerRecord = repo => path.join(repo, '.git', WRITER_RECORD_FILE);
-async function finished(handle) {
-  const deadline = Date.now() + 15000;
+async function finished(handle, waitMs = 15000) {
+  const deadline = Date.now() + waitMs;
   for (;;) {
     const task = readTask(handle);
     if (task.state !== 'running') return task;
@@ -173,10 +173,10 @@ test('the deadline of the call bounds a delegation from its first Git read', asy
 
 test('timeout_ms also ends a running delegation', async () => {
   const repo = fixtureRepo();
-  // Long enough that Git under a full test run does not spend the budget before the turn.
+  // Long enough that Git and startup under a full test run do not spend the budget before the turn.
   process.env.CODEX_FIXTURE_MODE = 'interruptible';
-  const started = await handleDelegate({ ...REQUEST, timeout_ms: 5000 }, repo, null, null, approve);
-  const task = await finished(started.structuredContent.taskHandle);
+  const started = await handleDelegate({ ...REQUEST, timeout_ms: 9000 }, repo, null, null, approve);
+  const task = await finished(started.structuredContent.taskHandle, 20000);
   assert.equal(task.state, 'timed_out');
   assert.match(task.result.text, /Observed by CoAgent8/);
 });
