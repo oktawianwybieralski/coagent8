@@ -278,6 +278,7 @@ export async function executeReview(
   };
 
   // The reviewer runs in a copy of exactly the reviewed state (#213); without one, in the workspace.
+  let startedTurn = false;
   const reviewIn = async (workTree: ReviewSnapshot | undefined, skipped?: string): Promise<TaskExecutionResult> => {
     const workTreeNote = skipped ? `The reviewer ran in the workspace: ${redactDiagnostic(skipped, 256)}.` : undefined;
     const withNote = (outcome: TaskExecutionResult): TaskExecutionResult =>
@@ -327,6 +328,7 @@ export async function executeReview(
     };
     try {
       if (parts.length > 1) {
+        startedTurn = true;
         return withNote(
           await reviewInParts({
             parts,
@@ -367,6 +369,7 @@ export async function executeReview(
         scopeInfo.diff || '[No changes in this scope]',
         scopeInfo.changedPaths,
       );
+      startedTurn = true;
       const outcome = await runTask('review', {
         prompt: promptFor(diffText, snapshot, []),
         publicInput: 'Review ' + scopeInfo.label + '\n' + instructions,
@@ -398,8 +401,10 @@ export async function executeReview(
   try {
     return await withReviewSnapshot(scopeInfo, workspaceCwd, reviewReadContext, reviewIn);
   } catch (err) {
-    // A snapshot cancelled or out of time before the turn reports the trace, as an early end does.
-    if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) call.close();
+    // A snapshot cancelled, out of time, or refused before the turn reports the trace, as an early end does.
+    if (!startedTurn && err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED' || err.code === 'POLICY_DENIED')) {
+      call.close();
+    }
     throw err;
   } finally {
     call.dispose();

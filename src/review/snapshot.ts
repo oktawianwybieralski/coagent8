@@ -11,8 +11,9 @@
  * its sessions per directory). The file lock of the workspace's snapshot holds both for the
  * whole review, so a second review of the workspace runs in the workspace instead. A repository
  * whose attributes name any filter (such as Git LFS) is not materialized: neither its clean nor
- * its smudge filter runs; nor is one with submodules. Whatever cannot be materialized runs the review in the workspace, as
- * before. The snapshot is a working directory, not a boundary.
+ * its smudge filter runs; nor is one with submodules. Uncommitted and staged reviews fall back to
+ * running in the workspace when a snapshot cannot be materialized; commit, branch and range scopes
+ * are refused instead. The snapshot is a working directory, not a boundary.
  *
  * @packageDocumentation
  */
@@ -84,7 +85,17 @@ export function targetRevision(info: Pick<GitScopeInfo, 'type' | 'revision'>): s
 }
 
 /**
- * Runs `fn` with the reviewed state materialized, or in the workspace when it cannot be.
+ * Whether a scope targets the current workspace and may fall back to it without a snapshot.
+ * Checked from the scope type alone so no Git working-tree comparison can trigger a clean filter.
+ */
+function canFallbackToWorkspace(info: Pick<GitScopeInfo, 'type'>): boolean {
+  return info.type === 'uncommitted' || info.type === 'staged';
+}
+
+/**
+ * Runs `fn` with the reviewed state materialized, or in the workspace for uncommitted and staged
+ * scopes when a snapshot cannot be materialized. Refuses commit, branch and range scopes when a
+ * snapshot cannot be materialized.
  * @param info - The collected review scope.
  * @param workspace - The user's work tree.
  * @param context - The call's read context; its budget bounds the Git commands that build the snapshot.
@@ -110,16 +121,19 @@ export async function withReviewSnapshot<T>(
       { timeoutMs: SNAPSHOT_LOCK_WAIT_MS },
     );
   } catch (err) {
-    // Anything `fn` threw stands; before it ran, a lock another review holds, or any failure to set
-    // up the lock, sends this review to the workspace. A cancellation or deadline ends it.
+    // Anything `fn` or `runInSnapshot` threw stands; before it ran, a lock another review holds,
+    // or any failure to set up the lock, falls back only for uncommitted/staged scopes. A
+    // cancellation or deadline ends it.
     if (ran) throw err;
     if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) throw err;
-    return fn(
-      undefined,
+    const reason =
       err instanceof LockTimeoutError
         ? 'another review of this workspace is using its snapshot'
-        : `the snapshot lock could not be set up: ${(err as Error).message.slice(0, 200)}`,
-    );
+        : `the snapshot lock could not be set up: ${(err as Error).message.slice(0, 200)}`;
+    if (!canFallbackToWorkspace(info)) {
+      throw new ToolError('POLICY_DENIED', `Cannot review ${info.label} without a snapshot work tree: ${reason}. No model turn started.`);
+    }
+    return fn(undefined, reason);
   }
 }
 
@@ -154,7 +168,15 @@ async function runInSnapshot<T>(
     skipped = `the snapshot could not be prepared: ${(err as Error).message.slice(0, 200)}`;
   }
   // Without a snapshot, what an earlier, crashed review left is removed before the turn.
-  if (!snapshot) await cleanUp(cleanupGit, target, ref);
+  if (!snapshot) {
+    await cleanUp(cleanupGit, target, ref);
+    if (!canFallbackToWorkspace(info)) {
+      throw new ToolError(
+        'POLICY_DENIED',
+        `Cannot review ${info.label} without a snapshot work tree: ${skipped ?? 'the snapshot could not be prepared'}. No model turn started.`,
+      );
+    }
+  }
   try {
     return await fn(snapshot, skipped);
   } finally {

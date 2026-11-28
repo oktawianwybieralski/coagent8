@@ -113,14 +113,14 @@ The retired src/constants.ts forwarding module has no compatibility exemption.
 | --- | --- |
 | consult | Plain second opinion; proposal required, optional architecture/debug/implementation analysis |
 | review | Bounded Git review, State Envelope and server-derived READY/BLOCKED; large diffs in parts (REVIEW-002); approved `checks` run by the server first (REVIEW-003) |
-| delegate | Workspace-write turn with task, scope and checks; disjoint writers per work tree under a root budget; observed Git changes reported apart from the answer ([DELEGATE-001w](#write-delegation-delegate-001w)); returns a task handle at once, `wait` and caller wake-up, optional server-owned `loop` ([DELEGATE-001c](#asynchronous-delegation-and-caller-wake-up-delegate-001c)) |
+| delegate | Host turn (after consent) that edits the work tree, with task, scope and checks; disjoint writers per work tree under a root budget; observed Git changes reported apart from the answer ([DELEGATE-001w](#write-delegation-delegate-001w)); returns a task handle at once, `wait` and caller wake-up, optional server-owned `loop` ([DELEGATE-001c](#asynchronous-delegation-and-caller-wake-up-delegate-001c)) |
 | doctor | Default model view (cached): per backend its models, efforts, output prices, default and approval need; scope health: installation/auth/profile evidence, server version, runtime path, defaults, quotas |
 | session | Workspace-scoped list (`mine`), history or messages only, a delegation's task record, a root's limits and tasks, close; continuation uses session_handle |
 | cancel | Stops a known active/abandoned session turn, idle returns false; or every task of a root ([parallel workers](#parallel-workers-159-to-162)) |
-| issue | Fills in the GitHub bug report form with a sanitized report and opens it in the browser; does not submit it |
+| issue | Fills in the GitHub bug report form link with a sanitized report and returns it for review; opens the browser only with `open_browser: true` (the CLI asks first on a terminal, or takes `--open`); does not submit it |
 
 Deprecated analyze/debug/implement and legacy run remain callable, unadvertised.
-Implement still means read-only advice. Unknown arguments are rejected; there is
+Implement still means advice without edits. Unknown arguments are rejected; there is
 no per-call history or session_mode argument today; delegation task records are read through `session`. Execution tools
 accept output_price_below ([price limit](#price-limit)).
 Client-independent discovery requires no installer or recognized client name.
@@ -392,7 +392,10 @@ detached and runs no hooks; a workspace in a subdirectory runs in the same subdi
 snapshot, so a follow-up resumes in the same place. A repository whose attributes name any filter
 (Git LFS and the like, in any attribute file the snapshot has, `info/attributes`, or the system
 or global file Git reports), submodules, untracked files over the bounds, a revision without the workspace's subdirectory or a failed
-step keep the review in the workspace with a warning; no filter runs. Line endings follow the
+step keep an uncommitted or staged review in the workspace with a warning; no filter runs. A
+commit, branch or range review is refused in those cases (`POLICY_DENIED`, no model turn),
+because the workspace may not hold the reviewed state and comparing it could run a filter; this
+includes a second concurrent review of such a scope in the same workspace. Line endings follow the
 repository's attributes, as in any checkout. The snapshot is removed after the turn, also after a
 cancellation; server checks still run in the workspace. It is a working directory, not a boundary:
 the reviewer is told to leave the workspace alone, and nothing enforces that until #215.

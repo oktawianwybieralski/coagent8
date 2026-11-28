@@ -10,7 +10,8 @@
  * - a later review of the same state sees the same content; afterwards the work tree and its ref are gone;
  * - a second review of the workspace runs in the workspace while the first holds the snapshot;
  * - untracked files over the review bounds, and any filter attribute, keep the review in the workspace;
- * - a workspace in a subdirectory runs in the same subdirectory, and a revision without it falls back;
+ * - a workspace in a subdirectory runs in the same subdirectory, and a historical revision without it is refused;
+ * - commit, branch and range scopes are refused when snapshot materialization fails, without running any clean filter;
  * - a cancelled call still removes its snapshot;
  * - a review turn runs in the snapshot.
  */
@@ -26,6 +27,7 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-snapshot-'));
 process.env.coagent8_DIR = path.join(tempDir, 'data');
 
 const { collectGitScope } = require('../../src/workspace/git.ts');
+const { ToolError } = require('../../src/contracts/error.ts');
 const { withReviewSnapshot, snapshotPath, SNAPSHOT_MAX_UNTRACKED_FILE_BYTES } = require('../../src/review/snapshot.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
@@ -127,7 +129,7 @@ test('a filter attribute anywhere keeps the review in the workspace, before any 
   assert.match(whyInfo, /checkout filter/, 'info/attributes counts too');
 });
 
-test('a workspace in a subdirectory runs in the same subdirectory; a revision without it falls back', async () => {
+test('a workspace in a subdirectory runs in the same subdirectory; a historical revision without it is refused', async () => {
   const { dir, git } = repo();
   const base = git('rev-parse', 'HEAD');
   fs.mkdirSync(path.join(dir, 'pkg'));
@@ -144,8 +146,21 @@ test('a workspace in a subdirectory runs in the same subdirectory; a revision wi
   );
   assert.equal(seen.cwd, path.join(seen.root, 'pkg'));
   assert.equal(seen.content, 'changed\n');
-  const why = await inSnapshot(dir, base, async (snapshot, skipped) => (assert.equal(snapshot, undefined), skipped), workspace);
-  assert.match(why, /no such subdirectory/);
+  let called = false;
+  await assert.rejects(
+    inSnapshot(
+      dir,
+      base,
+      async () => {
+        called = true;
+      },
+      workspace,
+    ),
+    err => err instanceof ToolError && err.code === 'POLICY_DENIED' && /no such subdirectory/.test(err.message),
+  );
+  assert.equal(called, false, 'historical target must not fall back to workspace');
+  assert.equal(fs.existsSync(snapshotPath(workspace)), false, 'no snapshot work tree remains');
+  assert.equal(git('for-each-ref', 'refs/coagent8'), '', 'no snapshot ref remains');
 });
 
 test('a cancelled call still removes its snapshot', async () => {
@@ -250,4 +265,82 @@ test('an attribute file deleted from the working tree still counts from the inde
   fs.writeFileSync(path.join(dir, 'a.txt'), 'changed\n');
   const why = await inSnapshot(dir, 'uncommitted', async (snapshot, skipped) => (assert.equal(snapshot, undefined), skipped));
   assert.match(why, /checkout filter/);
+});
+
+test('a historical range in a repo with a checkout filter or lock contention is refused instead of falling back', async () => {
+  const { dir, git } = repo();
+  const base = git('rev-parse', 'HEAD');
+  // The attribute alone stops materialization; the driver needs no configuration.
+  fs.writeFileSync(path.join(dir, '.gitattributes'), '*.txt filter=fixture\n');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'two\n');
+  git('add', '.');
+  git('commit', '-qm', 'two');
+  const two = git('rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'three\n');
+  git('commit', '-qam', 'three');
+
+  // Historical range whose end differs from working tree is refused on checkout filter.
+  let entered = false;
+  await assert.rejects(
+    inSnapshot(dir, `${base}..${two}`, async () => {
+      entered = true;
+    }),
+    err => err instanceof ToolError && err.code === 'POLICY_DENIED' && /checkout filter/.test(err.message),
+  );
+  assert.equal(entered, false);
+
+  // An uncommitted review in the same repo still falls back to the workspace and works.
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'uncommitted-edit\n');
+  const uncommittedWhy = await inSnapshot(dir, 'uncommitted', async (snapshot, skipped) => {
+    assert.equal(snapshot, undefined);
+    return skipped;
+  });
+  assert.match(uncommittedWhy, /checkout filter/);
+
+  // Even when a commit/branch/range target ends at HEAD (matching the clean working tree),
+  // snapshot failure still refuses without running any working-tree clean filter.
+  const { dir: filterDir, git: filterGit } = repo();
+  fs.writeFileSync(path.join(filterDir, '.gitattributes'), '*.txt filter=fixture\n');
+  filterGit('add', '.gitattributes');
+  filterGit('commit', '-qm', 'filter');
+  // Configured only after the commit: a clean filter that always fails proves none runs.
+  filterGit('config', 'filter.fixture.clean', 'false');
+  filterGit('config', 'filter.fixture.required', 'true');
+  const filterHead = filterGit('rev-parse', 'HEAD');
+  for (const scope of ['HEAD', `HEAD~1..${filterHead}`]) {
+    let headEntered = false;
+    await assert.rejects(
+      inSnapshot(filterDir, scope, async () => {
+        headEntered = true;
+      }),
+      err => err instanceof ToolError && err.code === 'POLICY_DENIED' && /checkout filter/.test(err.message),
+      scope,
+    );
+    assert.equal(headEntered, false, scope);
+  }
+  const stagedWhy = await inSnapshot(filterDir, 'staged', async (snapshot, skipped) => {
+    assert.equal(snapshot, undefined);
+    return skipped;
+  });
+  assert.match(stagedWhy, /checkout filter/, 'staged still falls back without running clean filter');
+
+  // A historical range also refuses when another review holds the snapshot lock (cannot materialize).
+  const { dir: lockDir, git: lockGit } = repo();
+  const lockBase = lockGit('rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(lockDir, 'a.txt'), 'two\n');
+  lockGit('commit', '-qam', 'two');
+  const lockTwo = lockGit('rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(lockDir, 'a.txt'), 'three\n');
+  lockGit('commit', '-qam', 'three');
+  await withReviewSnapshot(await collectGitScope('uncommitted', lockDir), lockDir, undefined, async outer => {
+    assert.ok(outer);
+    let innerEntered = false;
+    await assert.rejects(
+      withReviewSnapshot(await collectGitScope(`${lockBase}..${lockTwo}`, lockDir), lockDir, undefined, async () => {
+        innerEntered = true;
+      }),
+      err => err instanceof ToolError && err.code === 'POLICY_DENIED' && /another review/.test(err.message),
+    );
+    assert.equal(innerEntered, false);
+  });
 });

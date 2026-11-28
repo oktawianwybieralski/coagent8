@@ -33,7 +33,8 @@ test('canonical issue tool formats bug report, executes doctor by default, and s
     'timing',
     'scope/check evidence',
     'Mark unknown facts; never invent them',
-    'Opens the bug report form',
+    'Fills the bug report form link',
+    'for the user to review and submit',
   ]) {
     assert.ok(issueToolDefinition.description.includes(instruction), instruction);
   }
@@ -98,9 +99,9 @@ test('canonical issue tool formats bug report, executes doctor by default, and s
   assert.ok(resWithDoc.content[0].text.includes('Submit Bug Report on GitHub'));
   assert.ok(resWithDoc.content[0].text.includes(GITHUB_NEW_ISSUE_BASE));
   assert.ok(resWithDoc.structuredContent.issueUrl.startsWith(`${GITHUB_NEW_ISSUE_BASE}?template=bug_report.yml&title=`));
-  assert.deepEqual(opened, [resWithDoc.structuredContent.issueUrl], 'the filled-in form opens once');
-  assert.equal(resWithDoc.structuredContent.opened, true);
-  assert.match(resWithDoc.content[0].text, /^Opened the filled-in bug report form in your browser/);
+  assert.deepEqual(opened, [], 'default does not open the browser before the user reviews the report');
+  assert.equal(resWithDoc.structuredContent.opened, false);
+  assert.match(resWithDoc.content[0].text, /^The bug report form is filled in/);
   assert.equal(resWithDoc.structuredContent.title, '[Bug]: debug tool cannot start on Windows');
   const filled = new URL(resWithDoc.structuredContent.issueUrl).searchParams;
   assert.equal(filled.get('title'), '[Bug]: debug tool cannot start on Windows');
@@ -139,16 +140,20 @@ test('canonical issue tool formats bug report, executes doctor by default, and s
   assert.ok(completeReport.structuredContent.body.includes(diagnostic));
   assert.ok(new URL(completeReport.structuredContent.issueUrl).searchParams.get('what-happened').includes('CONTEXT_END'));
 
-  // open_browser: false never opens; a failed opener reports opened: false
+  // Default and open_browser: false never open; open_browser: true opens; a failed opener reports opened: false
   opened.length = 0;
   const notOpened = await handleIssue({ error_message: 'x', include_doctor: false, open_browser: false }, deps);
   assert.equal(opened.length, 0);
   assert.equal(notOpened.structuredContent.opened, false);
   assert.match(notOpened.content[0].text, /^The bug report form is filled in/);
-  const failed = await handleIssue({ error_message: 'x', include_doctor: false }, { openBrowser: () => false });
+  const explicitOpen = await handleIssue({ error_message: 'x', include_doctor: false, open_browser: true }, deps);
+  assert.deepEqual(opened, [explicitOpen.structuredContent.issueUrl], 'open_browser: true opens once');
+  assert.equal(explicitOpen.structuredContent.opened, true);
+  assert.match(explicitOpen.content[0].text, /^Opened the filled-in bug report form in your browser/);
+  const failed = await handleIssue({ error_message: 'x', include_doctor: false, open_browser: true }, { openBrowser: () => false });
   assert.equal(failed.structuredContent.opened, false);
   const thrown = await handleIssue(
-    { error_message: 'x', include_doctor: false },
+    { error_message: 'x', include_doctor: false, open_browser: true },
     {
       openBrowser: () => {
         throw new Error('no browser');

@@ -2,9 +2,9 @@
  * Canonical issue and bug reporting MCP tool.
  *
  * @remarks
- * Fills the GitHub bug report form with a privacy-sanitized report (optional detected CLI
- * versions via the doctor service, no readiness or quota) and opens it in the user's browser,
- * where the user reviews and submits it.
+ * Builds a privacy-sanitized bug report (optional detected CLI versions via the doctor service,
+ * no readiness or quota) and prefilled GitHub bug report form link, and opens it in the user's
+ * browser only when `open_browser: true` is explicitly passed.
  *
  * @packageDocumentation
  */
@@ -43,7 +43,7 @@ export const issueOutputSchema = {
 export const issueToolDefinition = {
   name: CANONICAL_TOOL_NAMES.ISSUE,
   description:
-    'Opens the bug report form filled with a sanitized report for the user to submit. Be concise: reproduction steps, expected/actual behavior, impact, sanitized telemetry (tool/backend/model, CLI versions, errors, timing, scope/check evidence). Mark unknown facts; never invent them.',
+    'Fills the bug report form link with a sanitized report for the user to review and submit. Be concise: reproduction steps, expected/actual behavior, impact, sanitized telemetry (tool/backend/model, CLI versions, errors, timing, scope/check evidence). Mark unknown facts; never invent them.',
   outputSchema: issueOutputSchema,
   inputSchema: {
     type: 'object',
@@ -52,7 +52,7 @@ export const issueToolDefinition = {
       error_message: { type: 'string' },
       context: { type: 'string', description: 'What led to it.' },
       include_doctor: { type: 'boolean', description: 'Default true: CLI versions only, no readiness/quota.' },
-      open_browser: { type: 'boolean' },
+      open_browser: { type: 'boolean', description: 'Default false.' },
     },
   },
 };
@@ -61,8 +61,9 @@ export const issueToolDefinition = {
  * Handles the canonical issue tool execution.
  *
  * Sanitizes input to strip secrets, passwords, git diffs, and code blocks before filling the
- * form link, then opens it in the browser unless `open_browser` is false. When `include_doctor`
- * is enabled (the default), attaches detected CLI versions only (no readiness or quota).
+ * form link, returning the report first and opening it in the browser only when `open_browser`
+ * is `true`. When `include_doctor` is enabled (the default), attaches detected CLI versions only
+ * (no readiness or quota).
  *
  * @param args - Issue parameters: title, error message, context, doctor and browser flags.
  * @param deps - Replaceable dependencies for tests.
@@ -86,7 +87,7 @@ export async function handleIssue(args: IssueToolArgs = {}, deps: IssueToolDeps 
   });
 
   let opened = false;
-  if (args.open_browser !== false) {
+  if (args.open_browser === true) {
     try {
       opened = (await (deps.openBrowser ?? openBrowser)(report.issueUrl)) !== false;
     } catch (_) {

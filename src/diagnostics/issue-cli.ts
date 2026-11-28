@@ -1,16 +1,17 @@
 /**
- * `coagent8 issue`: opens the bug report form with the sanitized environment filled in.
- * Prints the form link and opens it in the default browser, unless `--no-open` or `--json`
- * is given. It never submits the report.
+ * `coagent8 issue`: prints a sanitized bug report locally and fills in the GitHub form URL.
+ * Never submits the report, and only opens the browser after explicit user confirmation on an
+ * interactive TTY or `--open` (unless `--no-open` is passed).
  *
  * @packageDocumentation
  */
 import { spawn } from 'node:child_process';
+import readline from 'node:readline';
 import { redactDiagnostic } from '../security/redaction.js';
 import { runDoctor } from './doctor.js';
 import { generateBugReport, type BugReportResult } from './issue.js';
 
-const USAGE = 'Usage: coagent8 issue [--title <text>] [--no-open] [--json] [what happened...]';
+const USAGE = 'Usage: coagent8 issue [--title <text>] [--open] [--no-open] [--json] [what happened...]';
 
 /** Bounds how long `--open` waits for the opener to report a launch failure. */
 const OBSERVATION_TIMEOUT_MS = 2000;
@@ -83,6 +84,34 @@ export interface IssueCliOptions {
   runDoctorFn?: typeof runDoctor;
   generateReportFn?: typeof generateBugReport;
   signal?: AbortSignal;
+  input?: NodeJS.ReadableStream & { isTTY?: boolean };
+  isTTY?: boolean;
+  confirmOpenFn?: (question: string) => Promise<boolean>;
+}
+
+const CONFIRM_OPEN_PROMPT = 'Open the GitHub form with this report? [y/N]';
+
+async function askConfirmOpen(input: NodeJS.ReadableStream, out: NodeJS.WritableStream, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return false;
+  out.write(`${CONFIRM_OPEN_PROMPT} `);
+  const rl = readline.createInterface({ input, crlfDelay: Infinity });
+  return await new Promise<boolean>(resolve => {
+    let settled = false;
+    const finish = (answer: boolean) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      rl.close();
+      resolve(answer);
+    };
+    const onAbort = () => finish(false);
+    signal.addEventListener('abort', onAbort, { once: true });
+    rl.once('line', line => {
+      const normalized = line.trim().toLowerCase();
+      finish(normalized === 'y' || normalized === 'yes');
+    });
+    rl.once('close', () => finish(false));
+  });
 }
 
 /**
@@ -184,10 +213,27 @@ export async function runIssueCli(
       };
       out.write(`${JSON.stringify(payload, null, 2)}\n`);
     } else {
-      out.write(report.prompt);
+      const reportText = report.pasteRequired
+        ? `${report.title}\n\n${report.prompt}\n`
+        : `${report.title}\n\n${report.body}\n${report.prompt}\n`;
+      out.write(reportText);
     }
 
-    if (open ?? !json) {
+    const inputStream = options.input ?? process.stdin;
+    const isInteractive = options.isTTY ?? Boolean((inputStream as { isTTY?: boolean }).isTTY && (out as { isTTY?: boolean }).isTTY);
+    let shouldOpen = false;
+    if (open === true) {
+      shouldOpen = true;
+    } else if (open === undefined && !json && isInteractive) {
+      shouldOpen = options.confirmOpenFn
+        ? await options.confirmOpenFn(CONFIRM_OPEN_PROMPT)
+        : await askConfirmOpen(inputStream, out, effectiveSignal);
+      if (effectiveSignal.aborted) {
+        return 130;
+      }
+    }
+
+    if (shouldOpen) {
       const browserOpener = options.openBrowser ?? openBrowser;
       try {
         await browserOpener(report.issueUrl, warning => {

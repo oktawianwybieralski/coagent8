@@ -446,3 +446,38 @@ test('refuses before any model turn when the diff reference directory lies insid
     f.restore();
   }
 });
+
+test('executeReview refuses a historical range in a repo with a checkout filter while uncommitted keeps working', async () => {
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  const { dir, git } = repo();
+  git('config', 'filter.fixture.clean', 'cat');
+  fs.writeFileSync(path.join(dir, '.gitattributes'), '*.txt filter=fixture\n');
+  fs.mkdirSync(path.join(dir, 'pkg'));
+  fs.writeFileSync(path.join(dir, 'pkg', 'sub.txt'), 'same\n');
+  git('add', '.');
+  git('commit', '-qm', 'base');
+  const base = git('rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'two\n');
+  git('commit', '-qam', 'two');
+  const two = git('rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'three\n');
+  git('commit', '-qam', 'three');
+
+  // Even from a subdirectory workspace where pkg/ matches `two`, the historical range is refused before any turn.
+  const f = fixture(true);
+  try {
+    await assert.rejects(
+      executeReview({ backend: 'agy', scope: `${base}..${two}` }, path.join(dir, 'pkg')),
+      err => err.code === 'POLICY_DENIED' && /checkout filter/.test(err.message),
+    );
+    assert.equal(f.seen.length, 0, 'no model turn started for refused historical range');
+
+    // Uncommitted review in the same repo still works.
+    fs.writeFileSync(path.join(dir, 'pkg', 'sub.txt'), 'edited\n');
+    const uncommittedOutcome = await executeReview({ backend: 'agy', scope: 'uncommitted' }, path.join(dir, 'pkg'));
+    assert.equal(uncommittedOutcome.review.verdict, 'READY');
+    assert.equal(f.seen.length, 1);
+  } finally {
+    f.restore();
+  }
+});

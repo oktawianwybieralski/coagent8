@@ -172,7 +172,7 @@ supports stdio MCP in Agent mode through the same definition, following
 - **Quiet, bounded processes.** No shell, no console windows, only processes
   CoAgent8 started, bounded buffers and one deadline for the whole call.
 - **Self-diagnosing.** `doctor` lists models, efforts and prices and checks
-  installation, sign-in and quota; `issue` opens a filled-in, sanitized bug report.
+  installation, sign-in and quota; `issue` prepares a filled-in, sanitized bug report for you to review.
 - **Skills and editor integration.** One skill per function for each CLI's
   chat; the VS Code extension manages CLIs, skills and model approvals.
 
@@ -290,7 +290,7 @@ consent (`"hostExecution": "accepted"` in the configuration, or the form).
 | `doctor` | Models, efforts, output prices, defaults and approval per backend; `scope: "health"` checks installation, versions, sign-in and quota; `detail: "full"` returns data |
 | `session` | List the workspace's sessions (`mine: true` for your own), page a session's history (`cursor` and `limit`) or its messages only, read a delegation's task, or close a session |
 | `cancel` | Stop the running turn of a session: interrupt where the CLI supports it, then end the CLI process. From 0.8.0, `root_handle` stops every delegated agent of a root instead |
-| `issue` | Fill in the GitHub bug report form with a sanitized report (detected CLI versions when `include_doctor` is `true`, the default) and open it in the browser, unless `open_browser` is `false`; the user reviews and submits it |
+| `issue` | Fill in the GitHub bug report form link with a sanitized report (detected CLI versions when `include_doctor` is `true`, the default) and return the report for review; it opens the browser only with `open_browser: true`, and the user submits it |
 
 A consultation can be as small as:
 
@@ -415,7 +415,7 @@ where CoAgent8 is registered. Codex lists them in `/skills` and runs them as
 | `coagent8-review` | Have another agent review Git changes and read the verdict |
 | `coagent8-doctor` | See models, efforts and prices, apply a price limit, check backend health |
 | `coagent8-session` | List, read, continue, cancel or close sessions |
-| `coagent8-issue` | Report a CoAgent8 defect: the form opens filled in |
+| `coagent8-issue` | Report a CoAgent8 defect: a filled-in form link to review and open |
 | `coagent8-delegate` (0.8.0) | Hand a defined code change to another agent, then check what it changed |
 | `coagent8-loop` | Plan, get the plan reviewed, implement or delegate, run checks and get an independent review |
 | `coagent8-coordinate` (0.8.0) | Coordinate across roles: your session leads, another implements and a third reviews |
