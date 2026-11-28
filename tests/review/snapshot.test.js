@@ -270,7 +270,7 @@ test('an attribute file deleted from the working tree still counts from the inde
 test('a historical range in a repo with a checkout filter or lock contention is refused instead of falling back', async () => {
   const { dir, git } = repo();
   const base = git('rev-parse', 'HEAD');
-  git('config', 'filter.fixture.clean', 'cat');
+  // The attribute alone stops materialization; the driver needs no configuration.
   fs.writeFileSync(path.join(dir, '.gitattributes'), '*.txt filter=fixture\n');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'two\n');
   git('add', '.');
@@ -300,11 +300,12 @@ test('a historical range in a repo with a checkout filter or lock contention is 
   // Even when a commit/branch/range target ends at HEAD (matching the clean working tree),
   // snapshot failure still refuses without running any working-tree clean filter.
   const { dir: filterDir, git: filterGit } = repo();
+  fs.writeFileSync(path.join(filterDir, '.gitattributes'), '*.txt filter=fixture\n');
+  filterGit('add', '.gitattributes');
+  filterGit('commit', '-qm', 'filter');
+  // Configured only after the commit: a clean filter that always fails proves none runs.
   filterGit('config', 'filter.fixture.clean', 'false');
   filterGit('config', 'filter.fixture.required', 'true');
-  fs.writeFileSync(path.join(filterDir, '.gitattributes'), '*.txt filter=fixture\n');
-  execFileSync('git', ['-c', 'filter.fixture.clean=cat', 'add', '.gitattributes'], { cwd: filterDir, windowsHide: true });
-  execFileSync('git', ['-c', 'filter.fixture.clean=cat', 'commit', '-qm', 'filter'], { cwd: filterDir, windowsHide: true });
   const filterHead = filterGit('rev-parse', 'HEAD');
   for (const scope of ['HEAD', `HEAD~1..${filterHead}`]) {
     let headEntered = false;

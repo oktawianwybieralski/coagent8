@@ -43,7 +43,7 @@ export const issueOutputSchema = {
 export const issueToolDefinition = {
   name: CANONICAL_TOOL_NAMES.ISSUE,
   description:
-    'Prepares a bug report form filled with a sanitized report for the user to review and submit, opening the browser only when open_browser is true. Be concise: reproduction steps, expected/actual behavior, impact, sanitized telemetry (tool/backend/model, CLI versions, errors, timing, scope/check evidence). Mark unknown facts; never invent them.',
+    'Fills the bug report form link with a sanitized report for the user to review and submit. Be concise: reproduction steps, expected/actual behavior, impact, sanitized telemetry (tool/backend/model, CLI versions, errors, timing, scope/check evidence). Mark unknown facts; never invent them.',
   outputSchema: issueOutputSchema,
   inputSchema: {
     type: 'object',
@@ -52,7 +52,7 @@ export const issueToolDefinition = {
       error_message: { type: 'string' },
       context: { type: 'string', description: 'What led to it.' },
       include_doctor: { type: 'boolean', description: 'Default true: CLI versions only, no readiness/quota.' },
-      open_browser: { type: 'boolean', description: 'Default false: open the filled-in form in the browser only when requested.' },
+      open_browser: { type: 'boolean', description: 'Default false.' },
     },
   },
 };

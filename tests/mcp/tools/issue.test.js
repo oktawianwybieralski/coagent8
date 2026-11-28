@@ -33,8 +33,8 @@ test('canonical issue tool formats bug report, executes doctor by default, and s
     'timing',
     'scope/check evidence',
     'Mark unknown facts; never invent them',
-    'Prepares a bug report form',
-    'opening the browser only when open_browser is true',
+    'Fills the bug report form link',
+    'for the user to review and submit',
   ]) {
     assert.ok(issueToolDefinition.description.includes(instruction), instruction);
   }
