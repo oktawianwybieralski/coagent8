@@ -1,6 +1,6 @@
 # CoAgent8 - MCP bridge to coding CLIs
 
-**Second opinions and Git reviews from another coding agent, inside your chat.**
+**Second opinions, independent Git reviews and delegated code changes from another coding agent, inside your chat.**
 
 By [Oktawian Wybieralski](https://oki.dev)
 
@@ -14,16 +14,21 @@ By [Oktawian Wybieralski](https://oki.dev)
 
 CoAgent8 connects VS Code chat to **OpenAI Codex**, **Claude Code** and
 **Google Antigravity** (`agy`). Ask another agent to examine a design,
-investigate a bug or review your Git changes, then continue the discussion in
-the same session. Your chat stays in VS Code; the other agent runs on your own
-installed and signed-in CLI, in a read-only profile.
+investigate a bug, review your Git changes or implement a delegated task, then
+continue the discussion in the same session. Your chat stays in VS Code; the
+other agent runs on your own installed and signed-in CLI, on your computer with
+your account's rights and without a sandbox, once you agree (`hostExecution`).
+A consultation or review leaves the workspace as it found it, and a delegated
+change edits it.
 
 The extension bundles the CoAgent8 MCP server, so nothing else needs to be
 installed except the CLIs themselves. It can also add CoAgent8 to the CLIs' own
 chats.
 
-> **Preview.** Versions below 1.0.0 are previews for testers. CoAgent8 reads
-> and advises; it does not yet let the other agent write changes. See
+> **Preview.** Versions below 1.0.0 are previews for testers. From 0.8.0,
+> agents run on your computer through one runner after a one-time consent (no
+> per-backend sandbox profiles), so `delegate` can make code changes while
+> `consult` and `review` leave the workspace as they found it. See
 > [known limitations](#known-limitations).
 
 ## Requirements
@@ -51,7 +56,7 @@ that machine's terminal and edit `~/.coagent8/config.json` there.
 4. Ask: **"Use CoAgent8 doctor with scope health to check the coding agents
    available for this workspace."** Fix anything it reports as missing or signed
    out.
-5. Ask for a consultation or a review, as below.
+5. Ask for a consultation, a review or a delegated change, as below.
 
 The extension registers CoAgent8 in your user MCP servers (`mcp.json`) so it
 appears in **MCP: List Servers**, and VS Code starts and stops the bundled
@@ -89,11 +94,12 @@ only when the snapshot or its completeness changed.
 
 | Tool | Purpose |
 | --- | --- |
-| `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis |
-| `review` | An independent review of Git changes with a verdict CoAgent8 derives |
+| `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis; synchronous by default, or `mode: "async"` for a task handle |
+| `review` | An independent review of Git changes with a verdict CoAgent8 derives; large changes in parts, optional pre-turn `checks`, and `mode: "async"` for a task handle |
+| `delegate` | Hand a code change in a Git work tree to another agent, optionally with `scope` paths, `checks` and a review loop; returns a task handle by default (`mode: "sync"` waits instead) |
 | `doctor` | Models, efforts, prices and approval per backend; installation, sign-in and quota with `scope: "health"` |
-| `session` | List the workspace's sessions, page a session's history (`cursor` and `limit`) or close a session; a closed session reports that it is closed on a follow-up or `cancel`, while its history stays readable |
-| `cancel` | Stop the running turn of a session: interrupt where the CLI supports it, then end the CLI process |
+| `session` | List the workspace's sessions, page a session's history (`cursor` and `limit`), read a delegation's task (`action: "task"`) or close a session; a closed session reports that it is closed on a follow-up or `cancel`, while its history stays readable |
+| `cancel` | Stop the running turn of a session (interrupt where the CLI supports it, then end the CLI process), or stop every delegated worker of a `root_handle` |
 | `issue` | Prepare a sanitized bug report (attaching detected CLI versions when `include_doctor` is `true`, the default) and a GitHub bug report form link to paste it into; it never submits anything |
 
 Answers come back as Markdown with the backend, model, duration and session
@@ -251,9 +257,12 @@ check the generated report for private data before submitting it.
 
 ## Known limitations
 
-- **Antigravity's own tools.** agy gives the other agent your agy MCP servers
-  and plugins, which CoAgent8 cannot turn off; `doctor` lists them and calls
-  back into CoAgent8 are refused.
+- **Antigravity's own tools.** On Windows `agy` runs with CoAgent8's own profile
+  (`~/.coagent8/agy-profile` as `USERPROFILE`), so it offers none of your agy
+  MCP servers and plugins (an agy session from before this change cannot be
+  continued; start a new one). On macOS and Linux `agy` still gives the other
+  agent your agy MCP servers and plugins, which CoAgent8 cannot turn off;
+  `doctor` lists them and calls back into CoAgent8 are refused.
 - **Antigravity readiness.** `agy` may report not ready in a cached check and
   still run a turn; `doctor` with `scope: "health"` rechecks readiness.
 - **Leftover agy processes on Windows.** Cancelling an agy turn stops agy, but a
@@ -262,10 +271,19 @@ check the generated report for private data before submitting it.
 - **Default model price.** A plain `consult` with no model and no price limit
   runs the backend's default model (still subject to your approval thresholds);
   pass `output_price_below` or a model to bound the price.
-- **Approval forms.** Not every chat shows MCP forms; Codex and the Antigravity
-  chat did not when measured. Allow such models in **Manage Model Approvals**.
-- **Host deadlines.** A chat host can stop a tool call before CoAgent8's own
-  deadline.
+- **Approval forms.** Not every chat shows MCP forms; Codex, the Antigravity
+  chat and Claude Code 2.1.317 in VS Code did not show all forms when measured.
+  Allow expensive models in **Manage Model Approvals**, and set
+  `"hostExecution": "accepted"` and `allowedChecks` in `config.json` when
+  your chat cannot show those forms.
+- **Host deadlines.** A chat host can stop a synchronous tool call before
+  CoAgent8's own deadline; use `mode: "async"` on `consult` or `review` (the
+  default for `delegate`) to return a task handle immediately.
+- **Updating from 0.7.x.** Installing `0.8.0` over `0.7.x` migrates existing
+  CLI chat registrations once to the stable runtime launcher
+  (`~/.coagent8/runtime/current/index.cjs`), so VS Code may still ask to
+  restart after the update (Restart > Update > Restart) one last time. Future
+  updates need only VS Code's own restart and no CLI chat configuration update.
 - **Restart Extensions** restarts every extension: VS Code has no way to restart
   only the vendor chat extensions.
 - On a remote extension host (SSH, WSL) the CoAgent8 commands are not
