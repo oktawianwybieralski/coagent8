@@ -33,18 +33,19 @@ card to its issue.
 
 `0.7.0` (beta.3) is released: tag `v0.7.0`, GitHub Release, npm (`latest`) and
 the VS Code Marketplace, uploaded by hand
-([record](https://github.com/oktawianwybieralski/coagent8/blob/7eec83a/docs/delivered/0.7.0/README.md)). `develop` holds the `0.8.0` candidate
-([plan](#080-plan), [record](https://github.com/oktawianwybieralski/coagent8/blob/7eec83a/docs/delivered/0.8.0/README.md)). Agents merge a PR
+([record](https://github.com/oktawianwybieralski/coagent8/blob/7eec83a/docs/delivered/0.7.0/README.md)). `0.8.0` is being released from `develop`
+(release PR pending; the owner tags and publishes; [plan](#080-plan),
+[record](https://github.com/oktawianwybieralski/coagent8/blob/7eec83a/docs/delivered/0.8.0/README.md)). Agents merge a PR
 when its gate and CI pass and every required reviewer is READY on its head
 ([standing go-ahead](../.agents/project.md#standing-go-aheads) of 2026-11-02);
 tags, publication and repository settings stay the owner's.
 
 | Area | Present on `develop` | Remaining for `0.8.0` |
 | --- | --- | --- |
-| Execution | Seven tools, three CLI adapters on the host behind a one-time consent (#208, #211), explicit model/effort, asynchronous `delegate` with task records and `wait`, a server-owned loop, parallel workers under one root budget, coordinated by the calling agent | Delivered: async review and consult, longer async turns (#246); turns isolated from the user's CoAgent8 files (#248) |
-| Safety | Owned cleanup, hidden Windows launches, per-call Windows containment, redaction, explicit model and check consent, agy turns without the user's MCP servers on Windows, turns isolated from the user's CoAgent8 files (#248) | Dependabot alerts (#120) |
-| Review | Completeness, snapshot gate, post-turn recheck, reviews in parts with part coverage, checks the server runs before the turn | Delivered: no diff in the prompt (#247) |
-| Integrations | Shared config, setup, VSIX, owned registration/uninstall, client skills, Claude Code wake-up | One restart per update (#250), the coordinator skill (#234) |
+| Execution | Seven tools, three CLI adapters on the host behind a one-time consent (#208, #211), explicit model/effort, asynchronous `delegate`, `review` and `consult` (#246) with task records and `wait`, a server-owned loop, parallel workers under one root budget, coordinated by the calling agent | Delivered: async review and consult, longer async turns (#246); turns isolated from the user's CoAgent8 files (#248) |
+| Safety | Owned cleanup, hidden Windows launches, per-call Windows containment, redaction, explicit model and check consent, agy turns without the user's MCP servers on Windows, turns isolated from the user's CoAgent8 files (#248) | Delivered: Dependabot alerts (#120 closed: its last alert is dev-only and dismissed) |
+| Review | Completeness, snapshot gate, post-turn recheck, reviews in parts with part coverage, checks the server runs before the turn, diff passed as a file (#247) | Delivered: no diff in the prompt (#247) |
+| Integrations | Shared config, setup with stable runtime launcher (#250), VSIX, owned registration/uninstall, client skills including `coagent8-coordinate` (#234), Claude Code wake-up | Delivered: one restart per update (#250), the coordinator skill (#234) |
 
 ## 0.8.0 plan
 

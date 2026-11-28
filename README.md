@@ -47,24 +47,30 @@ edits it. Every agent runs on your own installed and signed-in CLI.
 
 ## Status
 
-`0.7.0` is the current release; `0.6.0` was the first for testers, and `0.8.0`
-will be the first release candidate. Every version below 1.0.0 is a
-**preview**, with the same version number on GitHub, npm and VS Code. On npm
-each release appears first as `coagent8@next`; `latest` follows once the
-version has proved stable.
+`0.8.0` is the current release (a preview for testers, following `0.6.0` and
+`0.7.0`); `0.9.0` will be the first release candidate (`rc.1` on `1.0.x`). Every
+version below 1.0.0 is a **preview**, with the same version number on GitHub, npm
+and VS Code. On npm each release appears first as `coagent8@next`; `latest`
+follows once the version has proved stable.
 
-In 0.7.0: consultations and reviews by another agent in a read-only profile,
-model selection by price with your approval for expensive models, continuable
-sessions with history, diagnostics, skills and the VS Code extension. New in
-0.8.0, on `develop` and not released yet: delegating a code change to another
-agent, which runs in the background and wakes Claude Code when it ends, with an
-optional loop in which CoAgent8 runs your checks and an independent review and
-returns failures to the agent; reviews of large changes in parts; and checks
-CoAgent8 runs before a review. This README describes `develop`, so features
-marked 0.8.0 are not in the published packages. Several delegated agents can run
-at once under one budget, in disjoint scopes of a work tree or in separate Git
-worktrees. Not yet available: an agent that itself delegates to others. That is
-the next step in the [roadmap](docs/ROADMAP.md#full-coagent-direction).
+`0.8.0` brings full delegation: a coordinating agent hands complete tasks to
+cooperating agents that write, check and review (`delegate` by default, and
+`review` and `consult` with `mode: "async"`, run as async tasks for up to 4
+hours, 60 minutes by default, and wake Claude Code when they finish). Several
+delegated workers can run at once under one root budget in disjoint scopes of a
+work tree or in separate Git worktrees, with an optional server-owned loop that
+runs your checks and an independent review and returns failures to the worker,
+alongside the `coagent8-coordinate` skill. Every role runs on your computer
+through one runner after a one-time consent (no per-backend sandbox profiles),
+and turns receive disposable CoAgent8 paths so nothing in a turn writes your
+configuration. Reviews inspect large changes in parts, run your checks before
+the turn, and always pass the diff as a file; a stable runtime launcher means
+future updates need one restart and no CLI chat configuration update (installing
+`0.8.0` over `0.7.x` migrates registrations once and may still ask
+Restart > Update > Restart one last time). These sit on top of consultations,
+model selection by price with approval for expensive models, continuable
+sessions with history, diagnostics, skills and the VS Code extension; see the
+[roadmap](docs/ROADMAP.md#090-plan) for `0.9.0`.
 
 ## Quick start
 
@@ -81,8 +87,8 @@ signed in:
 
 Install **CoAgent8** (`okidev.coagent8-mcp`) from the
 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=okidev.coagent8-mcp),
-or download `coagent8-mcp-0.7.0.vsix` from the
-[GitHub release](https://github.com/oktawianwybieralski/coagent8/releases/tag/v0.7.0)
+or download `coagent8-mcp-0.8.0.vsix` from the
+[GitHub release](https://github.com/oktawianwybieralski/coagent8/releases/tag/v0.8.0)
 and run **Extensions: Install from VSIX...**. Then:
 
 1. The first start shows one notice with the CLIs it found, or an offer to set
@@ -139,7 +145,7 @@ On Windows, a host that starts commands without a shell may need
 `coagent8 mcp` starts the server; run in a terminal without arguments,
 `coagent8` shows help. Older entries without `mcp` keep working, because
 `coagent8` and `coagent8-mcp` still start the server when a host pipes their
-standard input. `coagent8@0.7.0` pins a version. Plain `coagent8` (npm `latest`)
+standard input. `coagent8@0.8.0` pins a version. Plain `coagent8` (npm `latest`)
 is not a supported channel before 1.0.0.
 
 A host with its own tool deadline can stop a long review early. For Codex, set
@@ -567,13 +573,17 @@ error.
 - **Default model price.** A plain `consult` with no model and no price limit
   runs the backend's default model (still subject to your approval thresholds);
   pass `output_price_below` or a model to bound the price.
-- **Approval forms.** Clients that cannot show MCP forms cannot approve an
-  expensive model (see [approving expensive models](#approving-expensive-models))
-  or the checks of `delegate` with `loop: true`. Claude Code 2.1.317 in VS Code
-  and Codex 0.164 did not show the check form when measured, so list the exact
-  commands in `allowedChecks` of the CoAgent8 configuration instead.
-- **Host deadlines.** A host can stop a tool call before CoAgent8's own deadline;
-  a headless agy client stopped calls after 180 seconds.
+- **Approval forms.** Clients that cannot show MCP forms cannot approve the
+  one-time host execution consent, an expensive model (see
+  [approving expensive models](#approving-expensive-models)), or the checks of
+  `review` and `delegate` with `loop: true`. Claude Code 2.1.317 in VS Code and
+  Codex 0.164 did not show the check form when measured, so set
+  `"hostExecution": "accepted"` and list the exact commands in `allowedChecks`
+  of `config.json` instead.
+- **Host deadlines.** A host can stop a synchronous tool call before CoAgent8's
+  own deadline; a headless agy client stopped calls after 180 seconds. Use
+  `mode: "async"` on `consult` or `review` (the default for `delegate`) to
+  return a task handle immediately.
 - **Sessions on disk.** Every call keeps a session record, even with archives
   turned off, and the session handle arrives with the result.
 - **Codex PowerShell on Windows.** CoAgent8 leaves the Microsoft Store's
@@ -581,6 +591,11 @@ error.
   PowerShell 7 is installed another way (for example `scoop install pwsh` or the MSI).
 - **Reviews of another tree.** A staged, commit or range review whose files do
   not match the current workspace is refused rather than reviewed.
+- **Updating from 0.7.x.** Installing `0.8.0` over `0.7.x` migrates existing
+  CLI chat registrations once to the stable runtime launcher
+  (`~/.coagent8/runtime/current/index.cjs`), so VS Code may still ask to
+  restart after the update (Restart > Update > Restart) one last time. Future
+  updates need only VS Code's own restart and no CLI chat configuration update.
 
 ## Reporting problems
 

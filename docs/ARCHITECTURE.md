@@ -804,7 +804,7 @@ Argument parsing rules:
 #### Information and inspection commands
 
 - `coagent8 --help` / `-h`: root help text listing available commands and options.
-- `coagent8 --version` / `-v`: prints version string (e.g. `0.7.0`).
+- `coagent8 --version` / `-v`: prints version string (e.g. `0.8.0`).
 - `coagent8 models [--backend codex|claude|agy] [--json]`:
   Queries cached model catalog data (`src/diagnostics/models-cli.ts`, `AX-001`).
   Lists offered models, supported reasoning efforts, output token prices, and
@@ -1137,7 +1137,7 @@ Owned registrations migrate automatically to the explicit `mcp` shape:
      ```bash
      npx -y coagent8@<version> mcp
      ```
-   - Always specify the exact package version (e.g. `coagent8@0.7.0`) and the
+   - Always specify the exact package version (e.g. `coagent8@0.8.0`) and the
      explicit `mcp` subcommand.
    - `npx` is user-facing documentation guidance; setup and the extension never
      download packages or run `npx` dynamically.
