@@ -892,3 +892,116 @@ test('updater lock serializes concurrent failing updates, restores pin on unpin 
   );
   assert.equal(readRuntimePointer(root, 'current').pinned?.digest, pinned.digest, 'pin restored on unpin option failure');
 });
+
+test('cleanupUnreferencedRuntimes with keepStableNamespaces false waits for runtime-update lock and keeps update pointer', async t => {
+  const { withFileLock } = require('../../src/storage/lock.ts');
+  const { runtimePointerPath, runtimeUpdateLockResource, stableLauncherPath } = require('../../src/integrations/runtime-manager.ts');
+  const home = makeHome(t);
+  const root = coagentRootForHome(home);
+
+  const v1 = path.join(home, 'v1.cjs');
+  fs.writeFileSync(v1, validMcpBundle('v1'));
+  const v1Copy = installAndVerifyRuntimeCopy({ home, runtimeSource: v1, version: '0.7.0' });
+
+  // Hold runtime-update lock to simulate an in-progress update transaction.
+  let releaseUpdate;
+  let updateHeld;
+  const updateGate = new Promise(resolve => {
+    releaseUpdate = resolve;
+  });
+  const updateAcquired = new Promise(resolve => {
+    updateHeld = resolve;
+  });
+
+  const updaterTask = withFileLock(runtimeUpdateLockResource(root), async () => {
+    updateHeld();
+    await updateGate;
+    // Publish pointer and register a host reference to the stable launcher before releasing runtime-update.
+    fs.mkdirSync(path.dirname(runtimePointerPath(root, 'current')), { recursive: true });
+    fs.writeFileSync(
+      runtimePointerPath(root, 'current'),
+      JSON.stringify({ schemaVersion: 1, digest: v1Copy.digest, version: '0.7.0', updatedAt: new Date().toISOString() }, null, 2),
+    );
+    fs.writeFileSync(stableLauncherPath(root, 'current'), '/* launcher */');
+    fs.writeFileSync(
+      path.join(home, '.claude.json'),
+      JSON.stringify({ mcpServers: { coagent8: { command: 'node', args: [stableLauncherPath(root, 'current'), 'mcp'] } } }),
+    );
+  });
+  await updateAcquired;
+
+  let cleanupDone = false;
+  const cleanupTask = cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: false }).then(res => {
+    cleanupDone = true;
+    return res;
+  });
+
+  // Cleanup must block on runtime-update rather than running immediately under runtime-lock alone.
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(cleanupDone, false, 'cleanup with keepStableNamespaces: false waits for in-progress runtime-update');
+
+  releaseUpdate();
+  await updaterTask;
+  const cleanupRes = await cleanupTask;
+  assert.equal(cleanupDone, true);
+  assert.ok(cleanupRes.kept.includes(v1Copy.digest), 'published copy is kept after update completes');
+  assert.equal(readRuntimePointer(root, 'current')?.digest, v1Copy.digest, 'pointer published by update is preserved');
+});
+
+test('installAndSelectVerifiedRuntime retries incumbent restore and reports restore failure when rollback write fails', async t => {
+  const { runtimePointerPath } = require('../../src/integrations/runtime-manager.ts');
+  const home = makeHome(t);
+  const root = coagentRootForHome(home);
+  const pointerFile = runtimePointerPath(root, 'current');
+
+  const v1 = path.join(home, 'v1.cjs');
+  fs.writeFileSync(v1, validMcpBundle('v1'));
+  const res1 = await installAndSelectVerifiedRuntime({ home, runtimeSource: v1, version: '0.7.0', nodePath: process.execPath });
+
+  const launcherFail = path.join(home, 'launcher-fail.cjs');
+  fs.writeFileSync(
+    launcherFail,
+    ["if (globalThis[Symbol.for('coagent8.runtimePath')]) process.exit(1);", validMcpBundle('v2-launcher-fail')].join('\n'),
+  );
+
+  // 1. Transient restore failure recovers on retry and restores incumbent cleanly.
+  {
+    const origRename = fs.renameSync;
+    let pointerRenames = 0;
+    t.mock.method(fs, 'renameSync', (from, to) => {
+      if (to === pointerFile) {
+        pointerRenames++;
+        if (pointerRenames === 2) throw new Error('Transient restore lock/write error');
+      }
+      return origRename(from, to);
+    });
+    await assert.rejects(
+      () => installAndSelectVerifiedRuntime({ home, runtimeSource: launcherFail, version: '0.8.0', nodePath: process.execPath }),
+      /Probe process exited/,
+    );
+    t.mock.restoreAll();
+    assert.equal(readRuntimePointer(root, 'current')?.digest, res1.digest, 'transient restore error recovered on retry');
+  }
+
+  // 2. Persistent restore failure is never swallowed and surfaces both the probe error and restore error.
+  {
+    const origRename = fs.renameSync;
+    let pointerRenames = 0;
+    t.mock.method(fs, 'renameSync', (from, to) => {
+      if (to === pointerFile) {
+        pointerRenames++;
+        if (pointerRenames >= 2) throw new Error('Simulated restore write failure');
+      }
+      return origRename(from, to);
+    });
+    await assert.rejects(
+      () => installAndSelectVerifiedRuntime({ home, runtimeSource: launcherFail, version: '0.8.0', nodePath: process.execPath }),
+      err => {
+        assert.match(err.message, /Probe process exited/);
+        assert.match(err.message, /failed to restore previous runtime pointer:.*Simulated restore write failure/);
+        return true;
+      },
+    );
+    t.mock.restoreAll();
+  }
+});

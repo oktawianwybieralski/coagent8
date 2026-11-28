@@ -194,11 +194,11 @@ export function runtimeLockResource(root: string): string {
 }
 
 /**
- * Shared updater lock resource path serializing full verified runtime update, pin, and unpin transactions
- * (copy preparation, candidate probe, pointer selection, launcher probe, and rollback on failure).
+ * Shared updater lock resource path serializing full verified runtime update, pin, unpin, and
+ * unreferenced-runtime cleanup transactions.
  *
  * @remarks
- * Acquired BEFORE `runtime-lock` and never acquired by launchers, process leases, or `cleanupUnreferencedRuntimes`.
+ * Acquired BEFORE `runtime-lock` and never acquired by launchers or process leases.
  * Uses `withFileLock` stale-lease reclamation (dead owner PID or unrenewed age).
  */
 export function runtimeUpdateLockResource(root: string): string {
@@ -936,6 +936,67 @@ function withRuntimeUpdateLock<T>(root: string, fn: () => Promise<T>): Promise<T
 }
 
 /**
+ * Restores the previous runtime pointer (if its target still exists) or removes the failed pointer
+ * under `runtime-lock`, retrying transient lock/write failures before surfacing a combined error.
+ */
+async function restoreRuntimePointerOnProbeFailure(params: {
+  root: string;
+  runtimeRoot: string;
+  pointerFile: string;
+  previousPointerRaw: string | null;
+  writtenPointerRaw: string | null;
+  probeError: unknown;
+}): Promise<void> {
+  const { root, runtimeRoot, pointerFile, previousPointerRaw, writtenPointerRaw, probeError } = params;
+  const RESTORE_DEADLINE_MS = RUNTIME_LOCK_TIMEOUT_MS * 3;
+  const MAX_RESTORE_ATTEMPTS = 3;
+  const deadline = Date.now() + RESTORE_DEADLINE_MS;
+  let lastRestoreError: unknown;
+
+  for (let attempt = 0; attempt < MAX_RESTORE_ATTEMPTS; attempt++) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    try {
+      await withFileLock(
+        runtimeLockResource(root),
+        async () => {
+          const currentRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
+          if (currentRaw !== writtenPointerRaw) return;
+          let canRestore = false;
+          if (previousPointerRaw !== null) {
+            try {
+              const parsedPrev = validateRuntimePointer(JSON.parse(previousPointerRaw));
+              const prevTarget = path.join(runtimeRoot, parsedPrev.digest, 'index.cjs');
+              canRestore = Boolean(fs.statSync(prevTarget, { throwIfNoEntry: false })?.isFile());
+            } catch {
+              canRestore = false;
+            }
+          }
+          if (canRestore) {
+            atomicWriteText(pointerFile, previousPointerRaw!, 0o600);
+          } else {
+            fs.rmSync(pointerFile, { force: true });
+          }
+        },
+        Math.max(500, remaining),
+      );
+      return;
+    } catch (restoreErr) {
+      lastRestoreError = restoreErr;
+      if (attempt + 1 < MAX_RESTORE_ATTEMPTS && deadline - Date.now() > 50) {
+        await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
+      }
+    }
+  }
+
+  const probeMsg = redactDiagnostic(probeError instanceof Error ? probeError.message : String(probeError));
+  const restoreMsg = redactDiagnostic(
+    lastRestoreError instanceof Error ? lastRestoreError.message : String(lastRestoreError ?? 'restore deadline exceeded'),
+  );
+  throw new Error(`Runtime launcher probe failed (${probeMsg}); failed to restore previous runtime pointer: ${restoreMsg}`);
+}
+
+/**
  * Shared verified selection path; caller MUST hold `runtimeUpdateLockResource(root)`.
  * Prepares and reserves candidate and incumbent copies under `runtime-lock`, probes the candidate
  * outside `runtime-lock` before any pointer write (revalidating under the final `runtime-lock`),
@@ -1078,30 +1139,14 @@ async function selectVerifiedRuntimeCopyLocked(
       return { ...selected, tools };
     } catch (err) {
       if (switched) {
-        await withFileLock(
-          runtimeLockResource(root),
-          async () => {
-            const currentRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
-            if (currentRaw === writtenPointerRaw) {
-              let canRestore = false;
-              if (previousPointerRaw !== null) {
-                try {
-                  const parsedPrev = validateRuntimePointer(JSON.parse(previousPointerRaw));
-                  const prevTarget = path.join(copy.runtimeRoot, parsedPrev.digest, 'index.cjs');
-                  canRestore = Boolean(fs.statSync(prevTarget, { throwIfNoEntry: false })?.isFile());
-                } catch {
-                  canRestore = false;
-                }
-              }
-              if (canRestore) {
-                atomicWriteText(pointerFile, previousPointerRaw!, 0o600);
-              } else {
-                fs.rmSync(pointerFile, { force: true });
-              }
-            }
-          },
-          RUNTIME_LOCK_TIMEOUT_MS,
-        ).catch(() => {});
+        await restoreRuntimePointerOnProbeFailure({
+          root,
+          runtimeRoot: copy.runtimeRoot,
+          pointerFile,
+          previousPointerRaw,
+          writtenPointerRaw,
+          probeError: err,
+        });
       }
       throw err;
     }
@@ -1377,291 +1422,296 @@ export async function cleanupUnreferencedRuntimes(
   const removePreLeaseCopies = options.removePreLeaseCopies === true;
 
   return withFileLock(
-    runtimeLockResource(resolvedRoot),
-    async () => {
-      const referencedDigests = new Set<string>(options.extraReferencedDigests ?? []);
-      const referencedNamespaces = new Set<RuntimeNamespace>();
-      if (options.keepStableNamespaces) {
-        referencedNamespaces.add('current');
-        referencedNamespaces.add('dev');
-      }
-      let uncertainReference = false;
-
-      const normalizeMatch = (value: string): string => {
-        const unified = value.replace(/\\/g, '/');
-        return process.platform === 'win32' ? unified.toLowerCase() : unified;
-      };
-      const runtimesNorm = normalizeMatch(runtimes);
-      const isGlobalStorage = path.basename(path.dirname(resolvedRoot)).toLowerCase() === 'globalstorage';
-      const rootHint = isSharedRoot
-        ? '.coagent8/runtime'
-        : isGlobalStorage
-          ? normalizeMatch(path.join(path.basename(resolvedRoot), 'runtime'))
-          : runtimesNorm;
-
-      const recordRuntimeString = (rawValue: string, allowEmbedded: boolean, throwOnUnknown = false) => {
-        const trimmed = rawValue.trim();
-        if (!trimmed) return;
-        const resolved = path.resolve(trimmed);
-        if (sameOrInside(resolved, runtimes) && resolved !== runtimes) {
-          const firstSegment = path.relative(runtimes, resolved).split(path.sep)[0];
-          if (!firstSegment) return;
-          if (SHA256_HEX.test(firstSegment)) {
-            referencedDigests.add(firstSegment);
-          } else if (firstSegment === 'current' || firstSegment === 'dev') {
-            referencedNamespaces.add(firstSegment);
-          } else if (throwOnUnknown) {
-            throw new Error(`Uncertain runtime reference inside ${runtimes}`);
-          } else {
-            uncertainReference = true;
+    runtimeUpdateLockResource(resolvedRoot),
+    async () =>
+      withFileLock(
+        runtimeLockResource(resolvedRoot),
+        async () => {
+          const referencedDigests = new Set<string>(options.extraReferencedDigests ?? []);
+          const referencedNamespaces = new Set<RuntimeNamespace>();
+          if (options.keepStableNamespaces) {
+            referencedNamespaces.add('current');
+            referencedNamespaces.add('dev');
           }
-          return;
-        }
-        if (!allowEmbedded) return;
-        const normalized = normalizeMatch(trimmed);
-        const mentionsRuntimeRoot =
-          normalized.includes(runtimesNorm) || normalized.includes(rootHint) || (resolved === runtimes && !throwOnUnknown);
-        if (!mentionsRuntimeRoot) return;
-        const matches = [...trimmed.matchAll(/(?:^|[^a-z0-9_-])runtime(?:[\\/]([^\\/'\"\s;:,]+)|(?=[\\/\s'"]|$))/gi)];
-        if (matches.length === 0) {
-          uncertainReference = true;
-          return;
-        }
-        for (const match of matches) {
-          const segment = match[1]?.toLowerCase();
-          if (!segment) {
-            uncertainReference = true;
-          } else if (SHA256_HEX.test(segment)) {
-            referencedDigests.add(segment);
-          } else if (segment === 'current' || segment === 'dev') {
-            referencedNamespaces.add(segment);
-          } else {
-            uncertainReference = true;
-          }
-        }
-      };
+          let uncertainReference = false;
 
-      const inspectEntryStrings = (value: unknown) => {
-        if (typeof value === 'string') {
-          recordRuntimeString(value, true);
-          return;
-        }
-        if (Array.isArray(value)) {
-          for (const item of value) inspectEntryStrings(item);
-          return;
-        }
-        if (value && typeof value === 'object') {
-          for (const nested of Object.values(value)) inspectEntryStrings(nested);
-        }
-      };
+          const normalizeMatch = (value: string): string => {
+            const unified = value.replace(/\\/g, '/');
+            return process.platform === 'win32' ? unified.toLowerCase() : unified;
+          };
+          const runtimesNorm = normalizeMatch(runtimes);
+          const isGlobalStorage = path.basename(path.dirname(resolvedRoot)).toLowerCase() === 'globalstorage';
+          const rootHint = isSharedRoot
+            ? '.coagent8/runtime'
+            : isGlobalStorage
+              ? normalizeMatch(path.join(path.basename(resolvedRoot), 'runtime'))
+              : runtimesNorm;
 
-      const inspectServerEntry = (entry: unknown) => {
-        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-          uncertainReference = true;
-          return;
-        }
-        const obj = entry as Record<string, unknown>;
-        if (obj.command !== undefined && typeof obj.command !== 'string') {
-          uncertainReference = true;
-          return;
-        }
-        if (obj.args !== undefined && (!Array.isArray(obj.args) || !obj.args.every(arg => typeof arg === 'string'))) {
-          uncertainReference = true;
-          return;
-        }
-        if (obj.env !== undefined && (!obj.env || typeof obj.env !== 'object' || Array.isArray(obj.env))) {
-          uncertainReference = true;
-          return;
-        }
-        inspectEntryStrings(obj);
-      };
-
-      // Inspect only the CLI host config locations that CoAgent8 setup itself writes (env-configured root and home default).
-      for (const client of SETUP_CLIENTS as readonly SetupClient[]) {
-        const candidates = new Set([configPath(client, home, env), configPath(client, home, {})]);
-        for (const file of candidates) {
-          try {
-            const text = read(file);
-            if (text === null) continue;
-            const entries = servers(client, document(client, text));
-            for (const entry of Object.values(entries)) {
-              inspectServerEntry(entry);
+          const recordRuntimeString = (rawValue: string, allowEmbedded: boolean, throwOnUnknown = false) => {
+            const trimmed = rawValue.trim();
+            if (!trimmed) return;
+            const resolved = path.resolve(trimmed);
+            if (sameOrInside(resolved, runtimes) && resolved !== runtimes) {
+              const firstSegment = path.relative(runtimes, resolved).split(path.sep)[0];
+              if (!firstSegment) return;
+              if (SHA256_HEX.test(firstSegment)) {
+                referencedDigests.add(firstSegment);
+              } else if (firstSegment === 'current' || firstSegment === 'dev') {
+                referencedNamespaces.add(firstSegment);
+              } else if (throwOnUnknown) {
+                throw new Error(`Uncertain runtime reference inside ${runtimes}`);
+              } else {
+                uncertainReference = true;
+              }
+              return;
             }
-          } catch {
-            uncertainReference = true;
-          }
-        }
-      }
-
-      // Inspect VS Code profile mcp.json files (local globalStorage profile and any recorded in vscode-mcp.json).
-      const mcpFiles = new Set<string>();
-      if (isGlobalStorage) {
-        mcpFiles.add(path.join(path.dirname(path.dirname(resolvedRoot)), 'mcp.json'));
-      }
-      const vscodeMcpFile = path.join(sharedRoot, 'vscode-mcp.json');
-      if (fs.existsSync(vscodeMcpFile)) {
-        try {
-          const text = read(vscodeMcpFile);
-          if (text === null) {
-            uncertainReference = true;
-          } else {
-            const record = json(text);
-            for (const profileFile of Object.keys(record)) {
-              mcpFiles.add(profileFile);
-            }
-          }
-        } catch {
-          uncertainReference = true;
-        }
-      }
-      for (const mcpFile of mcpFiles) {
-        try {
-          const text = read(mcpFile);
-          if (text === null) continue;
-          const parsed = json(text);
-          if (parsed.servers !== undefined) {
-            if (!parsed.servers || typeof parsed.servers !== 'object' || Array.isArray(parsed.servers)) {
+            if (!allowEmbedded) return;
+            const normalized = normalizeMatch(trimmed);
+            const mentionsRuntimeRoot =
+              normalized.includes(runtimesNorm) || normalized.includes(rootHint) || (resolved === runtimes && !throwOnUnknown);
+            if (!mentionsRuntimeRoot) return;
+            const matches = [...trimmed.matchAll(/(?:^|[^a-z0-9_-])runtime(?:[\\/]([^\\/'\"\s;:,]+)|(?=[\\/\s'"]|$))/gi)];
+            if (matches.length === 0) {
               uncertainReference = true;
-              continue;
+              return;
             }
-            for (const entry of Object.values(parsed.servers as Record<string, unknown>)) {
-              inspectServerEntry(entry);
+            for (const match of matches) {
+              const segment = match[1]?.toLowerCase();
+              if (!segment) {
+                uncertainReference = true;
+              } else if (SHA256_HEX.test(segment)) {
+                referencedDigests.add(segment);
+              } else if (segment === 'current' || segment === 'dev') {
+                referencedNamespaces.add(segment);
+              } else {
+                uncertainReference = true;
+              }
+            }
+          };
+
+          const inspectEntryStrings = (value: unknown) => {
+            if (typeof value === 'string') {
+              recordRuntimeString(value, true);
+              return;
+            }
+            if (Array.isArray(value)) {
+              for (const item of value) inspectEntryStrings(item);
+              return;
+            }
+            if (value && typeof value === 'object') {
+              for (const nested of Object.values(value)) inspectEntryStrings(nested);
+            }
+          };
+
+          const inspectServerEntry = (entry: unknown) => {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+              uncertainReference = true;
+              return;
+            }
+            const obj = entry as Record<string, unknown>;
+            if (obj.command !== undefined && typeof obj.command !== 'string') {
+              uncertainReference = true;
+              return;
+            }
+            if (obj.args !== undefined && (!Array.isArray(obj.args) || !obj.args.every(arg => typeof arg === 'string'))) {
+              uncertainReference = true;
+              return;
+            }
+            if (obj.env !== undefined && (!obj.env || typeof obj.env !== 'object' || Array.isArray(obj.env))) {
+              uncertainReference = true;
+              return;
+            }
+            inspectEntryStrings(obj);
+          };
+
+          // Inspect only the CLI host config locations that CoAgent8 setup itself writes (env-configured root and home default).
+          for (const client of SETUP_CLIENTS as readonly SetupClient[]) {
+            const candidates = new Set([configPath(client, home, env), configPath(client, home, {})]);
+            for (const file of candidates) {
+              try {
+                const text = read(file);
+                if (text === null) continue;
+                const entries = servers(client, document(client, text));
+                for (const entry of Object.values(entries)) {
+                  inspectServerEntry(entry);
+                }
+              } catch {
+                uncertainReference = true;
+              }
             }
           }
-        } catch {
-          uncertainReference = true;
-        }
-      }
 
-      const installsPath = path.join(sharedRoot, 'installs.json');
-      if (fs.existsSync(installsPath)) {
-        const raw = read(installsPath);
-        if (raw === null) throw new Error('Unreadable installs.json');
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(raw);
-        } catch {
-          throw new Error('Malformed installs.json');
-        }
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Malformed installs.json');
-        for (const key of ['path', 'pathV2'] as const) {
-          const pathRecord = (parsed as Record<string, unknown>)[key];
-          if (pathRecord !== undefined) {
-            const pRuntime = pathRecord && typeof pathRecord === 'object' ? (pathRecord as { runtime?: unknown }).runtime : undefined;
-            if (typeof pRuntime !== 'string' || !pRuntime) throw new Error('Malformed PATH record in installs.json');
-            recordRuntimeString(pRuntime, false, true);
+          // Inspect VS Code profile mcp.json files (local globalStorage profile and any recorded in vscode-mcp.json).
+          const mcpFiles = new Set<string>();
+          if (isGlobalStorage) {
+            mcpFiles.add(path.join(path.dirname(path.dirname(resolvedRoot)), 'mcp.json'));
           }
-        }
-      }
-
-      const shimPath = path.join(sharedRoot, 'bin', 'coagent8.cmd');
-      if (fs.existsSync(shimPath)) {
-        let shimContent: string;
-        try {
-          shimContent = readBoundedFileSync(shimPath, POINTER_LIMIT);
-        } catch {
-          throw new Error('Unreadable PATH shim');
-        }
-        const matches = [...shimContent.matchAll(/runtime[\\/]([a-f0-9]{64}|current|dev)[\\/]/gi)];
-        for (const match of matches) {
-          const segment = match[1]!.toLowerCase();
-          if (SHA256_HEX.test(segment)) referencedDigests.add(segment);
-          else if (segment === 'current' || segment === 'dev') referencedNamespaces.add(segment);
-        }
-        const shimNorm = normalizeMatch(shimContent);
-        if ((shimNorm.includes(runtimesNorm) || shimNorm.includes('.coagent8/runtime')) && matches.length === 0) {
-          uncertainReference = true;
-        }
-      }
-
-      // Inspect pointer files for referenced namespaces (or all namespaces if keeping stable namespaces).
-      for (const ns of ['current', 'dev'] as const) {
-        const pointerFile = runtimePointerPath(resolvedRoot, ns);
-        if (!fs.existsSync(pointerFile)) continue;
-        const pointer = readRuntimePointer(resolvedRoot, ns);
-        if (!pointer) continue;
-        if (referencedNamespaces.has(ns)) {
-          referencedDigests.add(pointer.digest);
-          if (pointer.pinned) referencedDigests.add(pointer.pinned.digest);
-        }
-      }
-
-      // Inspect per-process runtime leases. Unreadable/uncertain leases count as in use.
-      const leasesDir = runtimeLeasesDir(resolvedRoot);
-      let uncertainLeasePresent = false;
-      if (fs.existsSync(leasesDir)) {
-        for (const entry of fs.readdirSync(leasesDir)) {
-          const leasePath = path.join(leasesDir, entry);
-          let stat: fs.Stats;
-          try {
-            stat = fs.statSync(leasePath);
-          } catch {
-            uncertainLeasePresent = true;
-            continue;
-          }
-          if (!stat.isFile()) continue;
-          if (entry.includes('.tmp.')) {
-            if (Date.now() - stat.mtimeMs < 60_000) uncertainLeasePresent = true;
-            else fs.rmSync(leasePath, { force: true });
-            continue;
-          }
-          let parsed: RuntimeLease | null = null;
-          try {
-            parsed = parseLeaseRecord(JSON.parse(readBoundedFileSync(leasePath, LEASE_LIMIT)));
-          } catch {
-            uncertainLeasePresent = true;
-            continue;
-          }
-          if (!parsed) {
-            uncertainLeasePresent = true;
-            continue;
-          }
-          const state = evaluateRuntimeLease(parsed, stat.mtimeMs, options.checkProcessIdentity);
-          if (state === 'dead') {
-            fs.rmSync(leasePath, { force: true });
-          } else {
-            referencedDigests.add(parsed.digest);
-          }
-        }
-      }
-
-      if (uncertainReference || uncertainLeasePresent) {
-        // Uncertain host reference or lease cannot safely narrow down which copy is running: preserve all copies.
-        const kept = fs.existsSync(runtimes) ? fs.readdirSync(runtimes).filter(name => SHA256_HEX.test(name)) : [];
-        return { removed: [], kept };
-      }
-
-      const removed: string[] = [];
-      const kept: string[] = [];
-      if (fs.existsSync(runtimes)) {
-        for (const name of fs.readdirSync(runtimes)) {
-          const dirPath = path.join(runtimes, name);
-          if (SHA256_HEX.test(name)) {
-            if (referencedDigests.has(name)) {
-              kept.push(name);
-            } else if (!removePreLeaseCopies && !isLeaseCapableCopy(dirPath)) {
-              // Copies without `.lease-capable` may still be executing in pre-lease processes (no leases);
-              // automatic and explicit runtime cleanups keep them indefinitely, and only full uninstall removes them.
-              kept.push(name);
-            } else if (removeRuntimeDirectory(dirPath)) {
-              removed.push(name);
-            } else {
-              kept.push(name);
+          const vscodeMcpFile = path.join(sharedRoot, 'vscode-mcp.json');
+          if (fs.existsSync(vscodeMcpFile)) {
+            try {
+              const text = read(vscodeMcpFile);
+              if (text === null) {
+                uncertainReference = true;
+              } else {
+                const record = json(text);
+                for (const profileFile of Object.keys(record)) {
+                  mcpFiles.add(profileFile);
+                }
+              }
+            } catch {
+              uncertainReference = true;
             }
-          } else if ((name === 'current' || name === 'dev') && !referencedNamespaces.has(name)) {
-            fs.rmSync(dirPath, { recursive: true, force: true });
           }
-        }
-        if (fs.existsSync(leasesDir) && fs.readdirSync(leasesDir).length === 0) {
-          fs.rmdirSync(leasesDir);
-        }
-        if (fs.readdirSync(runtimes).length === 0) {
-          fs.rmdirSync(runtimes);
-        }
-      }
-      return { removed, kept };
-    },
-    options.leaseTimeoutMs ?? RUNTIME_LOCK_TIMEOUT_MS,
+          for (const mcpFile of mcpFiles) {
+            try {
+              const text = read(mcpFile);
+              if (text === null) continue;
+              const parsed = json(text);
+              if (parsed.servers !== undefined) {
+                if (!parsed.servers || typeof parsed.servers !== 'object' || Array.isArray(parsed.servers)) {
+                  uncertainReference = true;
+                  continue;
+                }
+                for (const entry of Object.values(parsed.servers as Record<string, unknown>)) {
+                  inspectServerEntry(entry);
+                }
+              }
+            } catch {
+              uncertainReference = true;
+            }
+          }
+
+          const installsPath = path.join(sharedRoot, 'installs.json');
+          if (fs.existsSync(installsPath)) {
+            const raw = read(installsPath);
+            if (raw === null) throw new Error('Unreadable installs.json');
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(raw);
+            } catch {
+              throw new Error('Malformed installs.json');
+            }
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Malformed installs.json');
+            for (const key of ['path', 'pathV2'] as const) {
+              const pathRecord = (parsed as Record<string, unknown>)[key];
+              if (pathRecord !== undefined) {
+                const pRuntime = pathRecord && typeof pathRecord === 'object' ? (pathRecord as { runtime?: unknown }).runtime : undefined;
+                if (typeof pRuntime !== 'string' || !pRuntime) throw new Error('Malformed PATH record in installs.json');
+                recordRuntimeString(pRuntime, false, true);
+              }
+            }
+          }
+
+          const shimPath = path.join(sharedRoot, 'bin', 'coagent8.cmd');
+          if (fs.existsSync(shimPath)) {
+            let shimContent: string;
+            try {
+              shimContent = readBoundedFileSync(shimPath, POINTER_LIMIT);
+            } catch {
+              throw new Error('Unreadable PATH shim');
+            }
+            const matches = [...shimContent.matchAll(/runtime[\\/]([a-f0-9]{64}|current|dev)[\\/]/gi)];
+            for (const match of matches) {
+              const segment = match[1]!.toLowerCase();
+              if (SHA256_HEX.test(segment)) referencedDigests.add(segment);
+              else if (segment === 'current' || segment === 'dev') referencedNamespaces.add(segment);
+            }
+            const shimNorm = normalizeMatch(shimContent);
+            if ((shimNorm.includes(runtimesNorm) || shimNorm.includes('.coagent8/runtime')) && matches.length === 0) {
+              uncertainReference = true;
+            }
+          }
+
+          // Inspect pointer files for referenced namespaces (or all namespaces if keeping stable namespaces).
+          for (const ns of ['current', 'dev'] as const) {
+            const pointerFile = runtimePointerPath(resolvedRoot, ns);
+            if (!fs.existsSync(pointerFile)) continue;
+            const pointer = readRuntimePointer(resolvedRoot, ns);
+            if (!pointer) continue;
+            if (referencedNamespaces.has(ns)) {
+              referencedDigests.add(pointer.digest);
+              if (pointer.pinned) referencedDigests.add(pointer.pinned.digest);
+            }
+          }
+
+          // Inspect per-process runtime leases. Unreadable/uncertain leases count as in use.
+          const leasesDir = runtimeLeasesDir(resolvedRoot);
+          let uncertainLeasePresent = false;
+          if (fs.existsSync(leasesDir)) {
+            for (const entry of fs.readdirSync(leasesDir)) {
+              const leasePath = path.join(leasesDir, entry);
+              let stat: fs.Stats;
+              try {
+                stat = fs.statSync(leasePath);
+              } catch {
+                uncertainLeasePresent = true;
+                continue;
+              }
+              if (!stat.isFile()) continue;
+              if (entry.includes('.tmp.')) {
+                if (Date.now() - stat.mtimeMs < 60_000) uncertainLeasePresent = true;
+                else fs.rmSync(leasePath, { force: true });
+                continue;
+              }
+              let parsed: RuntimeLease | null = null;
+              try {
+                parsed = parseLeaseRecord(JSON.parse(readBoundedFileSync(leasePath, LEASE_LIMIT)));
+              } catch {
+                uncertainLeasePresent = true;
+                continue;
+              }
+              if (!parsed) {
+                uncertainLeasePresent = true;
+                continue;
+              }
+              const state = evaluateRuntimeLease(parsed, stat.mtimeMs, options.checkProcessIdentity);
+              if (state === 'dead') {
+                fs.rmSync(leasePath, { force: true });
+              } else {
+                referencedDigests.add(parsed.digest);
+              }
+            }
+          }
+
+          if (uncertainReference || uncertainLeasePresent) {
+            // Uncertain host reference or lease cannot safely narrow down which copy is running: preserve all copies.
+            const kept = fs.existsSync(runtimes) ? fs.readdirSync(runtimes).filter(name => SHA256_HEX.test(name)) : [];
+            return { removed: [], kept };
+          }
+
+          const removed: string[] = [];
+          const kept: string[] = [];
+          if (fs.existsSync(runtimes)) {
+            for (const name of fs.readdirSync(runtimes)) {
+              const dirPath = path.join(runtimes, name);
+              if (SHA256_HEX.test(name)) {
+                if (referencedDigests.has(name)) {
+                  kept.push(name);
+                } else if (!removePreLeaseCopies && !isLeaseCapableCopy(dirPath)) {
+                  // Copies without `.lease-capable` may still be executing in pre-lease processes (no leases);
+                  // automatic and explicit runtime cleanups keep them indefinitely, and only full uninstall removes them.
+                  kept.push(name);
+                } else if (removeRuntimeDirectory(dirPath)) {
+                  removed.push(name);
+                } else {
+                  kept.push(name);
+                }
+              } else if ((name === 'current' || name === 'dev') && !referencedNamespaces.has(name)) {
+                fs.rmSync(dirPath, { recursive: true, force: true });
+              }
+            }
+            if (fs.existsSync(leasesDir) && fs.readdirSync(leasesDir).length === 0) {
+              fs.rmdirSync(leasesDir);
+            }
+            if (fs.readdirSync(runtimes).length === 0) {
+              fs.rmdirSync(runtimes);
+            }
+          }
+          return { removed, kept };
+        },
+        options.leaseTimeoutMs ?? RUNTIME_LOCK_TIMEOUT_MS,
+      ),
+    options.leaseTimeoutMs ?? RUNTIME_UPDATE_LOCK_TIMEOUT_MS,
   );
 }
 

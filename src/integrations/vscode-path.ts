@@ -753,7 +753,10 @@ export async function removePathIntegration(
       writeRecordFile(home, records);
       const root = path.join(home, '.coagent8');
       try {
-        await cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: false });
+        await cleanupUnreferencedRuntimes(root, home, process.env, {
+          keepStableNamespaces: false,
+          leaseTimeoutMs: Math.max(100, timeRemaining()),
+        });
       } catch {}
       return { action: 'removed', environmentNotified };
     },
