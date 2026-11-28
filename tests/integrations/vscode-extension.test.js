@@ -2874,6 +2874,49 @@ test('VS Code extension PATH opt-in prompt lifecycle and explicit commands', asy
     assert.equal(manualRemove.notifications.length, 2);
     assert.match(manualRemove.notifications[0].message, /Remove 'coagent8' from your user PATH\?/);
     assert.equal(manualRemove.notifications[1].message, 'CoAgent8 has been removed from your user PATH.');
+
+    // Scenario 5: coagent8.addPath refuses to publish an unverified bundle and preserves incumbent pointer
+    const {
+      installAndSelectVerifiedRuntime,
+      readRuntimePointer,
+      coagentRootForHome,
+    } = require('../../src/integrations/runtime-manager.ts');
+    const healthyBundle = path.join(manualHome, 'healthy-v1.cjs');
+    fs.writeFileSync(
+      healthyBundle,
+      [
+        "const rl = require('node:readline').createInterface({ input: process.stdin });",
+        "rl.on('line', line => {",
+        '  if (!line.trim()) return;',
+        '  const msg = JSON.parse(line);',
+        "  if (msg.method === 'initialize') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { serverInfo: { name: 'coagent8' } } }) + '\\n');",
+        "  else if (msg.method === 'tools/list') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'doctor' }] } }) + '\\n');",
+        '});',
+      ].join('\n'),
+    );
+    const incumbent = await installAndSelectVerifiedRuntime({
+      home: manualHome,
+      runtimeSource: healthyBundle,
+      version: '0.7.0',
+      nodePath: process.execPath,
+    });
+    const failedAdd = await runExtension({
+      home: manualHome,
+      command: 'coagent8.addPath',
+      storedState: { welcomed: true, pathPrompt: 'declined' },
+      action: 'Yes',
+      extensionVersion: '0.8.0',
+      runtimeBundle: 'process.exit(1);\n',
+      nodePath: process.execPath,
+      awaitNotifications: 1,
+    });
+    assert.equal(failedAdd.state.pathPrompt, 'declined', 'pathPrompt stays declined on verification failure');
+    assert.equal(failedAdd.pathAdapter.writes.length, 0, 'PATH not modified on verification failure');
+    assert.deepEqual(readRuntimePointer(coagentRootForHome(manualHome), 'current').digest, incumbent.digest, 'incumbent pointer kept');
+    assert.ok(
+      failedAdd.errors.some(msg => /^Failed to add CoAgent8 to PATH: Runtime verification failed:/.test(msg)),
+      `expected clear PATH verification error, got ${JSON.stringify(failedAdd.errors)}`,
+    );
   } finally {
     fs.rmSync(manualHome, { recursive: true, force: true });
   }
@@ -3577,4 +3620,230 @@ test('bulk actions refuse intervening selection changes and notice/Manage Skills
   assert.ok(updateLockCalls >= 1);
   assert.match(updateChangedSelection.warnings.at(-1), /Failed for Claude Code CLI \(Skill selection changed; run it again\.\)/);
   assert.deepEqual(JSON.parse(fs.readFileSync(configFile, 'utf8')).backends.claude.skills, intervenedSelection);
+});
+
+test('bulk skill Update all and Reinstall all handle concurrent updates between preview and apply', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-skills-concurrent-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const home = path.join(root, 'home');
+  const catalogV1 = path.join(root, 'catalog-v1');
+  const catalogV2 = path.join(root, 'catalog-v2');
+  const sourceCatalog = path.resolve(__dirname, '../../skills');
+  fs.cpSync(sourceCatalog, catalogV1, { recursive: true });
+  fs.cpSync(sourceCatalog, catalogV2, { recursive: true });
+  fs.appendFileSync(path.join(catalogV2, 'coagent8-review', 'SKILL.md'), '\nConcurrent v2.\n');
+
+  const { manageSkills, skillSelectionForAction } = require('../../src/integrations/skill-management.ts');
+  const { readSkillCatalog, skillRoot } = require('../../src/integrations/skills.ts');
+  const fingerprintV2 = require('node:crypto')
+    .createHash('sha256')
+    .update(
+      JSON.stringify(
+        readSkillCatalog(catalogV2)
+          .map(pkg => [pkg.name, pkg.digest])
+          .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+      ),
+    )
+    .digest('hex');
+  const offeredV2 = {
+    welcomed: true,
+    pathPrompt: 'accepted',
+    skillsOffered: { codex: fingerprintV2, claude: fingerprintV2, agy: fingerprintV2 },
+  };
+  const envForHome = () => {
+    const env = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      CODEX_HOME: path.join(home, '.codex'),
+      coagent8_CONFIG: path.join(home, '.coagent8/config.json'),
+    };
+    delete env.CODEX_CONFIG_PATH;
+    delete env.CLAUDE_CONFIG_DIR;
+    delete env.GEMINI_CLI_HOME;
+    return env;
+  };
+  const install = async (client, catalog, names) => {
+    const opts = { client, home, env: envForHome(), skillsSource: catalog };
+    const cur = await manageSkills(opts);
+    const sel = skillSelectionForAction(cur.selection, names, 'install');
+    const prev = await manageSkills({ ...opts, selection: sel });
+    await manageSkills({ ...opts, selection: sel, apply: prev.token });
+  };
+  const concurrentUpdate = async (client, catalog) => {
+    const opts = { client, home, env: envForHome(), skillsSource: catalog };
+    const cur = await manageSkills(opts);
+    const prev = await manageSkills({ ...opts, selection: cur.selection });
+    await manageSkills({ ...opts, selection: cur.selection, apply: prev.token });
+  };
+
+  // 1. Update all: another window updates Codex CLI between preview and apply; Codex is counted as up to date (skipped) and Claude Code CLI updates.
+  await install('codex', catalogV1, ['coagent8-review']);
+  await install('claude', catalogV1, ['coagent8-review']);
+  let call1 = 0;
+  const sameClientAlreadyUpdated = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: offeredV2,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(sync) Update all' }],
+    onBeforeSkillApply: async () => {
+      call1++;
+      // 1st setup.lease is codex apply after codex preview.
+      if (call1 === 1) await concurrentUpdate('codex', catalogV2);
+    },
+  });
+  assert.equal(
+    sameClientAlreadyUpdated.warnings.length,
+    0,
+    `no false failure warning: ${JSON.stringify(sameClientAlreadyUpdated.warnings)}`,
+  );
+  assert.match(sameClientAlreadyUpdated.notifications.at(-1).message, /^Updated CoAgent8 skills for Claude Code CLI \(1\)\./);
+  assert.deepEqual(
+    fs.readFileSync(path.join(skillRoot('codex', home), 'coagent8-review', 'SKILL.md'), 'utf8'),
+    fs.readFileSync(path.join(catalogV2, 'coagent8-review', 'SKILL.md'), 'utf8'),
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(skillRoot('claude', home), 'coagent8-review', 'SKILL.md'), 'utf8'),
+    fs.readFileSync(path.join(catalogV2, 'coagent8-review', 'SKILL.md'), 'utf8'),
+  );
+
+  // 2. Update all: when all remaining clients were already updated concurrently, notice says already up to date.
+  await install('codex', catalogV1, ['coagent8-review']);
+  await concurrentUpdate('claude', catalogV2);
+  let call2 = 0;
+  const allAlreadyUpdated = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: offeredV2,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(sync) Update all' }],
+    onBeforeSkillApply: async () => {
+      call2++;
+      if (call2 === 1) await concurrentUpdate('codex', catalogV2);
+    },
+  });
+  assert.equal(allAlreadyUpdated.warnings.length, 0);
+  assert.equal(allAlreadyUpdated.notifications.at(-1).message, 'CoAgent8 skills are already up to date.');
+
+  // 3. Update all: another window updates Claude between Codex's preview and apply (Codex still outdated -> retries once and succeeds).
+  await install('codex', catalogV1, ['coagent8-review']);
+  await install('claude', catalogV1, ['coagent8-review']);
+  let call3 = 0;
+  const otherClientUpdated = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: offeredV2,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(sync) Update all' }],
+    onBeforeSkillApply: async () => {
+      call3++;
+      if (call3 === 1) await concurrentUpdate('claude', catalogV2);
+    },
+  });
+  assert.equal(otherClientUpdated.warnings.length, 0, `no failure on single retry: ${JSON.stringify(otherClientUpdated.warnings)}`);
+  assert.match(otherClientUpdated.notifications.at(-1).message, /^Updated CoAgent8 skills for Codex CLI \(1\)\./);
+  assert.deepEqual(
+    fs.readFileSync(path.join(skillRoot('codex', home), 'coagent8-review', 'SKILL.md'), 'utf8'),
+    fs.readFileSync(path.join(catalogV2, 'coagent8-review', 'SKILL.md'), 'utf8'),
+  );
+
+  // 4. Update all: a second preview mismatch on retry is reported as a failure.
+  await install('codex', catalogV1, ['coagent8-review']);
+  await install('claude', catalogV1, ['coagent8-review']);
+  await install('agy', catalogV1, ['coagent8-review']);
+  let call4 = 0;
+  const secondMismatch = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: offeredV2,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(sync) Update all' }],
+    onBeforeSkillApply: async () => {
+      call4++;
+      if (call4 === 1) await concurrentUpdate('claude', catalogV2);
+      else if (call4 === 2) await concurrentUpdate('agy', catalogV2);
+    },
+  });
+  assert.match(secondMismatch.warnings.at(-1), /Failed for Codex CLI \(Skill preview changed; inspect a fresh preview before applying\.\)/);
+
+  // 5. Reinstall all: another window updates another client (setup.json changes, targeted roots unchanged) -> retries once and succeeds.
+  const uninstall = async (client, catalog, names) => {
+    const opts = { client, home, env: envForHome(), skillsSource: catalog };
+    const cur = await manageSkills(opts);
+    const sel = skillSelectionForAction(cur.selection, names, 'uninstall');
+    const prev = await manageSkills({ ...opts, selection: sel });
+    await manageSkills({ ...opts, selection: sel, apply: prev.token });
+  };
+  await uninstall('claude', catalogV2, ['coagent8-review']);
+  await uninstall('agy', catalogV2, ['coagent8-review']);
+  await install('codex', catalogV2, ['coagent8-review']);
+  let call5 = 0;
+  const reinstallRetrySuccess = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: offeredV2,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(refresh) Reinstall all' }],
+    onBeforeSkillApply: async () => {
+      call5++;
+      if (call5 === 1) await install('claude', catalogV2, ['coagent8-review']);
+    },
+  });
+  assert.equal(
+    reinstallRetrySuccess.warnings.length,
+    0,
+    `no failure on reinstall retry: ${JSON.stringify(reinstallRetrySuccess.warnings)}`,
+  );
+  assert.match(reinstallRetrySuccess.notifications.at(-1).message, /^Reinstalled CoAgent8 skills for Codex CLI \(1\)\./);
+
+  // 6. Reinstall all: another window cleanly updates the same client's outdated skills between preview and apply -> counted as skipped, no false failure.
+  await install('codex', catalogV1, ['coagent8-review']);
+  let call6 = 0;
+  const reinstallSameUpdated = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: offeredV2,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(refresh) Reinstall all' }],
+    onBeforeSkillApply: async () => {
+      call6++;
+      if (call6 === 1) await concurrentUpdate('codex', catalogV2);
+    },
+  });
+  assert.equal(
+    reinstallSameUpdated.warnings.length,
+    0,
+    `no false failure when concurrent window updated same client: ${JSON.stringify(reinstallSameUpdated.warnings)}`,
+  );
+  assert.match(reinstallSameUpdated.notifications.at(-1).message, /^Reinstalled CoAgent8 skills for Claude Code CLI \(1\)\./);
+
+  // 7. Reinstall all: a second preview mismatch on retry is reported as a failure.
+  await uninstall('claude', catalogV2, ['coagent8-review']);
+  await uninstall('agy', catalogV2, ['coagent8-review']);
+  await install('codex', catalogV2, ['coagent8-review']);
+  let call7 = 0;
+  const reinstallSecondMismatch = await runExtension({
+    home,
+    skillProfile: true,
+    skillsSource: catalogV2,
+    storedState: offeredV2,
+    command: 'coagent8.manageSkills',
+    steps: [{ label: '$(refresh) Reinstall all' }],
+    onBeforeSkillApply: async () => {
+      call7++;
+      if (call7 === 1) await install('claude', catalogV2, ['coagent8-review']);
+      else if (call7 === 2) await install('agy', catalogV2, ['coagent8-review']);
+    },
+  });
+  assert.match(
+    reinstallSecondMismatch.warnings.at(-1),
+    /Failed for Codex CLI \(Skill preview changed; inspect a fresh preview before applying\.\)/,
+  );
 });

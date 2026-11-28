@@ -14,7 +14,12 @@ import path from 'node:path';
 import cp from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { hash, classifyRuntimePath, extractRuntimeVersion, newerVersion } from './setup-storage.js';
-import { cleanupUnreferencedRuntimes, coagentRootForHome, installAndSelectRuntime } from './runtime-manager.js';
+import {
+  cleanupUnreferencedRuntimes,
+  coagentRootForHome,
+  installAndSelectRuntime,
+  installAndSelectVerifiedRuntime,
+} from './runtime-manager.js';
 import { withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { redactDiagnostic } from '../security/redaction.js';
@@ -223,6 +228,12 @@ export interface PathOptInOptions {
   bundle: string;
   nodePath?: string;
   version?: string;
+  /** Environment used to resolve `nodePath` and run the MCP verification probe. */
+  env?: NodeJS.ProcessEnv;
+  /** Working directory for the MCP verification probe; defaults to `home`. */
+  cwd?: string;
+  /** Additional environment variables injected into the probed runtime. */
+  probeEnv?: Record<string, string>;
 }
 
 export interface PathEnableResult {
@@ -437,13 +448,22 @@ export async function enablePathIntegration(
       .map(p => p.trim())
       .filter(Boolean);
 
-    const installed = await installAndSelectRuntime({
-      home: options.home,
-      runtimeSource: options.bundle,
-      version: options.version,
-    });
-    const runtimeTarget = installed.launcherPath;
     const nodeExec = options.nodePath?.trim() || 'node';
+    let installed;
+    try {
+      installed = await installAndSelectVerifiedRuntime({
+        home: options.home,
+        runtimeSource: options.bundle,
+        version: options.version,
+        nodePath: nodeExec,
+        env: options.env,
+        cwd: options.cwd ?? options.home,
+        probeEnv: options.probeEnv,
+      });
+    } catch (err) {
+      throw new Error(`Runtime verification failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const runtimeTarget = installed.launcherPath;
     const shimContent = generateShimContent(nodeExec, runtimeTarget);
     const shimDigest = hash(shimContent);
 

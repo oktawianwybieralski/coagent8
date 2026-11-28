@@ -55,6 +55,19 @@ class MockPathAdapter {
   }
 }
 
+function validFixtureBundle(tag = 'v1') {
+  return [
+    `/* bundle ${tag} */`,
+    "const rl = require('node:readline').createInterface({ input: process.stdin });",
+    "rl.on('line', line => {",
+    '  if (!line.trim()) return;',
+    '  const msg = JSON.parse(line);',
+    "  if (msg.method === 'initialize') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { serverInfo: { name: 'coagent8' } } }) + '\\n');",
+    "  else if (msg.method === 'tools/list') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'doctor' }] } }) + '\\n');",
+    '});',
+  ].join('\n');
+}
+
 function fixture(t, { product = 'Code', prefix = 'coagent8-path-test-' } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -62,7 +75,7 @@ function fixture(t, { product = 'Code', prefix = 'coagent8-path-test-' } = {}) {
   const installation = path.join(root, product === 'Code' ? '.vscode' : '.vscode-insiders', 'extensions');
   const bundle = path.join(root, 'extension/dist/index.cjs');
   fs.mkdirSync(path.dirname(bundle), { recursive: true });
-  fs.writeFileSync(bundle, '/* bundle v1 */');
+  fs.writeFileSync(bundle, validFixtureBundle('v1'));
   const home = path.join(root, 'home');
   fs.mkdirSync(home, { recursive: true });
   return { root, storage, installation, bundle, home };
@@ -706,3 +719,87 @@ test(
     assert.notEqual(rt2, rt1, 'shim invokes the newly updated runtime copy');
   },
 );
+
+test('enablePathIntegration probes runtime before switching pointer, keeps incumbent on failure, and reports a clear error', async t => {
+  const { readRuntimePointer, coagentRootForHome } = require('../../src/integrations/runtime-manager.ts');
+
+  // 1. No incumbent: broken bundle fails verification before publishing pointer, shim, record, or PATH.
+  {
+    const f = fixture(t);
+    const brokenBundle = path.join(f.root, 'broken/dist/index.cjs');
+    fs.mkdirSync(path.dirname(brokenBundle), { recursive: true });
+    fs.writeFileSync(brokenBundle, 'process.exit(1);\n');
+    const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+
+    await assert.rejects(
+      () =>
+        enablePathIntegration(
+          {
+            home: f.home,
+            storage: f.storage,
+            installation: f.installation,
+            bundle: brokenBundle,
+            nodePath: process.execPath,
+            version: '0.8.0',
+          },
+          adapter,
+        ),
+      /Runtime verification failed:.*Probe process exited/,
+    );
+    const root = coagentRootForHome(f.home);
+    assert.equal(readRuntimePointer(root, 'current'), null, 'no pointer published for unverified bundle');
+    assert.equal(fs.existsSync(path.join(f.home, '.coagent8', 'bin', 'coagent8.cmd')), false, 'no shim written');
+    assert.equal(readPathRecord(f.home), undefined, 'no installs.json path record written');
+    assert.equal(adapter.writes.length, 0, 'PATH untouched');
+  }
+
+  // 2. Existing healthy incumbent (0.7.0): newer broken bundle (0.8.0) keeps incumbent pointer and existing PATH/shim intact.
+  {
+    const f = fixture(t);
+    const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+    await enablePathIntegration(
+      { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: process.execPath, version: '0.7.0' },
+      adapter,
+    );
+    const root = coagentRootForHome(f.home);
+    const incumbentBefore = readRuntimePointer(root, 'current');
+    assert.equal(incumbentBefore.version, '0.7.0');
+    const recordBefore = readPathRecord(f.home);
+    const shimBefore = fs.readFileSync(recordBefore.shimPath, 'utf8');
+    const writesBefore = adapter.writes.length;
+
+    const brokenNewer = path.join(f.root, 'ext-v2/dist/index.cjs');
+    fs.mkdirSync(path.dirname(brokenNewer), { recursive: true });
+    fs.writeFileSync(
+      brokenNewer,
+      [
+        "const rl = require('node:readline').createInterface({ input: process.stdin });",
+        "rl.on('line', line => {",
+        '  if (!line.trim()) return;',
+        '  const msg = JSON.parse(line);',
+        "  if (msg.method === 'initialize') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { serverInfo: { name: 'other-server' } } }) + '\\n');",
+        '});',
+      ].join('\n'),
+    );
+
+    await assert.rejects(
+      () =>
+        enablePathIntegration(
+          {
+            home: f.home,
+            storage: f.storage,
+            installation: path.join(f.root, '.vscode-insiders', 'extensions'),
+            bundle: brokenNewer,
+            nodePath: process.execPath,
+            version: '0.8.0',
+          },
+          adapter,
+        ),
+      /Runtime verification failed:.*not CoAgent8/,
+    );
+    assert.deepEqual(readRuntimePointer(root, 'current'), incumbentBefore, 'incumbent pointer preserved on probe failure');
+    assert.equal(fs.readFileSync(recordBefore.shimPath, 'utf8'), shimBefore, 'shim preserved');
+    assert.deepEqual(readPathRecord(f.home), recordBefore, 'path record preserved');
+    assert.equal(adapter.writes.length, writesBefore, 'no extra PATH write');
+  }
+});

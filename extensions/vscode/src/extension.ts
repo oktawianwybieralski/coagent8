@@ -746,6 +746,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
           if (pathChoice === 'Yes') {
             const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
             try {
+              if (!nodePath) throw new Error('Configure coagent8.nodePath with a Node.js 24+ executable.');
               const res = await enablePathIntegration(
                 {
                   home: os.homedir(),
@@ -754,6 +755,8 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
                   bundle: context.asAbsolutePath('dist/index.cjs'),
                   nodePath,
                   version,
+                  env: setupEnvironment(),
+                  cwd: os.homedir(),
                 },
                 activePathAdapter(),
               );
@@ -1034,6 +1037,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
     const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
     try {
+      if (!nodePath) throw new Error('Configure coagent8.nodePath with a Node.js 24+ executable.');
       const res = await trackTask(
         enablePathIntegration(
           {
@@ -1043,6 +1047,8 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
             bundle: context.asAbsolutePath('dist/index.cjs'),
             nodePath,
             version,
+            env: setupEnvironment(),
+            cwd: os.homedir(),
           },
           activePathAdapter(),
         ),
@@ -1315,6 +1321,10 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       if (!isDeactivating && choice === 'Show Details') showDetails(details);
     });
   }
+  const isSameSelection = (a: SkillManagementResult['selection'], b: SkillManagementResult['selection']) =>
+    JSON.stringify({ installed: [...a.installed].sort(), disabled: [...a.disabled].sort() }) ===
+    JSON.stringify({ installed: [...b.installed].sort(), disabled: [...b.disabled].sort() });
+  const isSkillPreviewChanged = (error: unknown) => error instanceof Error && /Skill preview changed/.test(error.message);
   /** Applies each client's current skill selection unchanged to refresh outdated non-conflict packages and catalog removals. */
   async function updateAllSkills(expectedSelections?: Partial<Record<SetupClient, SkillManagementResult['selection']>>): Promise<void> {
     const outcome: BulkSkillOutcome = { succeeded: [], preserved: [], failed: [], skipped: [] };
@@ -1323,10 +1333,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       try {
         const current = await startTracked(() => manageSkills(skillOptions));
         const expected = expectedSelections?.[client] ?? current.selection;
-        if (
-          JSON.stringify({ installed: [...expected.installed].sort(), disabled: [...expected.disabled].sort() }) !==
-          JSON.stringify({ installed: [...current.selection.installed].sort(), disabled: [...current.selection.disabled].sort() })
-        ) {
+        if (!isSameSelection(expected, current.selection)) {
           throw new Error('Skill selection changed; run it again.');
         }
         const outdatedCount = updateCountOf(current);
@@ -1336,13 +1343,32 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
           if (copies.length) outcome.preserved.push({ client, copies });
           continue;
         }
-        const preview = await startTracked(() =>
-          manageSkills({ ...skillOptions, selection: current.selection, expectedSelection: expected }),
-        );
-        const result = await startTracked(() =>
-          manageSkills({ ...skillOptions, selection: current.selection, expectedSelection: expected, apply: preview.token }),
-        );
-        outcome.succeeded.push({ client, count: outdatedCount, result });
+        const previewAndApply = async (selection: SkillManagementResult['selection']) => {
+          const preview = await startTracked(() => manageSkills({ ...skillOptions, selection, expectedSelection: expected }));
+          return startTracked(() => manageSkills({ ...skillOptions, selection, expectedSelection: expected, apply: preview.token }));
+        };
+        let appliedCount = outdatedCount;
+        let result: SkillManagementResult;
+        try {
+          result = await previewAndApply(current.selection);
+        } catch (applyError) {
+          if (!isSkillPreviewChanged(applyError)) throw applyError;
+          // Another VS Code window may have updated skills between preview and apply; re-inspect once before failing.
+          const fresh = await startTracked(() => manageSkills(skillOptions));
+          if (!isSameSelection(expected, fresh.selection)) {
+            throw new Error('Skill selection changed; run it again.');
+          }
+          const freshOutdated = updateCountOf(fresh);
+          if (!freshOutdated) {
+            outcome.skipped.push(fresh);
+            const copies = preservedCopiesOf(fresh);
+            if (copies.length) outcome.preserved.push({ client, copies });
+            continue;
+          }
+          appliedCount = freshOutdated;
+          result = await previewAndApply(fresh.selection);
+        }
+        outcome.succeeded.push({ client, count: appliedCount, result });
         const copies = preservedCopiesOf(result);
         if (copies.length) outcome.preserved.push({ client, copies });
       } catch (error) {
@@ -1372,11 +1398,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       try {
         const current = await startTracked(() => manageSkills(skillOptions));
         const expected = expectedSelections?.[client];
-        if (
-          expected &&
-          JSON.stringify({ installed: [...expected.installed].sort(), disabled: [...expected.disabled].sort() }) !==
-            JSON.stringify({ installed: [...current.selection.installed].sort(), disabled: [...current.selection.disabled].sort() })
-        ) {
+        if (expected && !isSameSelection(expected, current.selection)) {
           throw new Error('Skill selection changed; run it again.');
         }
         const overwriteNames = current.selection.installed.filter(name => !hasForeignRoot(current, name));
@@ -1417,22 +1439,21 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         return obs;
       });
       try {
-        const preview = await startTracked(() =>
-          manageSkills({
-            ...skillOptions,
-            selection: entry.status.selection,
-            expectedSelection: entry.status.selection,
-            overwrite,
-          }),
-        );
-        // Verify every targeted package's enabled and disabled roots match what the user confirmed.
-        const changedRoots = findChangedRoots(overwrite, preview.observations);
-        if (changedRoots.length) {
-          throw new Error(`Changed after confirmation: ${changedRoots.join(', ')}; run Reinstall all again.`);
-        }
-        let result: SkillManagementResult;
-        try {
-          result = await startTracked(() =>
+        const previewAndApplyReinstall = async () => {
+          const preview = await startTracked(() =>
+            manageSkills({
+              ...skillOptions,
+              selection: entry.status.selection,
+              expectedSelection: entry.status.selection,
+              overwrite,
+            }),
+          );
+          // Verify every targeted package's enabled and disabled roots match what the user confirmed.
+          const changedRoots = findChangedRoots(overwrite, preview.observations);
+          if (changedRoots.length) {
+            throw new Error(`Changed after confirmation: ${changedRoots.join(', ')}; run Reinstall all again.`);
+          }
+          return startTracked(() =>
             manageSkills({
               ...skillOptions,
               selection: entry.status.selection,
@@ -1441,16 +1462,34 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
               apply: preview.token,
             }),
           );
+        };
+        let result: SkillManagementResult;
+        try {
+          result = await previewAndApplyReinstall();
         } catch (applyError) {
-          // If a package changed between preview and apply, inspect fresh observations to name the changed roots.
-          if (applyError instanceof Error && /Skill preview changed/.test(applyError.message)) {
-            const fresh = await startTracked(() => manageSkills(skillOptions));
-            const changedBetween = findChangedRoots(overwrite, fresh.observations);
-            if (changedBetween.length) {
-              throw new Error(`Changed after confirmation: ${changedBetween.join(', ')}; run Reinstall all again.`);
-            }
+          if (!isSkillPreviewChanged(applyError)) throw applyError;
+          // Re-inspect once when another window changes state between preview and apply.
+          const fresh = await startTracked(() => manageSkills(skillOptions));
+          if (!isSameSelection(entry.status.selection, fresh.selection)) {
+            throw new Error('Skill selection changed; run it again.');
           }
-          throw applyError;
+          const changedBetween = findChangedRoots(overwrite, fresh.observations);
+          if (changedBetween.length) {
+            const allTargetsCurrent =
+              fresh.removable.length === 0 &&
+              entry.overwriteNames.every(name => {
+                const item = fresh.skills.find(skill => skill.name === name);
+                return Boolean(item && item.state === item.desired && !item.updateAvailable);
+              });
+            if (allTargetsCurrent) {
+              outcome.skipped.push(fresh);
+              const remainingCopies = preservedCopiesOf(fresh);
+              if (remainingCopies.length) outcome.preserved.push({ client: entry.client, copies: remainingCopies });
+              continue;
+            }
+            throw new Error(`Changed after confirmation: ${changedBetween.join(', ')}; run Reinstall all again.`);
+          }
+          result = await previewAndApplyReinstall();
         }
         outcome.succeeded.push({ client: entry.client, count: overwrite.length, result });
         const remainingCopies = preservedCopiesOf(result);
