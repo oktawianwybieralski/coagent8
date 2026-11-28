@@ -149,6 +149,130 @@ function sha256(data: Buffer | string): string {
   return createHash('sha256').update(data).digest('hex');
 }
 
+function readBoundedBufferSync(file: string, limit: number, label = 'Runtime bundle'): Buffer {
+  const fd = fs.openSync(file, 'r');
+  try {
+    if (fs.fstatSync(fd).size > limit) {
+      throw new Error(`${label} exceeds ${limit} byte limit.`);
+    }
+    const buffer = Buffer.allocUnsafe(limit + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const read = fs.readSync(fd, buffer, offset, buffer.length - offset, null);
+      if (!read) break;
+      offset += read;
+    }
+    if (offset > limit) {
+      throw new Error(`${label} exceeds ${limit} byte limit.`);
+    }
+    return buffer.subarray(0, offset);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function verifyBundleDigest(filePath: string, expectedDigest: string): boolean {
+  try {
+    const stat = fs.statSync(filePath, { throwIfNoEntry: false });
+    if (!stat || !stat.isFile() || stat.size > BUNDLE_LIMIT) return false;
+    return sha256(readBoundedBufferSync(filePath, BUNDLE_LIMIT)) === expectedDigest;
+  } catch {
+    return false;
+  }
+}
+
+const SKILLS_MAX_ENTRIES = 1024;
+const SKILLS_FILE_LIMIT = 512 * 1024;
+const SKILLS_TOTAL_LIMIT = 16 * 1024 * 1024;
+
+function computeSkillsTreeDigest(rootDir: string): string | null {
+  try {
+    if (!fs.lstatSync(rootDir).isDirectory()) return null;
+  } catch {
+    return null;
+  }
+  const hasher = createHash('sha256');
+  let entryCount = 0;
+  let totalBytes = 0;
+
+  const visit = (currentDir: string, relPrefix: string): boolean => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      if (++entryCount > SKILLS_MAX_ENTRIES) return false;
+      const fullPath = path.join(currentDir, entry.name);
+      const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+      let stat: fs.Stats;
+      try {
+        stat = fs.lstatSync(fullPath);
+      } catch {
+        return false;
+      }
+      if (stat.isSymbolicLink()) return false;
+      if (stat.isDirectory()) {
+        hasher.update(`D:${relPath}\n`);
+        if (!visit(fullPath, relPath)) return false;
+      } else if (stat.isFile()) {
+        if (stat.size > SKILLS_FILE_LIMIT) return false;
+        totalBytes += stat.size;
+        if (totalBytes > SKILLS_TOTAL_LIMIT) return false;
+        try {
+          const content = readBoundedBufferSync(fullPath, SKILLS_FILE_LIMIT, 'Skill asset');
+          hasher.update(`F:${relPath}:${sha256(content)}\n`);
+        } catch {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  return visit(rootDir, '') ? hasher.digest('hex') : null;
+}
+
+function syncRuntimeSkills(sourceSkills: string, targetSkills: string): void {
+  const sourceDigest = computeSkillsTreeDigest(sourceSkills);
+  const targetDigest = computeSkillsTreeDigest(targetSkills);
+  if (sourceDigest !== null && sourceDigest === targetDigest) return;
+
+  const tempSkills = `${targetSkills}.tmp.${randomUUID()}`;
+  const backupSkills = `${targetSkills}.old.${randomUUID()}`;
+  let movedExisting = false;
+  let committed = false;
+  try {
+    fs.cpSync(sourceSkills, tempSkills, { recursive: true, force: true });
+    if (fs.lstatSync(targetSkills, { throwIfNoEntry: false })) {
+      fs.renameSync(targetSkills, backupSkills);
+      movedExisting = true;
+    }
+    fs.renameSync(tempSkills, targetSkills);
+    committed = true;
+  } catch (error) {
+    if (movedExisting && !fs.lstatSync(targetSkills, { throwIfNoEntry: false })) {
+      try {
+        fs.renameSync(backupSkills, targetSkills);
+      } catch {}
+    }
+    throw error;
+  } finally {
+    try {
+      fs.rmSync(tempSkills, { recursive: true, force: true });
+    } catch {}
+    if (committed && movedExisting) {
+      try {
+        fs.rmSync(backupSkills, { recursive: true, force: true });
+      } catch {}
+    }
+  }
+}
+
 function atomicWriteText(file: string, content: string | Buffer, mode: number): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temp = `${file}.tmp.${randomUUID()}`;
@@ -608,7 +732,7 @@ export function installAndVerifyRuntimeCopy(options: RuntimeCopyOptions): Instal
   if (sourceStat.size > BUNDLE_LIMIT) {
     throw new Error(`Runtime bundle exceeds ${BUNDLE_LIMIT} byte limit.`);
   }
-  const bundleBytes = fs.readFileSync(options.runtimeSource);
+  const bundleBytes = readBoundedBufferSync(options.runtimeSource, BUNDLE_LIMIT);
   const digest = sha256(bundleBytes);
   const version = options.version ?? extractVersionFromBundle(options.runtimeSource) ?? BRAND.SERVER_VERSION;
   if (!parseSemver(version)) {
@@ -620,10 +744,10 @@ export function installAndVerifyRuntimeCopy(options: RuntimeCopyOptions): Instal
   fs.mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
 
   const createdFreshly = !fs.existsSync(runtimePath);
-  if (createdFreshly || sha256(fs.readFileSync(runtimePath)) !== digest) {
+  if (createdFreshly || !verifyBundleDigest(runtimePath, digest)) {
     atomicWriteText(runtimePath, bundleBytes, 0o600);
   }
-  if (sha256(fs.readFileSync(runtimePath)) !== digest) {
+  if (!verifyBundleDigest(runtimePath, digest)) {
     throw new Error('Owned runtime hash mismatch after installation.');
   }
 
@@ -640,23 +764,20 @@ export function installAndVerifyRuntimeCopy(options: RuntimeCopyOptions): Instal
 
   const sourceSetup = path.join(sourceDir, 'setup.cjs');
   if (fs.existsSync(sourceSetup)) {
-    const setupBytes = fs.readFileSync(sourceSetup);
+    const setupBytes = readBoundedBufferSync(sourceSetup, BUNDLE_LIMIT, 'Setup bundle');
     const setupDigest = sha256(setupBytes);
     const targetSetup = path.join(runtimeDir, 'setup.cjs');
-    if (!fs.existsSync(targetSetup) || sha256(fs.readFileSync(targetSetup)) !== setupDigest) {
+    if (!fs.existsSync(targetSetup) || !verifyBundleDigest(targetSetup, setupDigest)) {
       atomicWriteText(targetSetup, setupBytes, 0o600);
     }
-    if (sha256(fs.readFileSync(targetSetup)) !== setupDigest) {
+    if (!verifyBundleDigest(targetSetup, setupDigest)) {
       throw new Error('Owned setup bundle hash mismatch after installation.');
     }
   }
 
   const sourceSkills = path.resolve(sourceDir, '..', 'skills');
   if (fs.existsSync(sourceSkills) && fs.statSync(sourceSkills).isDirectory()) {
-    const targetSkills = path.join(runtimeDir, 'skills');
-    if (!fs.existsSync(targetSkills)) {
-      fs.cpSync(sourceSkills, targetSkills, { recursive: true });
-    }
+    syncRuntimeSkills(sourceSkills, path.join(runtimeDir, 'skills'));
   }
 
   const versionFile = path.join(runtimeDir, 'version.json');
@@ -704,14 +825,14 @@ function planRuntimePointerSelectionLocked(
   if (!targetStat || !targetStat.isFile()) {
     throw new Error(`Runtime copy ${copy.digest.slice(0, 12)} is missing before pointer selection.`);
   }
-  if (sha256(fs.readFileSync(copy.runtimePath)) !== copy.digest) {
+  if (!verifyBundleDigest(copy.runtimePath, copy.digest)) {
     throw new Error(`Runtime copy ${copy.digest.slice(0, 12)} failed integrity verification before pointer selection.`);
   }
   const launcherPath = ensureLauncherFile(copy.root, namespace);
   const pointerFile = runtimePointerPath(copy.root, namespace);
   const existing = readRuntimePointer(copy.root, namespace);
   const existingTarget = existing ? path.join(copy.runtimeRoot, existing.digest, 'index.cjs') : null;
-  const existingHealthy = Boolean(existing && existingTarget && fs.statSync(existingTarget, { throwIfNoEntry: false })?.isFile());
+  const existingHealthy = Boolean(existing && existingTarget && verifyBundleDigest(existingTarget, existing.digest));
   const nowIso = new Date().toISOString();
 
   if (options.pin) {
@@ -914,8 +1035,7 @@ function verifyInstalledRuntimeCopy(root: string, digest: string, explicitVersio
   if (!fs.existsSync(runtimePath)) {
     throw new Error(`Runtime copy ${digest} is not installed.`);
   }
-  const onDiskDigest = sha256(fs.readFileSync(runtimePath));
-  if (onDiskDigest !== digest) {
+  if (!verifyBundleDigest(runtimePath, digest)) {
     throw new Error(`Runtime copy ${digest} failed integrity verification.`);
   }
   const version = explicitVersion ?? extractVersionFromBundle(runtimePath);

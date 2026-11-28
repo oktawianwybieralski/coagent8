@@ -1222,3 +1222,111 @@ test('atomicWriteText ignores temp-removal failure after rename, preserves pre-r
     `expected in-use retention warning, got: ${JSON.stringify(ebusyRes.warnings)}`,
   );
 });
+
+test('corrupted incumbent index.cjs triggers repair for equal-version, older, and pinned replacements', async t => {
+  const { rollbackOrPinRuntime } = require('../../src/integrations/runtime-manager.ts');
+  const home = makeHome(t);
+  const root = coagentRootForHome(home);
+
+  // 1. Install 0.8.0 as incumbent, then corrupt its index.cjs on disk.
+  const v1 = path.join(home, 'v1.cjs');
+  fs.writeFileSync(v1, validMcpBundle('incumbent-0.8.0-a'));
+  const res1 = await installAndSelectVerifiedRuntime({ home, runtimeSource: v1, version: '0.8.0', nodePath: process.execPath });
+  fs.writeFileSync(res1.runtimePath, 'corrupted incumbent bytes');
+
+  // Equal-version different-digest candidate repairs the damaged incumbent instead of keeping it.
+  const v1b = path.join(home, 'v1b.cjs');
+  fs.writeFileSync(v1b, validMcpBundle('candidate-0.8.0-b'));
+  const resEqual = await installAndSelectVerifiedRuntime({ home, runtimeSource: v1b, version: '0.8.0', nodePath: process.execPath });
+  assert.equal(resEqual.action, 'updated');
+  assert.equal(resEqual.digest, readRuntimePointer(root, 'current')?.digest);
+
+  // 2. Corrupt the new incumbent, then install an older 0.7.0 candidate (downgrade guard must not retain corrupted copy).
+  fs.writeFileSync(resEqual.runtimePath, 'corrupted incumbent bytes 2');
+  const vOlder = path.join(home, 'vOlder.cjs');
+  fs.writeFileSync(vOlder, validMcpBundle('candidate-0.7.0'));
+  const resOlder = await installAndSelectVerifiedRuntime({ home, runtimeSource: vOlder, version: '0.7.0', nodePath: process.execPath });
+  assert.equal(resOlder.action, 'updated');
+  assert.equal(resOlder.digest, readRuntimePointer(root, 'current')?.digest);
+
+  // 3. Pin a copy, corrupt its index.cjs, and install an older replacement: damaged pin does not block repair.
+  await rollbackOrPinRuntime({ home, digest: resOlder.digest, version: '0.7.0', reason: 'test-pin', nodePath: process.execPath });
+  assert.ok(readRuntimePointer(root, 'current')?.pinned, 'pin is recorded before corruption');
+  fs.writeFileSync(resOlder.runtimePath, 'corrupted pinned bytes');
+  const vOldest = path.join(home, 'vOldest.cjs');
+  fs.writeFileSync(vOldest, validMcpBundle('candidate-0.6.0'));
+  const resPinnedRepair = await installAndSelectVerifiedRuntime({
+    home,
+    runtimeSource: vOldest,
+    version: '0.6.0',
+    nodePath: process.execPath,
+  });
+  assert.equal(resPinnedRepair.action, 'updated');
+  const repairedPointer = readRuntimePointer(root, 'current');
+  assert.equal(repairedPointer?.digest, resPinnedRepair.digest);
+  assert.equal(repairedPointer?.pinned, undefined, 'damaged pin is cleared upon repair');
+});
+
+test('reused runtime copy atomically rebuilds missing or stale skills without rewriting index.cjs', async t => {
+  const home = makeHome(t);
+  const pkgRoot = path.join(home, 'pkg');
+  const distDir = path.join(pkgRoot, 'dist');
+  const skillsDir = path.join(pkgRoot, 'skills');
+  fs.mkdirSync(distDir, { recursive: true });
+  fs.mkdirSync(path.join(skillsDir, 'coagent8-review'), { recursive: true });
+  const sourceBundle = path.join(distDir, 'index.cjs');
+  fs.writeFileSync(sourceBundle, validMcpBundle('skills-sync-bundle'));
+  fs.writeFileSync(path.join(skillsDir, 'coagent8-review', 'SKILL.md'), 'review v1\n');
+  fs.writeFileSync(path.join(skillsDir, 'coagent8-review', 'extra.txt'), 'extra v1\n');
+
+  const initial = await installAndSelectVerifiedRuntime({
+    home,
+    runtimeSource: sourceBundle,
+    version: '0.8.0',
+    nodePath: process.execPath,
+  });
+  const copyDir = path.dirname(initial.runtimePath);
+  const copySkills = path.join(copyDir, 'skills');
+  assert.equal(fs.readFileSync(path.join(copySkills, 'coagent8-review', 'SKILL.md'), 'utf8'), 'review v1\n');
+  assert.equal(fs.readFileSync(path.join(copySkills, 'coagent8-review', 'extra.txt'), 'utf8'), 'extra v1\n');
+
+  // Track any rename targeting index.cjs so we assert index.cjs is untouched while skills rebuild.
+  const indexRenames = [];
+  const origRename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (String(to) === initial.runtimePath) indexRenames.push(to);
+    return origRename(from, to);
+  });
+
+  // 1. Delete a file inside copy skills (partial copy): next install restores it without touching index.cjs.
+  fs.rmSync(path.join(copySkills, 'coagent8-review', 'extra.txt'));
+  await installAndSelectVerifiedRuntime({
+    home,
+    runtimeSource: sourceBundle,
+    version: '0.8.0',
+    nodePath: process.execPath,
+  });
+  assert.equal(fs.readFileSync(path.join(copySkills, 'coagent8-review', 'extra.txt'), 'utf8'), 'extra v1\n');
+  assert.deepEqual(indexRenames, [], 'index.cjs was not rewritten when syncing missing skill file');
+
+  // 2. Update/remove/add skills in source with the same bundle: reused copy skills match updated source atomically.
+  fs.writeFileSync(path.join(skillsDir, 'coagent8-review', 'SKILL.md'), 'review v2\n');
+  fs.rmSync(path.join(skillsDir, 'coagent8-review', 'extra.txt'));
+  fs.mkdirSync(path.join(skillsDir, 'coagent8-extra'), { recursive: true });
+  fs.writeFileSync(path.join(skillsDir, 'coagent8-extra', 'SKILL.md'), 'extra skill\n');
+
+  await installAndSelectVerifiedRuntime({
+    home,
+    runtimeSource: sourceBundle,
+    version: '0.8.0',
+    nodePath: process.execPath,
+  });
+  t.mock.restoreAll();
+
+  assert.equal(fs.readFileSync(path.join(copySkills, 'coagent8-review', 'SKILL.md'), 'utf8'), 'review v2\n');
+  assert.equal(fs.existsSync(path.join(copySkills, 'coagent8-review', 'extra.txt')), false, 'removed source skill file is gone');
+  assert.equal(fs.readFileSync(path.join(copySkills, 'coagent8-extra', 'SKILL.md'), 'utf8'), 'extra skill\n');
+  assert.deepEqual(indexRenames, [], 'index.cjs was never touched across skills rebuild');
+  const leftoverSiblings = fs.readdirSync(copyDir).filter(name => name.startsWith('skills.tmp.') || name.startsWith('skills.old.'));
+  assert.deepEqual(leftoverSiblings, [], 'no temp/old skills sibling directories left behind');
+});
