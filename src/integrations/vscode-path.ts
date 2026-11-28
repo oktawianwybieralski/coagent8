@@ -13,9 +13,8 @@ import os from 'node:os';
 import path from 'node:path';
 import cp from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { hash } from './setup-storage.js';
-import { copyJobHelperBeside } from './runtime-files.js';
-import { pruneUnreferencedRuntimes } from './cleanup.js';
+import { hash, classifyRuntimePath, extractRuntimeVersion, newerVersion } from './setup-storage.js';
+import { cleanupUnreferencedRuntimes, coagentRootForHome, installAndSelectRuntime } from './runtime-manager.js';
 import { withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { redactDiagnostic } from '../security/redaction.js';
@@ -214,6 +213,7 @@ export interface PathOwnershipRecord {
   shimHash: string;
   installations: string[];
   userRetained?: boolean;
+  version?: string;
 }
 
 export interface PathOptInOptions {
@@ -222,6 +222,7 @@ export interface PathOptInOptions {
   installation: string;
   bundle: string;
   nodePath?: string;
+  version?: string;
 }
 
 export interface PathEnableResult {
@@ -241,6 +242,7 @@ export interface PathRemovalResult {
 
 export interface PathSyncResult {
   action: 'updated' | 'preserved' | 'missing' | 'noop';
+  message?: string;
 }
 
 function installRecordFile(home: string): string {
@@ -325,27 +327,10 @@ export function readPathRecord(home: string): PathOwnershipRecord | undefined {
       shimHash: pathObj.shimHash,
       installations: pathObj.installations.filter((i): i is string => typeof i === 'string'),
       userRetained: pathObj.userRetained === true,
+      ...(typeof pathObj.version === 'string' ? { version: pathObj.version } : {}),
     };
   }
   return undefined;
-}
-
-function ensureRuntimeCopy(home: string, bundle: string): string {
-  const content = fs.readFileSync(bundle);
-  const digest = hash(content);
-  const runtimeDir = path.join(home, '.coagent8', 'runtime', digest);
-  const target = path.join(runtimeDir, 'index.cjs');
-  fs.mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
-  copyJobHelperBeside(bundle, runtimeDir);
-  if (fs.existsSync(target) && hash(fs.readFileSync(target)) === digest) return target;
-  const tmp = `${target}.tmp.${randomUUID()}`;
-  try {
-    fs.writeFileSync(tmp, content, { flag: 'wx', mode: 0o600 });
-    fs.renameSync(tmp, target);
-  } finally {
-    fs.rmSync(tmp, { force: true });
-  }
-  return target;
 }
 
 function generateShimContent(nodePath: string, runtimeTarget: string): string {
@@ -427,7 +412,12 @@ export async function enablePathIntegration(
       .map(p => p.trim())
       .filter(Boolean);
 
-    const runtimeTarget = ensureRuntimeCopy(options.home, options.bundle);
+    const installed = await installAndSelectRuntime({
+      home: options.home,
+      runtimeSource: options.bundle,
+      version: options.version,
+    });
+    const runtimeTarget = installed.launcherPath;
     const nodeExec = options.nodePath?.trim() || 'node';
     const shimContent = generateShimContent(nodeExec, runtimeTarget);
     const shimDigest = hash(shimContent);
@@ -459,6 +449,7 @@ export async function enablePathIntegration(
       addedToPath: existingPath ? existingPath.addedToPath || !alreadyExists : !alreadyExists,
       shimHash: shimDigest,
       installations,
+      version: installed.version,
     };
 
     records.path = updatedRecord;
@@ -532,14 +523,38 @@ export async function syncPathShim(
       return { action: 'preserved' };
     }
 
-    const runtimeTarget = ensureRuntimeCopy(options.home, options.bundle);
+    const candidateVersion = options.version ?? extractRuntimeVersion(options.bundle) ?? undefined;
+    // Respect downgrade guard for existing healthy legacy shims pointing to a strictly newer version.
+    if (record.runtime && classifyRuntimePath(record.runtime) === 'legacy' && fs.existsSync(record.runtime)) {
+      const legacyVersion = extractRuntimeVersion(record.runtime);
+      if (legacyVersion && candidateVersion && newerVersion(legacyVersion, candidateVersion)) {
+        return { action: 'noop', message: `Kept newer legacy PATH shim (${legacyVersion}).` };
+      }
+    }
+
+    const installed = await installAndSelectRuntime({
+      home: options.home,
+      runtimeSource: options.bundle,
+      version: options.version,
+    });
+    const runtimeTarget = installed.launcherPath;
     const nodeExec = options.nodePath?.trim() || 'node';
     const newShimContent = generateShimContent(nodeExec, runtimeTarget);
     const newShimHash = hash(newShimContent);
 
+    if (previousShimContent === newShimContent && record.runtime === runtimeTarget && record.shimHash === newShimHash) {
+      try {
+        await cleanupUnreferencedRuntimes(coagentRootForHome(options.home), options.home, process.env, { keepStableNamespaces: true });
+      } catch {
+        // Keep copies if another host config or lease is uncertain.
+      }
+      return { action: 'noop', message: installed.message };
+    }
+
     atomicWriteShim(record.shimPath, newShimContent);
     record.runtime = runtimeTarget;
     record.shimHash = newShimHash;
+    record.version = installed.version;
     records.path = record;
     try {
       writeRecordFile(options.home, records);
@@ -550,7 +565,13 @@ export async function syncPathShim(
       throw err;
     }
 
-    return { action: 'updated' };
+    try {
+      await cleanupUnreferencedRuntimes(coagentRootForHome(options.home), options.home, process.env, { keepStableNamespaces: true });
+    } catch {
+      // Keep copies if another host config or lease is uncertain.
+    }
+
+    return { action: 'updated', message: installed.message };
   });
 }
 
@@ -673,7 +694,7 @@ export async function removePathIntegration(
       writeRecordFile(home, records);
       const root = path.join(home, '.coagent8');
       try {
-        pruneUnreferencedRuntimes(root, home);
+        await cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: false });
       } catch {}
       return { action: 'removed', environmentNotified };
     },

@@ -146,40 +146,69 @@ test('new native-host registrations retain the explicitly selected configuration
   }
 });
 
-test('a new runtime replaces owned Claude and agy entries, keeping the previous runtime and a backup', async t => {
+test('a newer runtime updates the stable pointer without changing CLI registrations, and legacy entries migrate once with a backup', async t => {
   const options = { ...profile(t), clients: ['claude', 'agy'] };
-  assert.ok((await setupClients(options)).every(result => result.action === 'installed'));
+  const root = path.join(options.home, '.coagent8');
+  const { readRuntimePointer } = require('../../src/integrations/runtime-manager.ts');
+
+  // Install initial version 0.7.0 -> registrations point to stable launcher current/index.cjs
+  assert.ok((await setupClients({ ...options, version: '0.7.0' })).every(result => result.action === 'installed'));
   const files = ['.claude.json', '.gemini/config/mcp_config.json'].map(file => path.join(options.home, file));
-  const runtimeOf = file =>
-    extractRuntimePath(parse(fs.readFileSync(file, 'utf8')).mcpServers.coagent8, path.join(options.home, '.coagent8'));
-  const previous = files.map(runtimeOf);
-  const updatedSource = path.join(options.home, 'updated.cjs');
-  fs.writeFileSync(updatedSource, fs.readFileSync(source, 'utf8') + '\n// synthetic update\n');
-  const updated = await setupClients({ ...options, runtimeSource: updatedSource });
+  const snapshotsBefore = files.map(file => fs.readFileSync(file, 'utf8'));
+  const pointerV1 = readRuntimePointer(root, 'current');
+  assert.equal(pointerV1.version, '0.7.0');
+
+  // Equal version with different hash keeps incumbent and reports it
+  const sameVerSource = path.join(options.home, 'same-ver.cjs');
+  fs.writeFileSync(sameVerSource, fs.readFileSync(source, 'utf8') + '\n// same version different hash\n');
+  const sameVerRes = await setupClients({ ...options, runtimeSource: sameVerSource, version: '0.7.0' });
+  assert.ok(sameVerRes.every(result => result.action === 'preserved' && /Kept incumbent/.test(result.message)));
+  assert.equal(readRuntimePointer(root, 'current').digest, pointerV1.digest);
+
+  // Newer SemVer updates the stable pointer without modifying CLI chat config files
+  const newerSource = path.join(options.home, 'newer.cjs');
+  fs.writeFileSync(newerSource, fs.readFileSync(source, 'utf8') + '\n// synthetic 0.8.0 update\n');
+  const updated = await setupClients({ ...options, runtimeSource: newerSource, version: '0.8.0' });
   assert.ok(
-    updated.every(result => result.action === 'updated' && result.runtimeCallable && !result.hostCallable),
+    updated.every(result => result.action === 'preserved' && result.runtimeCallable && !result.hostCallable),
     JSON.stringify(updated),
   );
-  assert.ok(updated.every(result => /previous runtime stays until cleanup/.test(result.message)));
   assert.deepEqual(
-    readRegistrations({ ...options, runtimeSource: updatedSource })
-      .filter(item => item.client !== 'codex')
-      .map(item => [item.state, item.current]),
-    [
-      ['owned', true],
-      ['owned', true],
-    ],
+    files.map(file => fs.readFileSync(file, 'utf8')),
+    snapshotsBefore,
+    'CLI chat registrations stay unchanged across updates once on the stable path',
   );
-  for (const [index, file] of files.entries()) {
-    assert.notEqual(runtimeOf(file), previous[index]);
-    assert.ok(fs.existsSync(previous[index]), 'the previous runtime stays for running chats and rollback');
-  }
+  const pointerV2 = readRuntimePointer(root, 'current');
+  assert.equal(pointerV2.version, '0.8.0');
+  assert.notEqual(pointerV2.digest, pointerV1.digest);
+  assert.equal(fs.existsSync(path.join(root, 'runtime', pointerV1.digest)), false, 'unused unleased old copy cleaned up');
+
+  // Legacy owned entry pointing at <sha256>/index.cjs migrates once to current/index.cjs and keeps a backup
+  const { hash } = require('../../src/integrations/setup-storage.ts');
+  const legacyDigest = pointerV1.digest;
+  const legacyRuntime = path.join(root, 'runtime', legacyDigest, 'index.cjs');
+  fs.mkdirSync(path.dirname(legacyRuntime), { recursive: true });
+  fs.writeFileSync(legacyRuntime, fs.readFileSync(source));
+  const legacyEntry = { command: process.execPath, args: [legacyRuntime, 'mcp'] };
+  write(files[0], JSON.stringify({ mcpServers: { coagent8: legacyEntry } }));
+  const stateFile = path.join(root, 'setup.json');
+  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  state.owned.claude = hash(JSON.stringify(legacyEntry));
+  write(stateFile, JSON.stringify(state));
+
+  assert.equal(readRegistrations({ ...options, runtimeSource: newerSource, version: '0.8.0' })[1].legacy, true);
+  const migrated = await setupClients({ ...options, clients: ['claude'], runtimeSource: newerSource, version: '0.8.0' });
+  assert.equal(migrated[0].action, 'updated');
+  assert.equal(
+    extractRuntimePath(parse(fs.readFileSync(files[0], 'utf8')).mcpServers.coagent8, root),
+    path.join(root, 'runtime', 'current', 'index.cjs'),
+  );
   const backups = fs.readdirSync(path.join(options.home, '.coagent8/setup-backups'));
   assert.ok(
     backups
       .flatMap(name => fs.readdirSync(path.join(options.home, '.coagent8/setup-backups', name)))
-      .filter(name => name === 'claude.config').length >= 2,
-    'each update keeps the original bytes',
+      .filter(name => name === 'claude.config').length >= 1,
+    'migration keeps a backup of the original bytes',
   );
 });
 test('malformed, duplicate-key, workspace shadow, and independently edited settings are never overwritten', async t => {
@@ -203,16 +232,16 @@ test('native failed replacement rolls back exact original config and preserves c
   assert.equal(initial[0].action, 'installed', JSON.stringify(initial));
   const file = path.join(options.home, '.codex/config.toml');
   const before = fs.readFileSync(file, 'utf8');
-  const updatedSource = path.join(options.home, 'updated.cjs');
-  fs.writeFileSync(updatedSource, fs.readFileSync(source, 'utf8') + '\n// synthetic update\n');
-  options.env.SETUP_FIXTURE_FAIL_CANDIDATE = '1';
-  const result = await setupClients({ ...options, runtimeSource: updatedSource });
+  const config2 = path.join(options.home, 'custom-config.json');
+  write(config2, JSON.stringify(require('../../src/config.ts').validateConfig({ defaultBackend: 'codex' })));
+  const updateOptions = { ...options, env: { ...options.env, coagent8_CONFIG: config2, SETUP_FIXTURE_FAIL_CANDIDATE: '1' } };
+  const result = await setupClients({ ...updateOptions });
   assert.equal(result[0].action, 'blocked', JSON.stringify(result));
   assert.equal(fs.readFileSync(file, 'utf8'), before);
   const oldRuntime = toml(before).mcp_servers.coagent8.args[0];
   assert.ok(fs.existsSync(oldRuntime));
-  options.env.SETUP_FIXTURE_CONCURRENT_EDIT = '1';
-  const concurrent = await setupClients({ ...options, runtimeSource: updatedSource });
+  updateOptions.env.SETUP_FIXTURE_CONCURRENT_EDIT = '1';
+  const concurrent = await setupClients({ ...updateOptions });
   assert.equal(concurrent[0].action, 'blocked', JSON.stringify(concurrent));
   const recovered = toml(fs.readFileSync(file, 'utf8'));
   assert.deepEqual(recovered.mcp_servers.coagent8, toml(before).mcp_servers.coagent8);
@@ -464,9 +493,9 @@ test('registrations are read from host files with ownership and the current runt
   const updatedSource = path.join(options.home, 'updated.cjs');
   fs.writeFileSync(updatedSource, fs.readFileSync(source, 'utf8') + '\n// synthetic update\n');
   assert.deepEqual(
-    readRegistrations({ ...options, runtimeSource: updatedSource }).map(item => item.current),
+    readRegistrations({ ...options, runtimeSource: updatedSource, version: '0.8.0' }).map(item => item.current),
     [false, false, false],
-    'another bundle is another version',
+    'another version is not current until updated',
   );
   write(path.join(options.home, '.claude.json'), '{ malformed');
   const blocked = readRegistrations(options);
@@ -572,6 +601,7 @@ test('setup replaces an entry it wrote whose ownership record and runtime copy a
     client: 'claude',
     state: 'owned',
     current: false,
+    legacy: true,
     message: 'Registered by setup for another CoAgent8 version, configuration file or data directory.',
   });
   const [result] = await setupClients({ ...options, clients: ['claude'] });
@@ -873,6 +903,7 @@ test('readRegistrations and active runtime inspection recognize both legacy and 
     client: 'claude',
     state: 'owned',
     current: false,
+    legacy: true,
     message: 'Registered by setup for another CoAgent8 version, configuration file or data directory.',
   });
 
@@ -891,20 +922,17 @@ test('readRegistrations and active runtime inspection recognize both legacy and 
   assert.equal(result.action, 'updated');
   assert.equal(result.runtimeCallable, true);
 
-  // Fingerprint-owned modern registration matching candidate is preserved
+  // Fingerprint-owned stable registration matching candidate is preserved
   const { hash: hashEntry } = require('../../src/integrations/setup-storage.ts');
-  const bundle = fs.readFileSync(source);
-  const bundleSha = hashEntry(bundle);
-  const liveRuntime = path.join(options.home, '.coagent8', 'runtime', bundleSha, 'index.cjs');
-  write(liveRuntime, bundle);
-  const liveEntry = { command: process.execPath, args: [liveRuntime, 'mcp'] };
-  write(file, JSON.stringify({ mcpServers: { coagent8: liveEntry } }));
+  const stableLauncher = path.join(options.home, '.coagent8', 'runtime', 'current', 'index.cjs');
+  const stableEntry = { command: process.execPath, args: [stableLauncher, 'mcp'] };
+  write(file, JSON.stringify({ mcpServers: { coagent8: stableEntry } }));
   const stateFile = path.join(options.home, '.coagent8', 'setup.json');
   write(
     stateFile,
     JSON.stringify({
       clients: ['claude'],
-      owned: { claude: hashEntry(JSON.stringify(liveEntry)) },
+      owned: { claude: hashEntry(JSON.stringify(stableEntry)) },
       origin: {},
       skills: {},
       skillOrigin: {},
@@ -915,6 +943,10 @@ test('readRegistrations and active runtime inspection recognize both legacy and 
   assert.equal(preservedResult.runtimeCallable, true);
 
   // Fingerprint-owned registration with a different launcher prefix is probed and verified
+  const bundle = fs.readFileSync(source);
+  const bundleSha = hashEntry(bundle);
+  const liveRuntime = path.join(options.home, '.coagent8', 'runtime', bundleSha, 'index.cjs');
+  write(liveRuntime, bundle);
   const prefixedEntry = { command: process.execPath, args: ['--title=coagent8', liveRuntime, 'mcp'] };
   write(file, JSON.stringify({ mcpServers: { coagent8: prefixedEntry } }));
   write(
@@ -1081,4 +1113,51 @@ test('setup writes modern mcp registrations and migrates legacy owned entries wi
   assert.deepEqual({ ...toml(fs.readFileSync(codex, 'utf8')).mcp_servers.coagent8 }, manualBare);
   assert.deepEqual(parse(fs.readFileSync(claude, 'utf8')).mcpServers.coagent8, manualNpx);
   assert.deepEqual(parse(fs.readFileSync(agy, 'utf8')).mcpServers.coagent8, manualCallable);
+});
+
+test('setup-storage recognizes stable current and dev layouts while preserving anti-widening bounds', t => {
+  const { home } = profile(t);
+  const root = path.join(home, '.coagent8');
+  const currentLauncher = path.join(root, 'runtime', 'current', 'index.cjs');
+  const devLauncher = path.join(root, 'runtime', 'dev', 'index.cjs');
+  const saved = { clients: [], owned: {}, origin: {}, skills: {}, skillOrigin: {} };
+
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [currentLauncher, 'mcp'] }, root), currentLauncher);
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [devLauncher, 'mcp'] }, root), devLauncher);
+  assert.deepEqual(setupShapedEntry('claude', { command: process.execPath, args: [currentLauncher, 'mcp'] }, root), {});
+  assert.equal(entryOwnership('claude', { command: process.execPath, args: [currentLauncher, 'mcp'] }, saved, root).owned, true);
+
+  // Unknown subdirs under runtime/ and stable dirs inside extension globalStorage stay rejected
+  assert.equal(
+    extractRuntimePath({ command: process.execPath, args: [path.join(root, 'runtime', 'other', 'index.cjs'), 'mcp'] }, root),
+    null,
+  );
+  const extDir = path.join(home, 'User', 'globalStorage', 'okidev.coagent8-mcp');
+  assert.equal(
+    extractRuntimePath(
+      { command: process.execPath, args: [path.join(extDir, 'runtime', 'current', 'index.cjs'), 'mcp'], env: { coagent8_DIR: extDir } },
+      root,
+    ),
+    null,
+  );
+});
+
+test('prerelease downgrade guard keeps newer SemVer pointer and registration intact', async t => {
+  const options = { ...profile(t), clients: ['claude'] };
+  const root = path.join(options.home, '.coagent8');
+  const { readRuntimePointer } = require('../../src/integrations/runtime-manager.ts');
+
+  const rc2Bundle = path.join(options.home, 'rc2.cjs');
+  fs.writeFileSync(rc2Bundle, fs.readFileSync(source, 'utf8') + '\n// rc2\n');
+  await setupClients({ ...options, runtimeSource: rc2Bundle, version: '0.8.0-rc.2' });
+  assert.equal(readRuntimePointer(root, 'current').version, '0.8.0-rc.2');
+
+  const rc1Status = readRegistrations({ ...options, runtimeSource: source, version: '0.8.0-rc.1' });
+  assert.equal(rc1Status[1].isNewer, true);
+  assert.equal(rc1Status[1].current, false);
+
+  const [res] = await setupClients({ ...options, runtimeSource: source, version: '0.8.0-rc.1' });
+  assert.equal(res.action, 'preserved');
+  assert.match(res.message, /newer CoAgent8 version \(0\.8\.0-rc\.2\)/);
+  assert.equal(readRuntimePointer(root, 'current').version, '0.8.0-rc.2');
 });

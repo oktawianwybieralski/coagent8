@@ -10,6 +10,8 @@
  * @packageDocumentation
  */
 
+import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { redactDiagnostic } from './security/redaction.js';
 import { BRAND } from './brand.js';
@@ -105,6 +107,8 @@ export function formatRootHelp(): string {
     '  cleanup [--clients=...] [--apply=<token>]',
     '                                   Preview or apply removal of owned registrations',
     '  skills <action> [...]            Manage client skills (status|install|uninstall|enable|disable)',
+    '  runtime <status|rollback|pin|unpin|prune> [...]',
+    '                                   Inspect, pin/rollback, or prune owned runtime copies',
     '',
     'Global Options:',
     '  --help, -h                       Show command usage',
@@ -130,6 +134,100 @@ export function formatMcpHelp(): string {
     'diagnostics and operational logging use stderr.',
     '',
   ].join('\n');
+}
+
+const RUNTIME_LEASE_SYMBOL = Symbol.for('coagent8.runtimeLease');
+const DIRECT_SHA256_RE = /^[a-f0-9]{64}$/;
+
+function readSelfLinuxStartTime(): string | undefined {
+  if (process.platform !== 'linux') return undefined;
+  try {
+    const raw = fs.readFileSync('/proc/self/stat', 'utf8');
+    const idx = raw.lastIndexOf(')');
+    if (idx < 0) return undefined;
+    return raw.slice(idx + 2).split(' ')[19] || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Registers a per-process runtime lease when running directly from an immutable `<sha256>/index.cjs`
+ * (for example `wait` child commands or unmigrated legacy registrations) without the stable launcher.
+ */
+function ensureDirectRuntimeLease(): void {
+  const globals = globalThis as Record<symbol, unknown>;
+  if (globals[RUNTIME_LEASE_SYMBOL]) return;
+  const candidate = path.resolve(__filename);
+  if (path.basename(candidate) !== 'index.cjs') return;
+  const shaDir = path.dirname(candidate);
+  const digest = path.basename(shaDir);
+  const runtimeRoot = path.dirname(shaDir);
+  if (!DIRECT_SHA256_RE.test(digest) || path.basename(runtimeRoot) !== 'runtime') return;
+
+  const coagentRoot = path.dirname(runtimeRoot);
+  const lockFile = path.join(coagentRoot, 'runtime-lock.lease');
+  const leasesDir = path.join(runtimeRoot, 'leases');
+  const lockToken = randomUUID();
+  const payload = JSON.stringify({ token: lockToken, pid: process.pid, createdAt: Date.now() });
+  const temp = `${lockFile}.tmp.${randomUUID()}`;
+  let locked = false;
+  try {
+    fs.mkdirSync(path.dirname(lockFile), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(temp, payload, { flag: 'wx', mode: 0o600 });
+    fs.linkSync(temp, lockFile);
+    locked = true;
+  } catch {
+    // If contended, proceed best-effort rather than blocking startup when unmigrated; cleanup also checks OS locks/files.
+  } finally {
+    fs.rmSync(temp, { force: true });
+  }
+  try {
+    if (!fs.existsSync(candidate)) return;
+    fs.mkdirSync(leasesDir, { recursive: true, mode: 0o700 });
+    const leaseToken = randomUUID();
+    const leaseFile = path.join(leasesDir, `${process.pid}-${leaseToken}.json`);
+    const linuxStartTime = readSelfLinuxStartTime();
+    const lease = {
+      schemaVersion: 1,
+      pid: process.pid,
+      token: leaseToken,
+      digest,
+      execPath: process.execPath,
+      createdAt: Date.now(),
+      ...(linuxStartTime ? { linuxStartTime } : {}),
+    };
+    fs.writeFileSync(leaseFile, JSON.stringify(lease) + '\n', { flag: 'wx', mode: 0o600 });
+    const release = () => {
+      try {
+        fs.rmSync(leaseFile, { force: true });
+      } catch {
+        // Best-effort cleanup on exit.
+      }
+    };
+    process.once('exit', release);
+    const timer = setInterval(() => {
+      try {
+        const now = new Date();
+        fs.utimesSync(leaseFile, now, now);
+      } catch {
+        // Ignore if lease was removed during shutdown.
+      }
+    }, 15_000);
+    timer.unref();
+    globals[RUNTIME_LEASE_SYMBOL] = { leaseFile, digest, release };
+  } catch {
+    // Non-fatal if data directory is read-only.
+  } finally {
+    if (locked) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(lockFile, 'utf8')) as { token?: unknown };
+        if (parsed?.token === lockToken) fs.rmSync(lockFile, { force: true });
+      } catch {
+        // Ignore lock cleanup failure.
+      }
+    }
+  }
 }
 
 /**
@@ -165,6 +263,7 @@ export async function runCli(
       streams.stdout.write(formatRootHelp());
       return 0;
     }
+    if (!deps.serveStdio) ensureDirectRuntimeLease();
     const serve = deps.serveStdio ?? serveStdio;
     await serve();
     return 0;
@@ -175,6 +274,7 @@ export async function runCli(
   // 4. Explicit mcp
   if (cmd === 'mcp') {
     if (rest.length === 0) {
+      if (!deps.serveStdio) ensureDirectRuntimeLease();
       const serve = deps.serveStdio ?? serveStdio;
       await serve();
       return 0;
@@ -207,6 +307,7 @@ export async function runCli(
 
   // Blocks until a delegation finishes; a client runs it as a background command.
   if (cmd === 'wait') {
+    ensureDirectRuntimeLease();
     return await runWaitCli(rest, streams.stdout as unknown as NodeJS.WritableStream, streams.stderr as unknown as NodeJS.WritableStream);
   }
 
@@ -217,7 +318,7 @@ export async function runCli(
   }
 
   // 9. Management commands (lazily loaded setup bundle)
-  if (['setup', 'repair', 'status', 'cleanup', 'skills'].includes(cmd)) {
+  if (['setup', 'repair', 'status', 'cleanup', 'skills', 'runtime'].includes(cmd)) {
     const loadSetup =
       deps.loadSetupCli ??
       (async () => {
@@ -240,6 +341,7 @@ export async function runCli(
   streams.stderr.write(
     `Warning: unrecognized arguments [${redactCliArguments(args).join(', ')}] ignored; starting legacy MCP stdio server.\n`,
   );
+  if (!deps.serveStdio) ensureDirectRuntimeLease();
   const serve = deps.serveStdio ?? serveStdio;
   await serve();
   return 0;

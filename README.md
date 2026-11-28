@@ -108,10 +108,12 @@ its [skills](#skills):
 npx -y coagent8@next setup --clients=codex,claude,agy
 ```
 
-Setup copies the server to `~/.coagent8/runtime/`, so the registration does
-not depend on the npx cache, and keeps a private backup of every file it
-changes. `status` checks the CLIs. `repair` checks the registrations and updates the
-ones setup wrote and you did not change; an entry you edited is kept.
+Setup installs the server to `~/.coagent8/runtime/` behind a stable launcher
+(`~/.coagent8/runtime/current/index.cjs`), so registrations do not depend on the
+npx cache or change on future updates, and keeps a private backup of every file
+it changes. `status` checks the CLIs. `repair` checks the registrations and
+updates the ones setup wrote and you did not change; an entry you edited is kept.
+`runtime status|rollback|unpin|prune` inspects, pins, or prunes runtime copies.
 `cleanup` shows what it would remove; run it again with the
 `--apply=<token>` it prints to remove the registrations and skills setup added.
 npm runs no script on uninstall, so run `cleanup` before `npm uninstall -g
@@ -486,8 +488,11 @@ choose a command:
 
 The extension changes only what you choose, keeps private backups of the CLIs'
 configuration files, and removes only entries it wrote and that you did not
-change. When VS Code offers **Restart Extensions** after an install, update or
-chat change, use it. VS Code restarts the CoAgent8 server by itself when its
+change. When VS Code offers **Restart Extensions** after a first install,
+manual chat change, or one-time migration, use it; after migration, future
+extension updates need only VS Code's own restart, and new CLI chats load the
+updated runtime automatically (open chats keep the runtime they started with
+until reopened). VS Code restarts the CoAgent8 server by itself when its
 settings or bundle change. Settings you save in VS Code take precedence over
 `config.json`, except an empty model, which keeps the file's model; the CLIs
 and other hosts read only the file. `CoAgent8: Manage Model Approvals` updates

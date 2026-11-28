@@ -58,10 +58,12 @@ export function readRegistrations(options) {
   return SETUP_CLIENTS.map(client => {
     const state = scripted().registrationStates[client];
     const isNewer = state === 'newer';
+    const isLegacy = state === 'legacy';
+    const isOutdated = state === 'outdated' || isLegacy;
     return {
       client,
-      state: state === 'outdated' || isNewer ? 'owned' : (state ?? 'absent'),
-      current: state !== 'outdated' && !isNewer,
+      state: isOutdated || isNewer ? 'owned' : (state ?? 'absent'),
+      current: !isOutdated && !isNewer,
       message:
         state === 'blocked'
           ? 'Malformed fixture configuration.'
@@ -69,6 +71,7 @@ export function readRegistrations(options) {
             ? 'Registered by setup for a newer CoAgent8 version (9.9.9); preserved.'
             : 'fixture',
       ...(isNewer ? { isNewer: true, version: '9.9.9' } : {}),
+      ...(isLegacy ? { legacy: true } : {}),
     };
   });
 }
@@ -82,7 +85,7 @@ export async function setupClients(options) {
     action:
       scripted().registrationStates[client] === 'newer'
         ? 'preserved'
-        : scripted().registrationStates[client] === 'outdated'
+        : scripted().registrationStates[client] === 'outdated' || scripted().registrationStates[client] === 'legacy'
           ? 'updated'
           : 'installed',
   }));

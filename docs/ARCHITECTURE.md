@@ -950,11 +950,11 @@ explicit `mcp` subcommand (`CLI-FIRST-001a2`).
      server without human interaction.
 
 2. **Modern registration shape (explicit `mcp` subcommand)**:
-   - Node-invoked runtime bundle:
+   - Node-invoked stable launcher (which in-process loads the target `<root>/runtime/<sha256>/index.cjs` selected by `pointer.json`; `-dev` builds target `<root>/runtime/dev/index.cjs` unless opted in, while legacy registrations may still point directly at `<root>/runtime/<sha256>/index.cjs`):
      ```json
      {
        "command": "<nodePath>",
-       "args": ["<root>/runtime/<sha256>/index.cjs", "mcp"],
+       "args": ["<root>/runtime/current/index.cjs", "mcp"],
        "env": { "coagent8_CONFIG": "...", "coagent8_DIR": "..." }
      }
      ```
@@ -993,10 +993,12 @@ indexing and preventing duplicated `.args.at(-1)` assumptions:
    - Any other argument layout yields `null`.
 2. **Strict containment and path validation**:
    - The candidate path must be absolute and resolve inside the owned runtime root:
-     `~/.coagent8/runtime/<sha256>/index.cjs` for standalone clients, or
+     `~/.coagent8/runtime/current/index.cjs`, `~/.coagent8/runtime/dev/index.cjs`, or
+     legacy `~/.coagent8/runtime/<sha256>/index.cjs` for standalone clients, or
      `<globalStorage>/okidev.coagent8-mcp/runtime/<sha256>/index.cjs` for VS Code.
-   - The subdirectory name must be exactly 64 hexadecimal characters (`/^[a-f0-9]{64}$/`),
-     and the file basename must be `index.cjs`.
+   - The subdirectory name must be `current`, `dev` (under `~/.coagent8/runtime`), or
+     exactly 64 hexadecimal characters (`/^[a-f0-9]{64}$/`), and the file basename must
+     be `index.cjs`.
 3. **Command and argument bounds (anti-widening invariant)**:
    - The executable `entry.command` must resolve to Node (`process.execPath` or
      the candidate `nodePath`), never an arbitrary shell, script or system utility.
@@ -1006,6 +1008,48 @@ indexing and preventing duplicated `.args.at(-1)` assumptions:
    - Binary (`command: "coagent8"`) and `npx` entries have no pinned runtime path
      in `args`; `setupShapedEntry` and `extensionShaped` never claim ownership
      over them. They are classified as manual entries.
+
+#### Stable runtime launcher, pointer precedence and lease-based cleanup (#250)
+
+Owned CLI chat registrations and the Windows `PATH` shim (`~/.coagent8/bin/coagent8.cmd`)
+target the stable launcher (`~/.coagent8/runtime/current/index.cjs`, or `dev/index.cjs` for
+`-dev` builds unless explicitly opted in), instead of a release-specific `<sha256>` path:
+
+1. **Launcher and atomic pointer**:
+   - The small self-contained CommonJS launcher reads `<namespace>/pointer.json` under the
+     shared runtime lock (`~/.coagent8/runtime-lock.lease`), validates `schemaVersion: 1` and
+     the 64-hex `digest`, derives `<root>/runtime/<digest>/index.cjs`, records a per-process
+     runtime lease in `<root>/runtime/leases/<pid>-<token>.json`, sets
+     `Symbol.for('coagent8.runtimePath')` so `getRuntimePath()` (`wait`, `doctor`) reports
+     the resolved immutable `<sha256>/index.cjs`, and `require()`s the bundle in-process.
+   - Direct launches from `<sha256>/index.cjs` (such as `wait` or legacy registrations) also
+     register a per-process runtime lease in `<runtimeRoot>/leases/`.
+2. **Pre-switch verification and SemVer precedence**:
+   - Before switching `pointer.json`, the installer writes and verifies the full copy in
+     `<root>/runtime/<sha256>/`: `index.cjs` SHA-256, `version.json`, Windows
+     `coagent8-job.exe` SHA-256 (when present), and optional `setup.cjs` / `skills/`.
+     `setupClients` also probes the bundle and launcher over stdio MCP before changing any
+     host registration.
+   - Full SemVer 2.0.0 precedence including prereleases (`newerVersion`) governs pointer
+     updates: higher wins; equal version and digest is a no-op; equal version with another
+     digest keeps the incumbent and reports it; lower versions never overwrite the pointer
+     (downgrade guard) unless an explicit persisted pin (`coagent8 runtime rollback|pin`)
+     overrides it until `coagent8 runtime unpin`.
+3. **One-time migration and update behavior**:
+   - Owned legacy `<sha256>` CLI registrations and shims migrate once to the stable launcher
+     after installation and verification, preserving manual/edited entries. The migration of
+     CLI chats still needs one vendor extension restart; subsequent extension updates switch
+     `pointer.json` only, change no CLI chat registration, and show no Update CLI Chats or
+     Restart Extensions prompt from CoAgent8. Open chats keep their running runtime until
+     reopened; new chats load the new runtime.
+4. **Lease-based runtime cleanup**:
+   - `cleanupUnreferencedRuntimes` runs under `runtime-lock.lease` and inspects client
+     configs, `installs.json`, `coagent8.cmd`, active `pointer.json` targets, and active
+     per-process runtime leases (`pid`, `token`, `digest`, `createdAt`, `mtimeMs` heartbeat,
+     and Linux `/proc/<pid>/stat` start time or bounded aged OS identity verification).
+   - Uncertain, unreadable, or malformed references count as in use; unused `<sha256>`
+     copies are removed only when no registration, shim, pointer, or live process lease
+     references them.
 
 #### Owned-entry migration semantics
 
@@ -1080,10 +1124,13 @@ Owned registrations migrate automatically to the explicit `mcp` shape:
 
 1. **Pinned runtime copies**:
    - CLI runtime copies in `~/.coagent8/runtime/<sha256>/index.cjs` are immutable
-     and content-addressed. They remain pinned and are not overwritten; older
-     copies are removed only during explicit `coagent8 cleanup`.
+     and content-addressed, referenced through `~/.coagent8/runtime/current/index.cjs`
+     (via `pointer.json`). Unused copies are removed by lease-aware cleanup
+     (`cleanupUnreferencedRuntimes` / `coagent8 runtime prune`) only when no
+     registration, shim, pointer, or active per-process runtime lease references them.
    - The VS Code extension prunes unreferenced bundle copies in its global
-     storage (`pruneRuntimes`) during synchronization, keeping active copies intact.
+     storage (`pruneRuntimes`) under the same lease-aware check during synchronization,
+     keeping active copies intact.
 2. **The `npx` pattern for manual or ephemeral use**:
    - For users, CI pipelines, or foreign environments invoking CoAgent8 via npx
      without global installation, the supported invocation pattern is:
@@ -1131,21 +1178,32 @@ CoAgent8 never changes the user's `PATH` environment variable or creates a binar
 1. **Windows**:
    - **Shim directory**: `%USERPROFILE%\.coagent8\bin` (added to user `PATH`).
    - **Shim executable**: `%USERPROFILE%\.coagent8\bin\coagent8.cmd`.
-   - **Invocation contract**: The shim invokes Node.js with the immutable, content-addressed runtime copy:
+   - **Invocation contract**: The shim invokes Node.js with the stable runtime launcher:
      ```bat
      @echo off
-     "node" "<storage>/runtime/<sha256>/index.cjs" %*
+     "node" "<root>/runtime/current/index.cjs" %*
      ```
-     (or configured Node binary if explicit).
+     (or configured Node binary if explicit), which resolves the verified content-addressed
+     runtime copy via `pointer.json` under the shared runtime lock.
 2. **POSIX (macOS / Linux)**:
    - **Shim location**: `~/.local/bin/coagent8` (a single executable shell script).
    - **PATH behavior**: If `~/.local/bin` is already present on the user's `PATH`, no environment modification is made. If `~/.local/bin` is not on `PATH`, the extension does not edit user shell startup files (`.bashrc`, `.zshrc`, `.profile`); instead, it surfaces actionable guidance for the user to add `~/.local/bin` to their profile manually. POSIX implementation is deferred to subsequent platform acceptance cards.
 3. **Runtime copy targeting, extension updates and installation handoff**:
-   - The shim targets the shared, content-addressed runtime copy in `~/.coagent8/runtime/<sha256>/index.cjs` (or the active installation's runtime in `<globalStorage>/runtime/<sha256>/index.cjs`), **never** the versioned extension installation directory (e.g. `~/.vscode/extensions/okidev.coagent8-mcp-0.6.0/...`).
-   - Because VS Code deletes older version folders upon extension upgrade, pointing to versioned extension folders would immediately break the shim.
-   - Targeting content-addressed storage in `~/.coagent8/runtime` ensures the runtime copy is shared across editor installations (Stable, Insiders) and survives an individual editor's storage deletion.
-   - When an extension installation updates to a new version, activation verifies that the on-disk shim still exactly matches the recorded `shimHash` and belongs to this installation before updating it. If and only if the shim is unmodified, activation rewrites the shim to target the new runtime copy and updates `shimHash` in `~/.coagent8/installs.json`. If the user has edited or replaced the shim (`hash(file) !== shimHash`), the extension strictly preserves the user's shim and leaves it untouched.
-   - When multiple installations share the shim, the runtime copy referenced by `path` in `~/.coagent8/installs.json` is protected from pruning while `path.installations` is non-empty. If an uninstalled installation targeted its own global-storage runtime, the uninstall hook atomically retargets the unchanged shim to a remaining installation's verified runtime copy and updates `shimHash` before finishing cleanup.
+   - The shim targets the stable launcher `~/.coagent8/runtime/current/index.cjs` (never the
+     versioned extension installation directory or a per-release `<sha256>` path once
+     migrated).
+   - Because VS Code deletes older version folders upon extension upgrade, pointing to
+     versioned extension folders would break the shim; routing through `current/index.cjs`
+     and content-addressed `~/.coagent8/runtime/<sha256>/` keeps the shim working across
+     updates and shared across editor installations (Stable, Insiders).
+   - When an extension installation updates to a new version, activation installs and
+     verifies the new runtime copy and updates `pointer.json` according to SemVer
+     precedence (never downgrading to an older version). Legacy or dangling shims are
+     migrated or repaired to `current/index.cjs` only when `hash(file) === shimHash`; if the
+     user has edited or replaced the shim (`hash(file) !== shimHash`), the extension strictly
+     preserves the user's shim and leaves it untouched.
+   - Unused runtime copies are removed only when no registration, shim, pointer, or active
+     per-process runtime lease references them.
 
 #### Ownership record in `~/.coagent8/installs.json`
 

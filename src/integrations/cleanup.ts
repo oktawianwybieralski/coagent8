@@ -6,13 +6,13 @@
  * @packageDocumentation
  */
 import fs from 'node:fs';
-import { removeRuntimeDirectory } from './runtime-files.js';
 import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { applyEdits, modify } from 'jsonc-parser';
 import { withFileLock } from '../storage/lock.js';
 import { redactDiagnostic } from '../security/redaction.js';
+import { cleanupUnreferencedRuntimes, type RuntimeCleanupOptions } from './runtime-manager.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 import {
   backupDirectory,
@@ -101,58 +101,25 @@ function removeEntry(client: SetupClient, before: string): string {
 }
 
 /**
- * Removes runtime copies that are no longer referenced by any client config or installs.json.
- * @throws When a host configuration or installs.json cannot be read; nothing is deleted then.
+ * Removes runtime copies that are no longer referenced by any client config, `installs.json`,
+ * PATH shim, stable pointer, or active per-process runtime lease under the shared runtime lock.
+ * @throws When a host configuration, pointer, or `installs.json` cannot be read; nothing is deleted then.
  */
-export function pruneUnreferencedRuntimes(root: string, home: string, env: NodeJS.ProcessEnv = process.env): void {
-  const runtimes = path.join(root, 'runtime');
-  const referenced = new Set<string>();
-  for (const client of SETUP_CLIENTS) {
-    const text = read(configPath(client, home, env));
-    if (text === null) continue;
-    for (const entry of Object.values(servers(client, document(client, text)))) {
-      for (const arg of Array.isArray((entry as { args?: unknown })?.args) ? (entry as { args: unknown[] }).args : []) {
-        if (typeof arg === 'string' && path.resolve(arg).startsWith(runtimes + path.sep))
-          referenced.add(path.relative(runtimes, path.resolve(arg)).split(path.sep)[0]!);
-      }
-    }
-  }
-  const installsPath = path.join(root, 'installs.json');
-  if (fs.existsSync(installsPath)) {
-    const raw = read(installsPath);
-    if (raw === null) throw new Error('Unreadable installs.json');
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      throw new Error('Malformed installs.json');
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Malformed installs.json');
-    // A PATH record whose runtime cannot be read may still guard a shim: prune nothing.
-    const pathRecord = (parsed as { path?: unknown }).path;
-    if (pathRecord !== undefined) {
-      const pRuntime = pathRecord && typeof pathRecord === 'object' ? (pathRecord as { runtime?: unknown }).runtime : undefined;
-      if (typeof pRuntime !== 'string' || !pRuntime) throw new Error('Malformed PATH record in installs.json');
-      const resolved = path.resolve(pRuntime);
-      if (resolved.startsWith(runtimes + path.sep)) {
-        referenced.add(path.relative(runtimes, resolved).split(path.sep)[0]!);
-      }
-    }
-  }
-  if (fs.existsSync(runtimes)) {
-    for (const name of fs.readdirSync(runtimes)) {
-      if (/^[a-f0-9]{64}$/.test(name) && !referenced.has(name)) removeRuntimeDirectory(path.join(runtimes, name));
-    }
-    if (!fs.readdirSync(runtimes).length) fs.rmdirSync(runtimes);
-  }
+export async function pruneUnreferencedRuntimes(
+  root: string,
+  home: string,
+  env: NodeJS.ProcessEnv = process.env,
+  options: RuntimeCleanupOptions = {},
+): Promise<{ removed: string[]; kept: string[] }> {
+  return cleanupUnreferencedRuntimes(root, home, env, options);
 }
 
 /**
  * Removes unchanged setup state: runtime copies that are no longer referenced by any client,
  * backup files with the extension prefix and, when no registrations or skills remain, the state file.
  */
-function removeUnreferencedSetup(root: string, home: string, env: NodeJS.ProcessEnv, stateFile: string): void {
-  pruneUnreferencedRuntimes(root, home, env);
+async function removeUnreferencedSetup(root: string, home: string, env: NodeJS.ProcessEnv, stateFile: string): Promise<void> {
+  await cleanupUnreferencedRuntimes(root, home, env, { keepStableNamespaces: false });
   const backups = path.join(root, 'setup-backups');
   if (fs.existsSync(backups)) {
     for (const name of fs.readdirSync(backups)) {
@@ -274,7 +241,7 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
     }
     if (options.uninstall) {
       try {
-        removeUnreferencedSetup(root, home, env, stateFile);
+        await removeUnreferencedSetup(root, home, env, stateFile);
       } catch (error) {
         return {
           token,

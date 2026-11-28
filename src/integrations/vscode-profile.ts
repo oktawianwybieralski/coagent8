@@ -20,7 +20,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { copyJobHelperBeside, removeRuntimeDirectory } from './runtime-files.js';
+import { copyJobHelperBeside } from './runtime-files.js';
+import { cleanupUnreferencedRuntimes } from './runtime-manager.js';
 import { parse, applyEdits, modify, type ParseError } from 'jsonc-parser';
 import { readBoundedFileSync } from '../storage/read.js';
 import { withFileLock } from '../storage/lock.js';
@@ -199,13 +200,12 @@ function runtimeCopy(storagePath: string, bundle: string): string {
   }
   return target;
 }
-/** Removes bundle copies in global storage that the profile entry no longer starts. */
-function pruneRuntimes(storagePath: string, keep: string): void {
-  const root = path.join(storagePath, 'runtime');
-  if (!fs.existsSync(root)) return;
-  for (const name of fs.readdirSync(root)) {
-    if (/^[a-f0-9]{64}$/.test(name) && path.join(root, name) !== path.dirname(keep)) removeRuntimeDirectory(path.join(root, name));
-  }
+/** Removes bundle copies in global storage that neither the profile entry nor an active runtime lease starts. */
+async function pruneRuntimes(storagePath: string, home: string, keep: string): Promise<void> {
+  const keepDigest = path.basename(path.dirname(keep));
+  await cleanupUnreferencedRuntimes(storagePath, home, process.env, {
+    extraReferencedDigests: /^[a-f0-9]{64}$/.test(keepDigest) ? [keepDigest] : [],
+  });
 }
 
 /**
@@ -225,7 +225,7 @@ export async function syncVscodeRegistration(options: VscodeSyncOptions): Promis
   return withFileLock(leaseResource(options.home), async () => {
     for (let attempt = 0; ; attempt++) {
       try {
-        return syncOnce(options);
+        return await syncOnce(options);
       } catch (error) {
         // VS Code or the user wrote mcp.json at the same time; read their result again.
         if (attempt < 2 && error instanceof Error && /changed concurrently/.test(error.message)) continue;
@@ -252,7 +252,7 @@ export interface VscodeSyncOptions {
   folders?: string[];
   restore?: boolean;
 }
-function syncOnce({
+async function syncOnce({
   storagePath,
   bundle,
   server,
@@ -262,7 +262,7 @@ function syncOnce({
   adopt = false,
   folders = [],
   restore = false,
-}: VscodeSyncOptions): VscodeRegistration {
+}: VscodeSyncOptions): Promise<VscodeRegistration> {
   const file = profileMcpFile(storagePath);
   const { text: recordText, record } = readRecord(home);
   const text = read(file);
@@ -310,7 +310,7 @@ function syncOnce({
     ) {
       writeRecord(home, recordText, { ...record, [file]: { entry: hash(JSON.stringify(current)), version, installation } });
     }
-    pruneRuntimes(storagePath, runtime);
+    await pruneRuntimes(storagePath, home, runtime);
     return 'current';
   }
   const base = text ?? '{}\n';
@@ -334,7 +334,7 @@ function syncOnce({
   });
   writeChecked(file, text, after);
   writeRecord(home, marked, { ...record, [file]: { entry: digest, version, installation } });
-  pruneRuntimes(storagePath, runtime);
+  await pruneRuntimes(storagePath, home, runtime);
   return 'registered';
 }
 

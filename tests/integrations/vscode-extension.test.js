@@ -894,43 +894,64 @@ test('the first activation checks the CLIs once and shows one notice; later acti
   }
 });
 
-test('an activation with an outdated CLI chat registration offers to update the CLI chats once per runtime', async () => {
-  const declined = await runExtension({
+test('activation migrates legacy CLI chat registrations once, then future updates show no Update CLI Chats or Restart Extensions prompt', async () => {
+  // 1. Legacy registrations migrate automatically once; with a vendor extension, Restart Extensions is offered once.
+  const migratedWithVendor = await runExtension({
     activationOnly: true,
-    registrations: { codex: 'owned', claude: 'outdated', agy: 'outdated' },
+    registrations: { codex: 'owned', claude: 'legacy', agy: 'legacy' },
+    vendorExtensions: ['anthropic.claude-code'],
     awaitState: true,
-    awaitWarnings: 1,
-  });
-  assert.equal(declined.warnings.length, 1);
-  assert.match(
-    declined.warnings[0],
-    /^CoAgent8 was updated, but the chats of Claude Code CLI, Antigravity CLI still start the previous version\. Update them now; open chats keep the old runtime until restarted\./,
-  );
-  assert.deepEqual(declined.events, ['registrations'], 'the check reads files and starts no CLI');
-  assert.match(declined.state.updateOffered, /#[0-9a-f]{64}$/);
-  const updated = await runExtension({
-    activationOnly: true,
-    registrations: { claude: 'outdated' },
-    awaitWarnings: 1,
     awaitNotifications: 1,
-    action: 'Update CLI Chats',
+    action: 'Restart Extensions',
   });
-  assert.deepEqual(updated.registrations, [['claude']], 'the button updates the outdated chats directly');
-  assert.match(updated.notifications.at(-1).message, /^CoAgent8 updated in the chats of Claude Code CLI\./);
-  const again = await runExtension({ activationOnly: true, registrations: { claude: 'outdated' }, storedState: declined.state });
-  assert.deepEqual(again.warnings, [], 'the same runtime is offered once');
-  assert.deepEqual(again.events, [], 'and reads nothing again');
+  assert.equal(migratedWithVendor.warnings.length, 0, 'never shows Update CLI Chats warning');
+  assert.deepEqual(migratedWithVendor.registrations, [['claude', 'agy']], 'only legacy owned clients migrated');
+  assert.match(migratedWithVendor.notifications.at(-1).message, /^CoAgent8 updated in the chats of Claude Code CLI, Antigravity CLI\./);
+  assert.deepEqual(migratedWithVendor.notifications.at(-1).actions, ['Restart Extensions', 'Show Details']);
+  assert.deepEqual(migratedWithVendor.requests, [['workbench.action.restartExtensionHost']]);
+  assert.match(migratedWithVendor.state.updateOffered, /#[0-9a-f]{64}$/);
+
+  // 2. Without vendor chat extensions, migration informs without Restart Extensions.
+  const migratedTerminalOnly = await runExtension({
+    activationOnly: true,
+    registrations: { claude: 'legacy' },
+    awaitState: true,
+    awaitNotifications: 1,
+  });
+  assert.equal(migratedTerminalOnly.warnings.length, 0);
+  assert.deepEqual(migratedTerminalOnly.registrations, [['claude']]);
+  assert.deepEqual(migratedTerminalOnly.notifications.at(-1).actions, ['Show Details']);
+
+  // 3. After migration, activating a newer extension version with stable registrations changes nothing and shows no prompts.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-ext-update-'));
+  try {
+    const first = await runExtension({
+      home,
+      activationOnly: true,
+      registrations: { codex: 'owned', claude: 'owned', agy: 'owned' },
+      vendorExtensions: ['anthropic.claude-code', 'openai.chatgpt'],
+    });
+    assert.deepEqual(first.warnings, []);
+    assert.deepEqual(first.notifications, []);
+    assert.deepEqual(first.registrations, []);
+    assert.deepEqual(first.requests, []);
+    const pointerFile = path.join(home, '.coagent8', 'runtime', 'current', 'pointer.json');
+    assert.ok(fs.existsSync(pointerFile), 'stable pointer installed on activation');
+    const launcherFile = path.join(home, '.coagent8', 'runtime', 'current', 'index.cjs');
+    assert.ok(fs.existsSync(launcherFile), 'stable launcher installed on activation');
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+
+  // 4. Multi-root window also migrates legacy entries cleanly.
   const roots = await runExtension({
     activationOnly: true,
     workspaceFolders: [path.resolve('one'), path.resolve('two')],
-    registrations: { claude: 'outdated' },
-    awaitWarnings: 1,
+    registrations: { claude: 'legacy' },
+    awaitNotifications: 1,
   });
-  assert.deepEqual(roots.errors, [], 'a multi-root window reads the registrations too');
-  assert.match(
-    roots.warnings[0],
-    /^CoAgent8 was updated, but the chats of Claude Code CLI still start the previous version\. Update them now; open chats keep the old runtime until restarted\./,
-  );
+  assert.deepEqual(roots.errors, [], 'a multi-root window migrates legacy registrations too');
+  assert.deepEqual(roots.registrations, [['claude']]);
 });
 
 test('an activation with a newer CLI chat registration offers no update or downgrade (FEEDBACK-061b2)', async () => {

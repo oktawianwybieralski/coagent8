@@ -65,6 +65,7 @@ import {
   type PathSystemAdapter,
   DefaultWindowsPathAdapter,
 } from '../../../src/integrations/vscode-path.js';
+import { cleanupUnreferencedRuntimes, coagentRootForHome, installAndSelectRuntime } from '../../../src/integrations/runtime-manager.js';
 
 let customPathAdapter: PathSystemAdapter | undefined;
 
@@ -748,6 +749,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
                   installation: path.dirname(context.extensionPath),
                   bundle: context.asAbsolutePath('dist/index.cjs'),
                   nodePath,
+                  version,
                 },
                 activePathAdapter(),
               );
@@ -1036,6 +1038,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
             installation: path.dirname(context.extensionPath),
             bundle: context.asAbsolutePath('dist/index.cjs'),
             nodePath,
+            version,
           },
           activePathAdapter(),
         ),
@@ -2323,35 +2326,54 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }),
   );
   trackTask(finishRemovals(true).catch(removalFailed));
+  const runtimeInstall = vscode.env.remoteName
+    ? Promise.resolve()
+    : trackTask(
+        installAndSelectRuntime({
+          home: os.homedir(),
+          runtimeSource: context.asAbsolutePath('dist/index.cjs'),
+          version,
+        })
+          .then(res => {
+            if (res.action === 'kept-incumbent' || res.action === 'downgrade-blocked' || res.action === 'pinned-blocked') {
+              report({ runtimeSelection: res });
+            }
+          })
+          .catch(error => {
+            report({ runtimeInstallError: redactDiagnostic(error instanceof Error ? error.message : 'Runtime install failed.') });
+          }),
+      );
   /**
-   * Offers to update the CLI chats once per bundled runtime when one still starts another
-   * runtime, as after an extension update. Reads the CLI configuration files only and starts no process.
+   * Migrates owned CLI chat registrations once from legacy `<sha256>` paths to the stable launcher.
+   * Subsequent updates switch the pointer only and show no Update CLI Chats or Restart Extensions prompt.
    */
-  async function offerRegistrationUpdate(): Promise<void> {
+  async function migrateLegacyRegistrations(): Promise<void> {
+    await runtimeInstall;
     if (vscode.env.remoteName || isDeactivating || !readSetupState(storage).welcomed) return;
+    const legacy = readRegistrations(localOptions())
+      .filter(item => item.state === 'owned' && item.legacy && !item.isNewer)
+      .map(item => item.client);
+    if (!legacy.length || isDeactivating) return;
     const runtime = `${version}#${createHash('sha256')
       .update(fs.readFileSync(context.asAbsolutePath('dist/index.cjs')))
       .digest('hex')}`;
     if (readSetupState(storage).updateOffered === runtime) return;
-    const outdated = readRegistrations(localOptions())
-      .filter(item => item.state === 'owned' && !item.current && !item.isNewer)
-      .map(item => item.client);
-    if (!outdated.length || isDeactivating) return;
     await startTracked(() => updateSetupState(storage, { updateOffered: runtime }));
     if (isDeactivating) return;
-    const next = await vscode.window.showWarningMessage(
-      `CoAgent8 was updated, but the chats of ${labels(outdated)} still start the previous version. Update them now; open chats keep the old runtime until restarted.`,
-      'Update CLI Chats',
-    );
-    if (isDeactivating) return;
-    if (next === 'Update CLI Chats') await trackTask(connect(outdated));
+    const migrated = await startTracked(() => setupClients({ ...localOptions(), clients: legacy }));
+    report({ migrated });
+    if (migrated.some(result => result.action === 'updated') && !isDeactivating) {
+      void announce(migrated, [], { migrated }).catch(showLifecycleError);
+    }
   }
-  void offerRegistrationUpdate().catch(error => {
-    if (!isDeactivating)
-      void vscode.window.showErrorMessage(
-        `CoAgent8 update check: ${redactDiagnostic(error instanceof Error ? error.message : 'Update check failed.')}`,
-      );
-  });
+  const migrationTask = trackTask(
+    migrateLegacyRegistrations().catch(error => {
+      if (!isDeactivating)
+        void vscode.window.showErrorMessage(
+          `CoAgent8 migration: ${redactDiagnostic(error instanceof Error ? error.message : 'Registration migration failed.')}`,
+        );
+    }),
+  );
   /**
    * Offers to update outdated CoAgent8 skills once per catalog fingerprint when installed
    * packages have non-conflict updates. Reads local files only and starts no process.
@@ -2413,18 +2435,36 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
   });
   const pathSync = vscode.env.remoteName
     ? Promise.resolve()
-    : syncPathShim(
-        {
-          home: os.homedir(),
-          storage,
-          installation: path.dirname(context.extensionPath),
-          bundle: context.asAbsolutePath('dist/index.cjs'),
-          nodePath: vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim(),
-        },
-        activePathAdapter(),
-      ).catch(error => {
-        report({ pathSyncError: redactDiagnostic(error instanceof Error ? error.message : 'PATH shim synchronization failed.') });
-      });
+    : runtimeInstall
+        .then(() =>
+          syncPathShim(
+            {
+              home: os.homedir(),
+              storage,
+              installation: path.dirname(context.extensionPath),
+              bundle: context.asAbsolutePath('dist/index.cjs'),
+              nodePath: vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim(),
+              version,
+            },
+            activePathAdapter(),
+          ),
+        )
+        .catch(error => {
+          report({ pathSyncError: redactDiagnostic(error instanceof Error ? error.message : 'PATH shim synchronization failed.') });
+        });
   trackTask(pathSync);
+  if (!vscode.env.remoteName) {
+    trackTask(
+      Promise.all([runtimeInstall, pathSync, migrationTask]).then(() => {
+        if (isDeactivating) return;
+        const homeDir = os.homedir();
+        return cleanupUnreferencedRuntimes(coagentRootForHome(homeDir), homeDir, setupEnvironment(), {
+          keepStableNamespaces: true,
+        }).catch(error => {
+          report({ runtimeCleanupError: redactDiagnostic(error instanceof Error ? error.message : 'Runtime cleanup failed.') });
+        });
+      }),
+    );
+  }
   return Promise.all([activated, pathSync]).then(() => undefined);
 }
