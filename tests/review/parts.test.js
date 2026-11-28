@@ -303,3 +303,38 @@ test('a part that does not quote its diff end mark stays BLOCKED and keeps the s
     adapterRegistry.agy = original;
   }
 });
+
+test('if writing a later part diff file fails, no part model turn runs and earlier diff files are cleaned up', async t => {
+  const original = adapterRegistry.agy;
+  const prompts = [];
+  let part1File;
+  const origWrite = fs.writeFileSync;
+  t.mock.method(fs, 'writeFileSync', function (file, ...rest) {
+    const filePath = String(file);
+    if (filePath.endsWith('part-1.diff')) part1File = filePath;
+    if (filePath.endsWith('part-2.diff')) throw new Error('ENOSPC: simulated disk full');
+    return origWrite.call(this, file, ...rest);
+  });
+  try {
+    await setup();
+    const repo = bigRepo();
+    adapterRegistry.agy = {
+      id: 'agy',
+      name: 'fixture',
+      probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+      execute: async prompt => {
+        prompts.push(prompt);
+        throw new Error('must not run any model turn');
+      },
+    };
+    await assert.rejects(
+      handleReview('review', {}, repo, null, null),
+      err => err.code === 'PROCESS_ERROR' && /Could not write the review diff file.*No model turn started/.test(err.message),
+    );
+    assert.equal(prompts.length, 0, 'no model turn ran before part 2 write failed');
+    assert.ok(part1File, 'part 1 diff file write was attempted');
+    assert.equal(fs.existsSync(part1File), false, 'part 1 diff file was cleaned up');
+  } finally {
+    adapterRegistry.agy = original;
+  }
+});

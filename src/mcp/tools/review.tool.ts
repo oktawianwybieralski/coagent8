@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { assertReviewWorkspace } from '../../workspace/git.js';
+import { canonicalPath } from '../../workspace/identity.js';
 import { CANONICAL_TOOL_NAMES, HOST_TOOL_GUIDANCE } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
 import type { BackendReadContext } from '../../contracts/execution.js';
@@ -283,12 +284,31 @@ export async function executeReview(
       workTreeNote ? { ...outcome, warnings: [...(outcome.warnings ?? []), workTreeNote] } : outcome;
     const executionCwd = workTree ? { executionCwd: workTree.cwd } : {};
     const inSnapshot = Boolean(workTree);
+    const isInsideOrEqual = (target: string, root: string): boolean => {
+      const realTarget = canonicalPath(target);
+      const realRoot = canonicalPath(root);
+      if (!realTarget || !realRoot) return false;
+      const rel = path.relative(realRoot, realTarget);
+      return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+    };
+    const assertReferenceOutside = (dir: string) => {
+      if (isInsideOrEqual(dir, workspaceCwd) || (workTree && isInsideOrEqual(dir, workTree.path))) {
+        throw new ToolError(
+          'POLICY_DENIED',
+          'Refusing review: the temporary diff directory lies inside the workspace or snapshot work tree, so the diff file would alter the reviewed input. No model turn started.',
+        );
+      }
+    };
     // A fresh directory per review outside the reviewed tree, removed after it (#214, #247).
     let referenceDir: string | undefined;
     const diffDir = () => {
       if (!referenceDir) {
-        fs.mkdirSync(snapshotRoot(), { recursive: true });
-        referenceDir = fs.mkdtempSync(path.join(snapshotRoot(), 'diff-'));
+        const root = snapshotRoot();
+        assertReferenceOutside(root);
+        fs.mkdirSync(root, { recursive: true });
+        const created = fs.mkdtempSync(path.join(root, 'diff-'));
+        referenceDir = created;
+        assertReferenceOutside(created);
       }
       return referenceDir;
     };
@@ -300,6 +320,7 @@ export async function executeReview(
           readToken: written.token,
         };
       } catch (err) {
+        if (err instanceof ToolError) throw err;
         const reason = redactDiagnostic(err instanceof Error ? err.message : String(err), 256);
         throw new ToolError('PROCESS_ERROR', `Could not write the review diff file: ${reason}. No model turn started.`, { cause: err });
       }
@@ -491,9 +512,10 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
       `Session '${handle!.slice(0, 80)}' runs on ${followed.backend}, not ${requested}. No model turn started.`,
     );
   }
+  const prepared = parts.map((part, index) => review.partDiff(part, index));
   for (const [index, part] of parts.entries()) {
     const partSnapshot = `${snapshot}/part-${index + 1}-of-${parts.length}`;
-    const { diffText, readToken } = review.partDiff(part, index);
+    const { diffText, readToken } = prepared[index]!;
     const prompt = review.promptFor(diffText, partSnapshot, [
       `This change is too large for one turn, so it is reviewed in ${parts.length} parts; you have part ${index + 1}. COVERAGE refers to this part. Every part is listed here; read files of other parts only to check a call site:`,
       manifest,

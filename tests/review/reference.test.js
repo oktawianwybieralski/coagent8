@@ -414,3 +414,35 @@ test('refuses cleanly with no inline fallback if writing the diff file fails', a
     f.restore();
   }
 });
+
+test('refuses before any model turn when the diff reference directory lies inside the workspace or snapshot tree', async () => {
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  const { dir } = repo();
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'inside-workspace-temp\n');
+  const innerTmp = path.join(dir, 'inner-tmp');
+  fs.mkdirSync(innerTmp);
+  const f = fixture(true);
+  const previousTmp = process.env.TMP;
+  const previousTemp = process.env.TEMP;
+  const previousTmpdir = process.env.TMPDIR;
+  // On Windows, exercise case-insensitive path matching too.
+  const casedTmp = process.platform === 'win32' ? innerTmp.toUpperCase() : innerTmp;
+  process.env.TMP = casedTmp;
+  process.env.TEMP = casedTmp;
+  process.env.TMPDIR = casedTmp;
+  try {
+    await assert.rejects(
+      executeReview({ backend: 'agy' }, dir),
+      err => err.code === 'POLICY_DENIED' && /outside|lies inside the workspace or snapshot work tree/i.test(err.message),
+    );
+    assert.equal(f.seen.length, 0, 'no model turn started when temp dir is inside the workspace');
+  } finally {
+    if (previousTmp === undefined) delete process.env.TMP;
+    else process.env.TMP = previousTmp;
+    if (previousTemp === undefined) delete process.env.TEMP;
+    else process.env.TEMP = previousTemp;
+    if (previousTmpdir === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previousTmpdir;
+    f.restore();
+  }
+});
