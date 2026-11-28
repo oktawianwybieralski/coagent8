@@ -1,7 +1,7 @@
 {
   "name": "coagent8-mcp",
   "displayName": "CoAgent8 - MCP bridge to coding CLIs",
-  "description": "Ask Codex, Claude Code and Antigravity for second opinions and Git reviews from VS Code chat through MCP.",
+  "description": "Ask Codex, Claude Code and Antigravity for second opinions, Git reviews and delegated code changes from VS Code chat through MCP.",
   "version": "0.7.0",
   "publisher": "okidev",
   "author": {

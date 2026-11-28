@@ -107,7 +107,7 @@ test('a thread that does not report full access starts no turn (#211)', async ()
   assert.ok(!capture().records.some(r => r.method === 'turn/start'), 'no turn starts');
   assert.match(
     text(result),
-    /No tracked or untracked file changed \(Git-ignored files are not observed\)\./,
+    /No tracked or untracked file changed \(Git-ignored files and changes inside submodules are not observed\)\./,
     'the observed block still follows a failed turn',
   );
 });
@@ -345,7 +345,7 @@ test('observed paths, diff stats and branch names get diagnostic redaction', () 
     diffStat: ' token=private-value.txt | 2 +-',
   });
   assert.doesNotMatch(out, /private-value|hidden-branch/);
-  assert.match(out, /Git-ignored files are not observed/);
+  assert.match(out, /Git-ignored files and changes inside submodules are not observed/);
 
   const none = formatObservedChanges({
     changed: [],
@@ -353,7 +353,7 @@ test('observed paths, diff stats and branch names get diagnostic redaction', () 
     dirtyBefore: [],
     truncated: false,
   });
-  assert.match(none, /No tracked or untracked file changed \(Git-ignored files are not observed\)\./);
+  assert.match(none, /No tracked or untracked file changed \(Git-ignored files and changes inside submodules are not observed\)\./);
   assert.doesNotMatch(none, /No file changed\./);
 });
 

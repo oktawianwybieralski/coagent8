@@ -3,7 +3,7 @@
   "mcpName": "io.github.oktawianwybieralski/coagent8",
   "displayName": "CoAgent8 - MCP bridge to coding CLIs",
   "version": "0.7.0",
-  "description": "Expose local coding CLIs through MCP with public conversation history and read-only execution profiles.",
+  "description": "Expose local coding CLIs through MCP: second opinions, Git reviews and delegated code changes, run on the host after your consent.",
   "main": "dist/index.cjs",
   "bin": {
     "coagent8": "./dist/index.cjs",
