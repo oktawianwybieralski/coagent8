@@ -182,7 +182,23 @@ function run() {
   if (process.env.coagent8_FIXTURE_CAPTURE) {
     fs.writeFileSync(
       process.env.coagent8_FIXTURE_CAPTURE,
-      JSON.stringify({ args, prompt, nested: process.env.COAGENT8_NESTED_TURN ?? null }),
+      JSON.stringify({
+        args,
+        prompt,
+        nested: process.env.COAGENT8_NESTED_TURN ?? null,
+        coagent8Env: {
+          coagent8_DIR: process.env.coagent8_DIR ?? null,
+          coagent8_CONFIG: process.env.coagent8_CONFIG ?? null,
+          coagent8_QUOTA_CACHE: process.env.coagent8_QUOTA_CACHE ?? null,
+          coagent8_SESSIONS_DIR: process.env.coagent8_SESSIONS_DIR ?? null,
+          coagent8_SESSIONS: process.env.coagent8_SESSIONS ?? null,
+          coagent8_END_NOTES_DIR: process.env.coagent8_END_NOTES_DIR ?? null,
+          COAGENT8_NESTED_TURN: process.env.COAGENT8_NESTED_TURN ?? null,
+          USERPROFILE: process.env.USERPROFILE ?? null,
+          CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ?? null,
+          CODEX_HOME: process.env.CODEX_HOME ?? null,
+        },
+      }),
     );
   }
   const send = event => console.log(JSON.stringify(event));

@@ -50,7 +50,7 @@ and workspace-write profiles of earlier versions (owner decision 2026-11-21).
 * **Windows.** Every role refuses to run without the job helper, which ends a
   turn's descendants with it
   ([contract](../../docs/ARCHITECTURE.md#windows-per-call-containment-windows-001)).
-* The nested-turn refusal stays: a turn cannot call CoAgent8 itself.
+* The nested-turn refusal stays: a turn cannot call CoAgent8 itself, and every turn's environment replaces `coagent8_CONFIG`, `coagent8_DIR`, and the other CoAgent8 path overrides with one per-process disposable directory under `os.tmpdir()` (created on the first turn and removed on process exit) and strips `coagent8_EXTENSION_PATHS`, while keeping `COAGENT8_NESTED_TURN` and backend profile variables so CoAgent8 code that a command or test inside a turn runs uses those disposable paths instead of the user's CoAgent8 configuration and data; turns still run on the host with the user's other files (#248; outside a turn, tests run through `tests/run.cjs`).
 
 ### Delegate (DELEGATE-001w)
 

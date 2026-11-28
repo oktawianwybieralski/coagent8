@@ -41,82 +41,46 @@ tags, publication and repository settings stay the owner's.
 
 | Area | Present on `develop` | Remaining for `0.8.0` |
 | --- | --- | --- |
-| Execution | Seven tools, three CLI adapters, plain consult, explicit model/effort, asynchronous `delegate` with task records and `wait`, a server-owned loop, parallel workers under one root budget in disjoint scopes or linked worktrees, coordinated by the calling agent | Roles and verified profiles, compatibility and benchmarks (#160, #161, #165, #166) |
-| Safety | Owned cleanup, hidden Windows launches, per-call Windows containment, redaction, explicit model and check consent, Codex/Claude inherited-tool controls | POSIX parent-death cleanup (#186); `arm64` and SmartScreen (#111); signing (#112) |
-| Review | Completeness, snapshot gate, post-turn recheck, reviews in parts, checks the server runs before the turn | Release hashes bound to the review (#148); other-tree review (#187, unscheduled) |
-| Storage/routing | Leases, bounded archives, cached catalogs/prices, writer records across server processes, root reservations, caller label (Claude Code) | Ephemeral calls and early handles for consult and review (#188) |
-| Agent usability | Cached model view with CLI catalogs, per-model prices and release dates, price limit, result footer, client-declined forms reported as the client's answer | Fresh-client acceptance (#156), form-less consent (#154) |
-| Integrations | Shared config, setup, VSIX, owned registration/uninstall, client skills, Claude Code wake-up | Codex and agy wake-up (#113, #114), plugins (#151) |
+| Execution | Seven tools, three CLI adapters on the host behind a one-time consent (#208, #211), explicit model/effort, asynchronous `delegate` with task records and `wait`, a server-owned loop, parallel workers under one root budget, coordinated by the calling agent | Async review and consult, longer async turns (#246); turns isolated from the user's CoAgent8 files (#248) |
+| Safety | Owned cleanup, hidden Windows launches, per-call Windows containment, redaction, explicit model and check consent, agy turns without the user's MCP servers on Windows | #248 |
+| Review | Completeness, snapshot gate, post-turn recheck, reviews in parts with part coverage, checks the server runs before the turn | No diff in the prompt (#247) |
+| Integrations | Shared config, setup, VSIX, owned registration/uninstall, client skills, Claude Code wake-up | One restart per update (#250), the coordinator skill (#234), documentation access for Codex delegates (#227), agy schema check (#138) |
 
 ## 0.8.0 plan
 
-Owner decisions 2026-10-15 and 2026-11-02: `0.8.0` is rc.1, the first release
-candidate on `1.0.x`, and the full orchestra: a coordinating agent hands
-complete tasks to cooperating agents that write, check and review. New
-capability comes before hardening, and each result group is one PR with its
-documents (owner 2026-11-02). Work is sized by owner steps, dependencies, CI
-and review, not by time. The
-[`0.8.0` milestone](https://github.com/oktawianwybieralski/coagent8/milestone/1)
-lists every issue; this is their order.
+Owner decision 2026-11-28 (scope review): `0.8.0` is a regular preview whose
+headline is full delegation: a coordinating agent hands complete tasks to
+cooperating agents that write, check and review, with `delegate`, `review` and
+`consult` as tasks. It ships what is on `develop` plus the
+[`0.8.0` milestone](https://github.com/oktawianwybieralski/coagent8/milestone/1):
+#246, #248, #250, #247, #234, #227, #138, the remainder of the single runner
+(#208, #211) and the Dependabot alerts (#120). Its gate is the one `0.7.0` had:
+six OS/Node CI jobs, the full package gate, an independent review and a native
+upgrade from the published version.
 
-**Delivered on `develop`** ([records](https://github.com/oktawianwybieralski/coagent8/blob/7eec83a/docs/delivered/0.8.0/README.md)): write
-delegation, asynchronous by default with `wait` and task records, Claude Code
-wake-up, the caller label (Claude Code only) and the first slice of the
-server-owned loop; Windows per-call containment, accepted natively on `x64`;
-reviews of large changes in parts and checks the server runs before a review;
-the shared agent standards, one formatter and the documentation audit of
-2026-11-03; parallel workers under one root
-([contract](ARCHITECTURE.md#parallel-workers-159-to-162)); delegated coordination
-(#164), removed again on 2026-11-24 (#212).
+The same review closed issues the changed plans made obsolete (2026-11-28): the
+read-only and workspace-write profiles and the work built on them (#160, #165,
+#168, #169), the delegated coordinator's worker rule (#202), and the open steps
+of the parallel-workers group, which is delivered (#159, #161, #162); early
+handles for consult and review come with #246 (#188).
 
-**Remaining, in order.** Group 3 completes the orchestra; 4 needs the owner in the
-clients; 5 is the release-candidate gate. Group 1, parallel workers, is delivered:
-the task contract (#159) reconciled with the task records as built, writer ownership
-of disjoint scopes (#160), root reservations (#161) and the writer lifecycle (#162).
-Group 2, delegated coordination (#164), was delivered and then removed (owner decision
-2026-11-24, #212): the calling agent is the coordinator.
+## 0.9.0 plan
 
-3. **Profiles and roles:** verified capabilities per backend, version and OS
-   (#160), with POSIX parent-death cleanup (#186) and the Windows containment
-   (#169) before any write or command profile is claimed; role defaults
-   independent of backend (#161), the compatibility inventory (#165), then the
-   loop on the accepted profiles (#168). Also open from the loop's first slice:
-   agy as a loop writer and a POSIX run.
-4. **Wake-up for Codex and agy** (#168 with #113 and #114). Both get
-   `wakeup: none` and `wait` today; the tests need an open Codex window and the
-   agy hub. Related: #137, #138.
-5. **Release-candidate acceptance:** benchmark cases (#166), fresh-client runs
-   (#156), the WSL lane (#172, the owner installs WSL2), skill discovery and
-   management (#158, #149), Manage Coding CLIs (#150), native acceptance and
-   the independent release review bound to the artifact hashes (#148), the
-   audit rerun on the candidate (#189) and the Socket scores (#184).
-
-**Owner steps:** #111 (`arm64` machine, SmartScreen), #112 (SignPath), #120
-(Dependabot alerts that wait for TypeDoc), #179 (signed-commit ruleset), #177
-(Open VSX, namespace `okidev` granted 2026-10-20), #174 (npm trusted publisher
-on release day), the tag and publication.
-
-**Open owner decisions before the feature freeze:**
-
-- Plugin acceptance (#151) tests plugins against a published package, so it
-  cannot come before rc.1. Proposal: the loader evidence, manifests,
-  marketplaces, setup coexistence and the VS Code entry in rc.1, the native
-  acceptance against the published `0.8.0` as a condition of `1.0.0`.
-- Proposed to defer past rc.1, since the orchestra does not depend on them:
-  the seeded fork and configured failover after quota exhaustion (#167, steps
-  b and c), multi-file skills (#163), cost estimates (#152, steps e, h and i),
-  the MCP adapter over the packaged CLI, the CLI topology measurement and
-  readable terminal output (#170, steps g, i and j), the session modes (#188;
-  its early handles stay in `0.8.0`), the documentation site (#183) and the
-  connectome research (#182). Asynchronous review stays deferred (2026-10-21, #192).
-  Issues the plan does not order carry no milestone; #152, #163 and #183 carry
-  `1.0.0` because the proposal covers all their open steps.
+`0.9.0` is rc.1, the first release candidate on `1.0.x`
+([milestone](https://github.com/oktawianwybieralski/coagent8/milestone/3)):
+release-candidate acceptance (#148, #149, #150, #156, #158, #166, #172, #184,
+#189), wake-up for Codex and agy (#113, #114, with #137), plugins (#151),
+form-less consent (#154), POSIX cleanup and agy isolation (#186, #239), the
+remaining findings (#199, #200, #203, #235), the additions requested after
+`0.8.0` (the live panel and TUI, #243; several accounts per backend, #251) and
+the owner's release steps (#111, #112, #174, #177, #179). The additions come
+first after `0.8.0`, then the feature freeze and the acceptance.
 
 ## Full coagent direction
 
 Delegation delivered a first slice of the profiles and the lifecycle (one
 writer per work tree, task records, the server-owned loop); the milestones
-remain, in the order of the [0.8.0 plan](#080-plan). Contract designs are
+remain, in the order of the [0.9.0 plan](#090-plan). Contract designs are
 recorded in [ARCHITECTURE.md](ARCHITECTURE.md) (labelled unimplemented) before
 implementation issues are opened. Roles do not grant capabilities or imply
 model size; any supported provider/model may plan, implement, verify or review,
@@ -145,14 +109,15 @@ Stage names stay; each stage ships as the next minor below 1.0.0, while fix-only
 preview updates raise the patch
 ([REPO-003](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#repo-003-one-numeric-version-for-npm-vsix-and-tags)): beta.2 is
 `0.6.0` (released), `0.6.1` and `0.7.0` are released, and the following
-previews are `0.8.0` (rc.1) and `0.9.0` if needed.
+previews are `0.8.0` (a preview with full delegation, owner decision 2026-11-28), `0.9.0` (rc.1) and `0.10.0` if needed.
 
 | Stage | Required scope |
 | --- | --- |
 | BETA-001: beta.2 (0.6.0, released) | Released as `v0.6.0` ([evidence](https://github.com/oktawianwybieralski/coagent8/blob/7eec83a/docs/delivered/0.6.1/README.md#060-release-evidence)): bridge audit blockers (`AUDIT-001-A01` to `A07`), `AX-007a-c`, `WINDOWS-001a`, `SKILLS-001a-d`, and `EXEC-001-T12` package/matrix/independent review and native VS Code checks. No write claim. |
 | PATCH-061: 0.6.1 (fix-only preview, released) | `FEEDBACK-060` 0.6.1 fixes, `PUBLIC-001`, `DOCS-002a/b/d`, `LIC-001` MIT relicensing, `SUPPLY-001a-b` packaging fixes, and `PATCH-061-R1..R7`/`N1..N7` release acceptance. |
 | BETA-001: beta.3 (0.7.0, released 2026-10-20) | The `0.7.0` rows of the [release split](https://github.com/oktawianwybieralski/coagent8/blob/a7c6f72/docs/ROADMAP.md#070-beta3-plan): public CLI (CLI-FIRST-001a-e, h), FEEDBACK-061, the acceptance runner (ACCEPT-001a/b; WSL 2.18 deferred to `0.8.0` on 2026-10-19), native acceptance of shipped skills and CLI management, the accepted PROPOSALS-001 rule and description items, RELEASE-001 and a native upgrade from the published `0.6.1` (row 5.10). No write claim. |
-| RC-001: rc.1 (0.8.0, first on `1.0.x`) | Ordered by the [0.8.0 plan](#080-plan), with its open owner decisions on `PLUGIN-001f` and the deferrals. The `0.8.0` rows of the release split: asynchronous delegation with caller wake-up (DELEGATE-001), host-led COAGENT-001 through 005 and applicable 007 (verified writes/checks/review/skills), WINDOWS-001 containment before write profiles, the delegated/parallel slice, COAGENT-008, PLUGIN-001, DOCS-003, SUPPLY-001c-e, AX acceptance and AUDIT-001-A08 to A21, all complete or explicitly deferred before freeze, unsupported claims removed. |
+| PREVIEW-080: 0.8.0 | The [0.8.0 plan](#080-plan): full delegation, the scope of its milestone, the `0.7.0` gate. |
+| RC-001: rc.1 (0.9.0, first on `1.0.x`) | The [0.9.0 plan](#090-plan), with the open owner decision on `PLUGIN-001f`: release-candidate acceptance, wake-up, plugins and the additions after `0.8.0`, all complete or explicitly deferred before the freeze, unsupported claims removed. |
 | rc.2 if needed | Corrections with renewed evidence; never replace a published artifact. |
 | 1.0.0 | Accepted audited snapshot, tagged on `1.0.x` through its release PR (rule 02 section 5). |
 

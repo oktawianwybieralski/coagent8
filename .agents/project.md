@@ -53,21 +53,19 @@ judgement rather than typing code.
 - Reviewer: CoAgent8 `review` with backend `codex` (see "Reviewers"), and
   CoAgent8 `consult` with backend `codex` on the plan of a non-trivial issue.
 
-Owner decisions 2026-11-27: `agy` implements nearly every change; it is cheap
-enough to run several tasks, and with a well-described task it does good work.
-Only a change to a boundary where a mistake directly exposes the user is
-implemented by CoAgent8 `delegate` with backend `claude`: the consent to run
-on the host and the model consent and cost governance
+Owner decisions 2026-11-27 and 2026-11-28: `agy` implements every change,
+and `codex` reviews it; nothing is delegated to `claude`, whose usage is saved
+(owner, 2026-11-28). A change to a boundary where a mistake directly exposes
+the user (the consent to run on the host, model consent and cost governance
 ([rule 11](rules/11-security-and-sandboxes.md)), secret redaction, the
-isolation of turns from the user's own tools and MCP servers (#224), and the
+isolation of turns from the user's own tools, files and MCP servers, and the
 publication tooling that holds registry credentials
-([rule 12](rules/12-release-workflow.md)). Process teardown, root limits,
-reviews, sessions, setup and the VS Code extension are ordinary work for
-`agy`. Every change gets the `codex` review and the coordinator's own check of
-the diff after it; the coordinator may add a CoAgent8 `review` with backend
-`claude` when the risk calls for it. Native runs of the claude CLI are done by
-the coordinator, since an agy turn sees CoAgent8's agy profile as
-`USERPROFILE` on Windows (#224).
+([rule 12](rules/12-release-workflow.md))) gets the same `agy` implementation
+and `codex` review, and the coordinator checks its diff with extra care for
+the area's invariants. Every change gets the `codex` review and the
+coordinator's own check of the diff after it. Native runs of the claude CLI,
+when evidence needs one, are done by the coordinator, since an agy turn sees
+CoAgent8's agy profile as `USERPROFILE` on Windows (#224).
 
 Parallel work (owner decision 2026-11-27): each task gets its own git worktree
 in `../coagent8-worktrees/<type>-<short-name>` from `origin/develop`, and its
