@@ -11,10 +11,9 @@
  * its sessions per directory). The file lock of the workspace's snapshot holds both for the
  * whole review, so a second review of the workspace runs in the workspace instead. A repository
  * whose attributes name any filter (such as Git LFS) is not materialized: neither its clean nor
- * its smudge filter runs; nor is one with submodules. Uncommitted and staged reviews of the
- * current workspace fall back to running in the workspace when a snapshot cannot be
- * materialized; historical targets whose end differs from the working tree are refused instead.
- * The snapshot is a working directory, not a boundary.
+ * its smudge filter runs; nor is one with submodules. Uncommitted and staged reviews fall back to
+ * running in the workspace when a snapshot cannot be materialized; commit, branch and range scopes
+ * are refused instead. The snapshot is a working directory, not a boundary.
  *
  * @packageDocumentation
  */
@@ -86,41 +85,17 @@ export function targetRevision(info: Pick<GitScopeInfo, 'type' | 'revision'>): s
 }
 
 /**
- * Whether the working tree already holds the reviewed target state.
- * Uncommitted and staged scopes target the current workspace; commit, branch and range scopes
- * match only when the target revision resolves, includes any workspace subdirectory, and has
- * no tracked or untracked differences from the working tree.
+ * Whether a scope targets the current workspace and may fall back to it without a snapshot.
+ * Checked from the scope type alone so no Git working-tree comparison can trigger a clean filter.
  */
-async function isCurrentWorkspaceTarget(
-  info: Pick<GitScopeInfo, 'type' | 'revision'>,
-  workspace: string,
-  context: BackendReadContext | undefined,
-): Promise<boolean> {
-  if (info.type === 'uncommitted' || info.type === 'staged') return true;
-  const revision = targetRevision(info);
-  if (!revision) return false;
-  const git = (args: string[]) => runGit(args, workspace, context, 15000);
-  try {
-    const commit = (await git(['rev-parse', '--verify', `${revision}^{commit}`])).trim();
-    const prefix = (await git(['rev-parse', '--show-prefix'])).trim().replace(/\/+$/, '');
-    if (prefix) {
-      const subtree = await git(['ls-tree', '-d', commit, '--', prefix]);
-      if (!subtree.trim()) return false;
-    }
-    const diff = await git(['diff', '--name-only', '--no-ext-diff', '--no-textconv', commit, '--', ':(top)']);
-    if (diff.trim()) return false;
-    const untracked = await git(['ls-files', '-z', '--others', '--exclude-standard', '--', ':(top)']);
-    return !untracked;
-  } catch (err) {
-    if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) throw err;
-    return false;
-  }
+function canFallbackToWorkspace(info: Pick<GitScopeInfo, 'type'>): boolean {
+  return info.type === 'uncommitted' || info.type === 'staged';
 }
 
 /**
- * Runs `fn` with the reviewed state materialized, or in the workspace when it targets the
- * current workspace and cannot be materialized. Refuses historical targets whose end differs
- * from the working tree when a snapshot cannot be materialized.
+ * Runs `fn` with the reviewed state materialized, or in the workspace for uncommitted and staged
+ * scopes when a snapshot cannot be materialized. Refuses commit, branch and range scopes when a
+ * snapshot cannot be materialized.
  * @param info - The collected review scope.
  * @param workspace - The user's work tree.
  * @param context - The call's read context; its budget bounds the Git commands that build the snapshot.
@@ -147,7 +122,7 @@ export async function withReviewSnapshot<T>(
     );
   } catch (err) {
     // Anything `fn` or `runInSnapshot` threw stands; before it ran, a lock another review holds,
-    // or any failure to set up the lock, falls back only for current-workspace targets. A
+    // or any failure to set up the lock, falls back only for uncommitted/staged scopes. A
     // cancellation or deadline ends it.
     if (ran) throw err;
     if (err instanceof ToolError && (err.code === 'TIMEOUT' || err.code === 'ABORTED')) throw err;
@@ -155,7 +130,7 @@ export async function withReviewSnapshot<T>(
       err instanceof LockTimeoutError
         ? 'another review of this workspace is using its snapshot'
         : `the snapshot lock could not be set up: ${(err as Error).message.slice(0, 200)}`;
-    if (!(await isCurrentWorkspaceTarget(info, workspace, context))) {
+    if (!canFallbackToWorkspace(info)) {
       throw new ToolError('POLICY_DENIED', `Cannot review ${info.label} without a snapshot work tree: ${reason}. No model turn started.`);
     }
     return fn(undefined, reason);
@@ -195,7 +170,7 @@ async function runInSnapshot<T>(
   // Without a snapshot, what an earlier, crashed review left is removed before the turn.
   if (!snapshot) {
     await cleanUp(cleanupGit, target, ref);
-    if (!(await isCurrentWorkspaceTarget(info, workspace, context))) {
+    if (!canFallbackToWorkspace(info)) {
       throw new ToolError(
         'POLICY_DENIED',
         `Cannot review ${info.label} without a snapshot work tree: ${skipped ?? 'the snapshot could not be prepared'}. No model turn started.`,

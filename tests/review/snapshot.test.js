@@ -11,7 +11,7 @@
  * - a second review of the workspace runs in the workspace while the first holds the snapshot;
  * - untracked files over the review bounds, and any filter attribute, keep the review in the workspace;
  * - a workspace in a subdirectory runs in the same subdirectory, and a historical revision without it is refused;
- * - historical targets whose end differs from the working tree are refused when snapshot materialization fails;
+ * - commit, branch and range scopes are refused when snapshot materialization fails, without running any clean filter;
  * - a cancelled call still removes its snapshot;
  * - a review turn runs in the snapshot.
  */
@@ -296,6 +296,32 @@ test('a historical range in a repo with a checkout filter or lock contention is 
     return skipped;
   });
   assert.match(uncommittedWhy, /checkout filter/);
+
+  // Even when a commit/branch/range target ends at HEAD (matching the clean working tree),
+  // snapshot failure still refuses without running any working-tree clean filter.
+  const { dir: filterDir, git: filterGit } = repo();
+  filterGit('config', 'filter.fixture.clean', 'false');
+  filterGit('config', 'filter.fixture.required', 'true');
+  fs.writeFileSync(path.join(filterDir, '.gitattributes'), '*.txt filter=fixture\n');
+  execFileSync('git', ['-c', 'filter.fixture.clean=cat', 'add', '.gitattributes'], { cwd: filterDir, windowsHide: true });
+  execFileSync('git', ['-c', 'filter.fixture.clean=cat', 'commit', '-qm', 'filter'], { cwd: filterDir, windowsHide: true });
+  const filterHead = filterGit('rev-parse', 'HEAD');
+  for (const scope of ['HEAD', `HEAD~1..${filterHead}`]) {
+    let headEntered = false;
+    await assert.rejects(
+      inSnapshot(filterDir, scope, async () => {
+        headEntered = true;
+      }),
+      err => err instanceof ToolError && err.code === 'POLICY_DENIED' && /checkout filter/.test(err.message),
+      scope,
+    );
+    assert.equal(headEntered, false, scope);
+  }
+  const stagedWhy = await inSnapshot(filterDir, 'staged', async (snapshot, skipped) => {
+    assert.equal(snapshot, undefined);
+    return skipped;
+  });
+  assert.match(stagedWhy, /checkout filter/, 'staged still falls back without running clean filter');
 
   // A historical range also refuses when another review holds the snapshot lock (cannot materialize).
   const { dir: lockDir, git: lockGit } = repo();

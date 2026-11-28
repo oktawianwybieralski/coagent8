@@ -393,9 +393,9 @@ snapshot, so a follow-up resumes in the same place. A repository whose attribute
 (Git LFS and the like, in any attribute file the snapshot has, `info/attributes`, or the system
 or global file Git reports), submodules, untracked files over the bounds, a revision without the workspace's subdirectory or a failed
 step keep an uncommitted or staged review in the workspace with a warning; no filter runs. A
-commit, branch or range review whose target differs from the working tree is refused in those
-cases (`POLICY_DENIED`, no model turn), because the workspace would not hold the reviewed state;
-this includes a second concurrent review of such a target. Line endings follow the
+commit, branch or range review is refused in those cases (`POLICY_DENIED`, no model turn),
+because the workspace may not hold the reviewed state and comparing it could run a filter; this
+includes a second concurrent review of such a scope in the same workspace. Line endings follow the
 repository's attributes, as in any checkout. The snapshot is removed after the turn, also after a
 cancellation; server checks still run in the workspace. It is a working directory, not a boundary:
 the reviewer is told to leave the workspace alone, and nothing enforces that until #215.
