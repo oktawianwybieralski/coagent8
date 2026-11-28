@@ -800,3 +800,95 @@ test('rollbackOrPinRuntime probes before pinning and keeps incumbent when instal
   assert.ok(pinned.tools.includes('doctor'));
   assert.equal(readRuntimePointer(root, 'current').pinned.digest, res1.digest);
 });
+
+test('updater lock serializes concurrent failing updates, restores pin on unpin launcher failure, and releases lock on success', async t => {
+  const { runtimePointerPath, runtimeUpdateLockResource } = require('../../src/integrations/runtime-manager.ts');
+  const home = makeHome(t);
+  const root = coagentRootForHome(home);
+  const updateLease = `${runtimeUpdateLockResource(root)}.lease`;
+
+  // 1. Successful updates work and release the updater lock so subsequent updates succeed.
+  const v1 = path.join(home, 'v1.cjs');
+  const v2 = path.join(home, 'v2.cjs');
+  const v3 = path.join(home, 'v3.cjs');
+  fs.writeFileSync(v1, validMcpBundle('v1'));
+  fs.writeFileSync(v2, validMcpBundle('v2'));
+  fs.writeFileSync(v3, validMcpBundle('v3'));
+
+  const res1 = await installAndSelectVerifiedRuntime({ home, runtimeSource: v1, version: '0.7.0', nodePath: process.execPath });
+  assert.equal(res1.action, 'installed');
+  assert.equal(fs.existsSync(updateLease), false, 'updater lock released after first install');
+
+  const res2 = await installAndSelectVerifiedRuntime({ home, runtimeSource: v2, version: '0.8.0', nodePath: process.execPath });
+  assert.equal(res2.action, 'updated');
+  assert.equal(fs.existsSync(updateLease), false, 'updater lock released after update');
+
+  const res3 = await installAndSelectVerifiedRuntime({ home, runtimeSource: v3, version: '0.9.0', nodePath: process.execPath });
+  assert.equal(res3.action, 'updated');
+  assert.equal(fs.existsSync(updateLease), false, 'updater lock released after second update');
+  assert.equal(readRuntimePointer(root, 'current').digest, res3.digest);
+
+  // 2. Two concurrent installAndSelectVerifiedRuntime calls whose launcher probes fail both leave the original pointer unchanged.
+  const launcherFail = tag =>
+    [`/* ${tag} */`, "if (globalThis[Symbol.for('coagent8.runtimePath')]) process.exit(1);", validMcpBundle(tag)].join('\n');
+  const failA = path.join(home, 'fail-a.cjs');
+  const failB = path.join(home, 'fail-b.cjs');
+  fs.writeFileSync(failA, launcherFail('failA'));
+  fs.writeFileSync(failB, launcherFail('failB'));
+
+  const results = await Promise.allSettled([
+    installAndSelectVerifiedRuntime({ home, runtimeSource: failA, version: '1.0.0', nodePath: process.execPath }),
+    installAndSelectVerifiedRuntime({ home, runtimeSource: failB, version: '1.1.0', nodePath: process.execPath }),
+  ]);
+  assert.equal(results[0].status, 'rejected');
+  assert.equal(results[1].status, 'rejected');
+  assert.equal(fs.existsSync(updateLease), false, 'updater lock released after concurrent failures');
+  const pointerAfterConcurrent = readRuntimePointer(root, 'current');
+  assert.equal(pointerAfterConcurrent.digest, res3.digest, 'original pointer preserved across concurrent failing updates');
+  assert.equal(pointerAfterConcurrent.version, '0.9.0');
+
+  // 3. unpinRuntime with a failing launcher probe restores the pin (and action is not noop).
+  const pointerFile = runtimePointerPath(root, 'current');
+  const pinOnlyBundle = path.join(home, 'pin-only.cjs');
+  fs.writeFileSync(
+    pinOnlyBundle,
+    [
+      `const fs = require('node:fs');`,
+      `if (globalThis[Symbol.for('coagent8.runtimePath')]) {`,
+      `  const p = JSON.parse(fs.readFileSync(${JSON.stringify(pointerFile)}, 'utf8'));`,
+      `  if (!p.pinned) process.exit(1);`,
+      `}`,
+      validMcpBundle('pin-only'),
+    ].join('\n'),
+  );
+  const pinned = await rollbackOrPinRuntime({
+    home,
+    runtimeSource: pinOnlyBundle,
+    version: '0.8.5',
+    reason: 'test-unpin-rollback',
+    nodePath: process.execPath,
+  });
+  assert.equal(pinned.action, 'updated');
+  assert.equal(readRuntimePointer(root, 'current').pinned.digest, pinned.digest);
+
+  await assert.rejects(() => unpinRuntime(home, 'current', { nodePath: process.execPath }), /Probe process exited/);
+  assert.equal(fs.existsSync(updateLease), false, 'updater lock released after failed unpin');
+  const pointerAfterFailedUnpin = readRuntimePointer(root, 'current');
+  assert.equal(pointerAfterFailedUnpin.digest, pinned.digest);
+  assert.equal(pointerAfterFailedUnpin.pinned?.digest, pinned.digest, 'previous pin restored when unpin launcher probe fails');
+
+  // Also verify installAndSelectVerifiedRuntime({ ..., unpin: true }) restores pin on failure rather than returning noop.
+  await assert.rejects(
+    () =>
+      installAndSelectVerifiedRuntime({
+        home,
+        runtimeSource: pinOnlyBundle,
+        version: '0.8.5',
+        allowDevInCurrent: true,
+        unpin: true,
+        nodePath: process.execPath,
+      }),
+    /Probe process exited/,
+  );
+  assert.equal(readRuntimePointer(root, 'current').pinned?.digest, pinned.digest, 'pin restored on unpin option failure');
+});

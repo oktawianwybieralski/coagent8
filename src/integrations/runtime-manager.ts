@@ -34,8 +34,10 @@ const LEASE_LIMIT = 16 * 1024;
 const LEASE_CAPABLE_MARKER = '.lease-capable';
 /** Maximum age (ms) of an unrenewed runtime lease before identity re-verification runs. */
 export const RUNTIME_LEASE_MAX_AGE_MS = 60_000;
-/** Shared lock timeout for runtime pointer and lease operations. */
+/** Shared lock timeout for short runtime pointer, copy, and lease metadata operations. */
 const RUNTIME_LOCK_TIMEOUT_MS = 5_000;
+/** Updater lock timeout serializing full verified runtime update/pin/unpin transactions across probes. */
+const RUNTIME_UPDATE_LOCK_TIMEOUT_MS = 60_000;
 
 /** Explicit downgrade/rollback pin stored in `pointer.json`. */
 export interface RuntimePin {
@@ -180,9 +182,27 @@ export function coagentRootForHome(home: string): string {
   return path.join(path.resolve(home), '.coagent8');
 }
 
-/** Shared lock resource path guarding runtime pointer, copies, leases, and cleanup. */
+/**
+ * Shared lock resource path guarding runtime pointer, copies, leases, and cleanup.
+ *
+ * @remarks
+ * Lock order: `setup` (optional caller lock) -\> `runtime-update` ({@link runtimeUpdateLockResource}) -\> `runtime-lock`.
+ * Never hold `runtime-lock` across `probeRuntime` calls because the launcher acquires `runtime-lock` during startup.
+ */
 export function runtimeLockResource(root: string): string {
   return path.join(path.resolve(root), 'runtime-lock');
+}
+
+/**
+ * Shared updater lock resource path serializing full verified runtime update, pin, and unpin transactions
+ * (copy preparation, candidate probe, pointer selection, launcher probe, and rollback on failure).
+ *
+ * @remarks
+ * Acquired BEFORE `runtime-lock` and never acquired by launchers, process leases, or `cleanupUnreferencedRuntimes`.
+ * Uses `withFileLock` stale-lease reclamation (dead owner PID or unrenewed age).
+ */
+export function runtimeUpdateLockResource(root: string): string {
+  return path.join(path.resolve(root), 'runtime-update');
 }
 
 /** Directory holding immutable `<sha256>` copies, stable namespaces, and process leases. */
@@ -779,6 +799,17 @@ function selectRuntimePointerLocked(
           version: existing.version,
           updatedAt: nowIso,
         });
+        return {
+          namespace,
+          launcherPath,
+          pointerFile,
+          runtimePath: copy.runtimePath,
+          digest: copy.digest,
+          version: copy.version,
+          action: 'updated',
+          incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
+          message: `Unpinned ${namespace} runtime ${copy.version} (${copy.digest.slice(0, 12)}).`,
+        };
       }
       return {
         namespace,
@@ -897,11 +928,20 @@ function wouldPublishCandidate(
 }
 
 /**
- * Shared verified selection path: prepares and reserves the candidate and incumbent copies, probes the
- * candidate via `probeRuntime` before any pointer write (revalidating under the final lock), calls
- * `selectRuntimePointerLocked`, and probes the stable launcher with incumbent rollback on failure.
+ * Serializes runtime update transactions under `runtime-update` before any `runtime-lock` acquisition.
+ * Lock order: `setup` (optional caller lock) -> `runtime-update` -> `runtime-lock`.
  */
-async function selectVerifiedRuntimeCopy(
+function withRuntimeUpdateLock<T>(root: string, fn: () => Promise<T>): Promise<T> {
+  return withFileLock(runtimeUpdateLockResource(root), fn, RUNTIME_UPDATE_LOCK_TIMEOUT_MS);
+}
+
+/**
+ * Shared verified selection path; caller MUST hold `runtimeUpdateLockResource(root)`.
+ * Prepares and reserves candidate and incumbent copies under `runtime-lock`, probes the candidate
+ * outside `runtime-lock` before any pointer write (revalidating under the final `runtime-lock`),
+ * calls `selectRuntimePointerLocked`, and probes the stable launcher with incumbent rollback on failure.
+ */
+async function selectVerifiedRuntimeCopyLocked(
   prepareCopyLocked: () => InstalledRuntimeCopy,
   options: {
     home: string;
@@ -1074,11 +1114,12 @@ async function selectVerifiedRuntimeCopy(
 
 /**
  * Installs, reserves candidate and incumbent copies against concurrent cleanup, probes the installed
- * candidate and stable launcher, and publishes the pointer under the shared lock, restoring the
+ * candidate and stable launcher, and publishes the pointer under the updater lock, restoring the
  * incumbent pointer only if its target still exists on probe failure.
  */
 export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeInstallOptions): Promise<VerifiedRuntimeInstallResult> {
-  return selectVerifiedRuntimeCopy(() => installAndVerifyRuntimeCopy(options), options);
+  const root = coagentRootForHome(options.home);
+  return withRuntimeUpdateLock(root, () => selectVerifiedRuntimeCopyLocked(() => installAndVerifyRuntimeCopy(options), options));
 }
 
 /**
@@ -1117,21 +1158,24 @@ export async function rollbackOrPinRuntime(options: {
     });
   }
   const digest = options.digest ?? '';
-  return selectVerifiedRuntimeCopy(() => verifyInstalledRuntimeCopy(root, digest, options.version), {
-    home: options.home,
-    namespace,
-    allowDevInCurrent: true,
-    pin: true,
-    reason: options.reason ?? 'explicit-pin',
-    nodePath: options.nodePath,
-    env: options.env,
-    cwd: options.cwd,
-    probeEnv: options.probeEnv,
-  });
+  return withRuntimeUpdateLock(root, () =>
+    selectVerifiedRuntimeCopyLocked(() => verifyInstalledRuntimeCopy(root, digest, options.version), {
+      home: options.home,
+      namespace,
+      allowDevInCurrent: true,
+      pin: true,
+      reason: options.reason ?? 'explicit-pin',
+      nodePath: options.nodePath,
+      env: options.env,
+      cwd: options.cwd,
+      probeEnv: options.probeEnv,
+    }),
+  );
 }
 
 /**
- * Clears an explicit pin on a runtime namespace after verifying the target runtime via probe.
+ * Clears an explicit pin on a runtime namespace as a verified pointer update, probing the launcher
+ * and restoring the previous pin on failure.
  *
  * @param home - User home directory.
  * @param namespace - Runtime namespace (`current` or `dev`).
@@ -1144,26 +1188,28 @@ export async function unpinRuntime(
   options: { nodePath?: string; env?: NodeJS.ProcessEnv; cwd?: string; probeEnv?: Record<string, string> } = {},
 ): Promise<RuntimePointer | null> {
   const root = coagentRootForHome(home);
-  const current = await withFileLock(runtimeLockResource(root), async () => readRuntimePointer(root, namespace), RUNTIME_LOCK_TIMEOUT_MS);
-  if (!current || !current.pinned) return current;
-  await selectVerifiedRuntimeCopy(
-    () => {
-      const latest = readRuntimePointer(root, namespace);
-      if (!latest) throw new Error(`Runtime pointer for ${namespace} no longer exists.`);
-      return verifyInstalledRuntimeCopy(root, latest.digest, latest.version);
-    },
-    {
-      home,
-      namespace,
-      allowDevInCurrent: true,
-      unpin: true,
-      nodePath: options.nodePath,
-      env: options.env,
-      cwd: options.cwd,
-      probeEnv: options.probeEnv,
-    },
-  );
-  return withFileLock(runtimeLockResource(root), async () => readRuntimePointer(root, namespace), RUNTIME_LOCK_TIMEOUT_MS);
+  return withRuntimeUpdateLock(root, async () => {
+    const current = await withFileLock(runtimeLockResource(root), async () => readRuntimePointer(root, namespace), RUNTIME_LOCK_TIMEOUT_MS);
+    if (!current || !current.pinned) return current;
+    await selectVerifiedRuntimeCopyLocked(
+      () => {
+        const latest = readRuntimePointer(root, namespace);
+        if (!latest) throw new Error(`Runtime pointer for ${namespace} no longer exists.`);
+        return verifyInstalledRuntimeCopy(root, latest.digest, latest.version);
+      },
+      {
+        home,
+        namespace,
+        allowDevInCurrent: true,
+        unpin: true,
+        nodePath: options.nodePath,
+        env: options.env,
+        cwd: options.cwd,
+        probeEnv: options.probeEnv,
+      },
+    );
+    return withFileLock(runtimeLockResource(root), async () => readRuntimePointer(root, namespace), RUNTIME_LOCK_TIMEOUT_MS);
+  });
 }
 
 function isPidAlive(pid: number): boolean {
