@@ -820,36 +820,27 @@ function selectRuntimePointerLocked(
 }
 
 /**
- * Switches the stable pointer to an already-installed and verified runtime copy under the shared lock.
- *
- * @param copy - Verified immutable runtime copy.
- * @param options - Namespace, pin/unpin, and dev opt-in flags.
- * @returns Pointer selection result.
+ * Verifies an already-installed immutable `<sha256>` runtime copy on disk.
  */
-export async function selectRuntimePointer(
-  copy: InstalledRuntimeCopy,
-  options: { namespace?: RuntimeNamespace; allowDevInCurrent?: boolean; pin?: boolean; unpin?: boolean; reason?: string } = {},
-): Promise<RuntimeInstallResult> {
-  return withFileLock(runtimeLockResource(copy.root), async () => selectRuntimePointerLocked(copy, options), RUNTIME_LOCK_TIMEOUT_MS);
-}
-
-/**
- * Installs and verifies the runtime copy, ensures the stable launcher, and updates the pointer
- * continuously under the shared runtime lock subject to SemVer precedence and explicit pin rules.
- *
- * @param options - Runtime installation and precedence options.
- * @returns Pointer selection result.
- */
-export async function installAndSelectRuntime(options: RuntimeInstallOptions): Promise<RuntimeInstallResult> {
-  const root = coagentRootForHome(options.home);
-  return withFileLock(
-    runtimeLockResource(root),
-    async () => {
-      const copy = installAndVerifyRuntimeCopy(options);
-      return selectRuntimePointerLocked(copy, options);
-    },
-    RUNTIME_LOCK_TIMEOUT_MS,
-  );
+function verifyInstalledRuntimeCopy(root: string, digest: string, explicitVersion?: string): InstalledRuntimeCopy {
+  if (!SHA256_HEX.test(digest)) {
+    throw new Error('Specify a valid 64-character runtime digest or runtime bundle to pin.');
+  }
+  const runtimeRoot = runtimeRootDir(root);
+  const runtimeDir = path.join(runtimeRoot, digest);
+  const runtimePath = path.join(runtimeDir, 'index.cjs');
+  if (!fs.existsSync(runtimePath)) {
+    throw new Error(`Runtime copy ${digest} is not installed.`);
+  }
+  const onDiskDigest = sha256(fs.readFileSync(runtimePath));
+  if (onDiskDigest !== digest) {
+    throw new Error(`Runtime copy ${digest} failed integrity verification.`);
+  }
+  const version = explicitVersion ?? extractVersionFromBundle(runtimePath);
+  if (!version || !parseSemver(version)) {
+    throw new Error(`Runtime copy ${digest} has no valid SemVer version.`);
+  }
+  return { root, runtimeRoot, digest, version, runtimeDir, runtimePath };
 }
 
 /**
@@ -906,11 +897,25 @@ function wouldPublishCandidate(
 }
 
 /**
- * Installs, reserves candidate and incumbent copies against concurrent cleanup, probes the installed
- * candidate and stable launcher, and publishes the pointer under the shared lock, restoring the
- * incumbent pointer only if its target still exists on probe failure.
+ * Shared verified selection path: prepares and reserves the candidate and incumbent copies, probes the
+ * candidate via `probeRuntime` before any pointer write (revalidating under the final lock), calls
+ * `selectRuntimePointerLocked`, and probes the stable launcher with incumbent rollback on failure.
  */
-export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeInstallOptions): Promise<VerifiedRuntimeInstallResult> {
+async function selectVerifiedRuntimeCopy(
+  prepareCopyLocked: () => InstalledRuntimeCopy,
+  options: {
+    home: string;
+    namespace?: RuntimeNamespace;
+    allowDevInCurrent?: boolean;
+    pin?: boolean;
+    unpin?: boolean;
+    reason?: string;
+    nodePath?: string;
+    env?: NodeJS.ProcessEnv;
+    cwd?: string;
+    probeEnv?: Record<string, string>;
+  },
+): Promise<VerifiedRuntimeInstallResult> {
   const root = coagentRootForHome(options.home);
   const env = options.env ?? process.env;
   const cwd = options.cwd ?? options.home;
@@ -958,7 +963,7 @@ export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeIn
   await withFileLock(
     runtimeLockResource(root),
     async () => {
-      copy = installAndVerifyRuntimeCopy(options);
+      copy = prepareCopyLocked();
       namespace = resolveRuntimeNamespace(copy.version, options);
       const existingPointer = readRuntimePointer(root, namespace);
       const existingTarget = resolveStableTarget(root, namespace);
@@ -1068,10 +1073,19 @@ export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeIn
 }
 
 /**
- * Explicitly pins/rolls back a namespace pointer to an installed `<sha256>` copy or source bundle.
+ * Installs, reserves candidate and incumbent copies against concurrent cleanup, probes the installed
+ * candidate and stable launcher, and publishes the pointer under the shared lock, restoring the
+ * incumbent pointer only if its target still exists on probe failure.
+ */
+export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeInstallOptions): Promise<VerifiedRuntimeInstallResult> {
+  return selectVerifiedRuntimeCopy(() => installAndVerifyRuntimeCopy(options), options);
+}
+
+/**
+ * Explicitly pins/rolls back a namespace pointer to a verified `<sha256>` copy or source bundle.
  *
- * @param options - Target home, namespace, digest or runtime source, and optional reason.
- * @returns Pointer selection result.
+ * @param options - Target home, namespace, digest or runtime source, optional reason, and probe configuration.
+ * @returns Verified pointer selection result.
  */
 export async function rollbackOrPinRuntime(options: {
   home: string;
@@ -1080,11 +1094,15 @@ export async function rollbackOrPinRuntime(options: {
   runtimeSource?: string;
   version?: string;
   reason?: string;
-}): Promise<RuntimeInstallResult> {
+  nodePath?: string;
+  env?: NodeJS.ProcessEnv;
+  cwd?: string;
+  probeEnv?: Record<string, string>;
+}): Promise<VerifiedRuntimeInstallResult> {
   const root = coagentRootForHome(options.home);
   const namespace = options.namespace ?? 'current';
   if (options.runtimeSource) {
-    return installAndSelectRuntime({
+    return installAndSelectVerifiedRuntime({
       home: options.home,
       runtimeSource: options.runtimeSource,
       version: options.version,
@@ -1092,56 +1110,60 @@ export async function rollbackOrPinRuntime(options: {
       allowDevInCurrent: true,
       pin: true,
       reason: options.reason ?? 'explicit-pin',
+      nodePath: options.nodePath,
+      env: options.env,
+      cwd: options.cwd,
+      probeEnv: options.probeEnv,
     });
   }
-  if (!options.digest || !SHA256_HEX.test(options.digest)) {
-    throw new Error('Specify a valid 64-character runtime digest or runtime bundle to pin.');
-  }
-  const runtimeDir = path.join(runtimeRootDir(root), options.digest);
-  const runtimePath = path.join(runtimeDir, 'index.cjs');
-  if (!fs.existsSync(runtimePath)) {
-    throw new Error(`Runtime copy ${options.digest} is not installed.`);
-  }
-  const onDiskDigest = sha256(fs.readFileSync(runtimePath));
-  if (onDiskDigest !== options.digest) {
-    throw new Error(`Runtime copy ${options.digest} failed integrity verification.`);
-  }
-  const version = options.version ?? extractVersionFromBundle(runtimePath);
-  if (!version || !parseSemver(version)) {
-    throw new Error(`Runtime copy ${options.digest} has no valid SemVer version.`);
-  }
-  return selectRuntimePointer(
-    { root, runtimeRoot: runtimeRootDir(root), digest: options.digest, version, runtimeDir, runtimePath },
-    { namespace, allowDevInCurrent: true, pin: true, reason: options.reason ?? 'explicit-pin' },
-  );
+  const digest = options.digest ?? '';
+  return selectVerifiedRuntimeCopy(() => verifyInstalledRuntimeCopy(root, digest, options.version), {
+    home: options.home,
+    namespace,
+    allowDevInCurrent: true,
+    pin: true,
+    reason: options.reason ?? 'explicit-pin',
+    nodePath: options.nodePath,
+    env: options.env,
+    cwd: options.cwd,
+    probeEnv: options.probeEnv,
+  });
 }
 
 /**
- * Clears an explicit pin on a runtime namespace without downgrading.
+ * Clears an explicit pin on a runtime namespace after verifying the target runtime via probe.
  *
  * @param home - User home directory.
  * @param namespace - Runtime namespace (`current` or `dev`).
+ * @param options - Optional probe configuration.
  * @returns Updated pointer or `null` when no pointer exists.
  */
-export async function unpinRuntime(home: string, namespace: RuntimeNamespace = 'current'): Promise<RuntimePointer | null> {
+export async function unpinRuntime(
+  home: string,
+  namespace: RuntimeNamespace = 'current',
+  options: { nodePath?: string; env?: NodeJS.ProcessEnv; cwd?: string; probeEnv?: Record<string, string> } = {},
+): Promise<RuntimePointer | null> {
   const root = coagentRootForHome(home);
-  return withFileLock(
-    runtimeLockResource(root),
-    async () => {
-      const pointer = readRuntimePointer(root, namespace);
-      if (!pointer) return null;
-      if (!pointer.pinned) return pointer;
-      const updated: RuntimePointer = {
-        schemaVersion: 1,
-        digest: pointer.digest,
-        version: pointer.version,
-        updatedAt: new Date().toISOString(),
-      };
-      atomicWriteText(runtimePointerPath(root, namespace), JSON.stringify(updated, null, 2) + '\n', 0o600);
-      return updated;
+  const current = await withFileLock(runtimeLockResource(root), async () => readRuntimePointer(root, namespace), RUNTIME_LOCK_TIMEOUT_MS);
+  if (!current || !current.pinned) return current;
+  await selectVerifiedRuntimeCopy(
+    () => {
+      const latest = readRuntimePointer(root, namespace);
+      if (!latest) throw new Error(`Runtime pointer for ${namespace} no longer exists.`);
+      return verifyInstalledRuntimeCopy(root, latest.digest, latest.version);
     },
-    RUNTIME_LOCK_TIMEOUT_MS,
+    {
+      home,
+      namespace,
+      allowDevInCurrent: true,
+      unpin: true,
+      nodePath: options.nodePath,
+      env: options.env,
+      cwd: options.cwd,
+      probeEnv: options.probeEnv,
+    },
   );
+  return withFileLock(runtimeLockResource(root), async () => readRuntimePointer(root, namespace), RUNTIME_LOCK_TIMEOUT_MS);
 }
 
 function isPidAlive(pid: number): boolean {

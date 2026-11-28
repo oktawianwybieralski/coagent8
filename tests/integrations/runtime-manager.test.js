@@ -10,13 +10,12 @@ const { compareSemver, newerVersion, isDevSemver } = require('../../src/integrat
 const {
   cleanupUnreferencedRuntimes,
   coagentRootForHome,
-  installAndSelectRuntime,
+  installAndSelectVerifiedRuntime,
   installAndVerifyRuntimeCopy,
   readRuntimePointer,
   readRuntimeStatus,
   rollbackOrPinRuntime,
   runtimeLeasesDir,
-  selectRuntimePointer,
   unpinRuntime,
 } = require('../../src/integrations/runtime-manager.ts');
 
@@ -26,6 +25,19 @@ function makeHome(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-rt-mgr-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   return home;
+}
+
+function validMcpBundle(tag = 'v1') {
+  return [
+    `/* ${tag} */`,
+    "const rl = require('node:readline').createInterface({ input: process.stdin });",
+    "rl.on('line', line => {",
+    '  if (!line.trim()) return;',
+    '  const msg = JSON.parse(line);',
+    "  if (msg.method === 'initialize') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { serverInfo: { name: 'coagent8' } } }) + '\\n');",
+    "  else if (msg.method === 'tools/list') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'doctor' }] } }) + '\\n');",
+    '});',
+  ].join('\n');
 }
 
 test('full SemVer precedence including prereleases and build metadata', () => {
@@ -65,61 +77,65 @@ test('pointer precedence, equal-version hash guard, downgrade guard, dev namespa
   const srcA = path.join(home, 'bundle-a.cjs');
   const srcB = path.join(home, 'bundle-b.cjs');
   const srcC = path.join(home, 'bundle-c.cjs');
-  fs.writeFileSync(srcA, '/* bundle A */');
-  fs.writeFileSync(srcB, '/* bundle B */');
-  fs.writeFileSync(srcC, '/* bundle C */');
+  fs.writeFileSync(srcA, validMcpBundle('bundle A'));
+  fs.writeFileSync(srcB, validMcpBundle('bundle B'));
+  fs.writeFileSync(srcC, validMcpBundle('bundle C'));
+  const select = opts => installAndSelectVerifiedRuntime({ ...opts, nodePath: process.execPath });
 
   // 1. Initial prerelease install
-  const first = await installAndSelectRuntime({ home, runtimeSource: srcA, version: '0.8.0-beta.1' });
+  const first = await select({ home, runtimeSource: srcA, version: '0.8.0-beta.1' });
   assert.equal(first.action, 'installed');
   assert.equal(first.namespace, 'current');
   assert.equal(readRuntimePointer(root, 'current').version, '0.8.0-beta.1');
 
   // 2. Same version and same hash is a no-op
-  const noop = await installAndSelectRuntime({ home, runtimeSource: srcA, version: '0.8.0-beta.1' });
+  const noop = await select({ home, runtimeSource: srcA, version: '0.8.0-beta.1' });
   assert.equal(noop.action, 'noop');
 
   // 3. Equal version with different hash keeps the incumbent and reports it
-  const conflict = await installAndSelectRuntime({ home, runtimeSource: srcB, version: '0.8.0-beta.1' });
+  const conflict = await select({ home, runtimeSource: srcB, version: '0.8.0-beta.1' });
   assert.equal(conflict.action, 'kept-incumbent');
   assert.equal(readRuntimePointer(root, 'current').digest, first.digest);
   assert.match(conflict.message, /Kept incumbent/);
 
   // 4. Higher prerelease and release win
-  const beta2 = await installAndSelectRuntime({ home, runtimeSource: srcB, version: '0.8.0-beta.2' });
+  const beta2 = await select({ home, runtimeSource: srcB, version: '0.8.0-beta.2' });
   assert.equal(beta2.action, 'updated');
   assert.equal(readRuntimePointer(root, 'current').digest, beta2.digest);
 
-  const release = await installAndSelectRuntime({ home, runtimeSource: srcC, version: '0.8.0' });
+  const release = await select({ home, runtimeSource: srcC, version: '0.8.0' });
   assert.equal(release.action, 'updated');
   assert.equal(readRuntimePointer(root, 'current').digest, release.digest);
 
   // 5. Downgrade guard: prerelease or older version never switches pointer back
-  const downgraded = await installAndSelectRuntime({ home, runtimeSource: srcB, version: '0.8.0-beta.2' });
+  const downgraded = await select({ home, runtimeSource: srcB, version: '0.8.0-beta.2' });
   assert.equal(downgraded.action, 'downgrade-blocked');
   assert.equal(readRuntimePointer(root, 'current').digest, release.digest);
 
   // 6. Dev builds route to separate 'dev' namespace and leave 'current' untouched
-  const devBuild = await installAndSelectRuntime({ home, runtimeSource: srcA, version: '0.9.0-dev.1' });
+  const devBuild = await select({ home, runtimeSource: srcA, version: '0.9.0-dev.1' });
   assert.equal(devBuild.namespace, 'dev');
   assert.equal(readRuntimePointer(root, 'dev').version, '0.9.0-dev.1');
   assert.equal(readRuntimePointer(root, 'current').version, '0.8.0');
-  await assert.rejects(
-    installAndSelectRuntime({ home, runtimeSource: srcA, version: '0.9.0-dev.1', namespace: 'current' }),
-    /explicit opt-in/,
-  );
+  await assert.rejects(select({ home, runtimeSource: srcA, version: '0.9.0-dev.1', namespace: 'current' }), /explicit opt-in/);
 
   // 7. Explicit pin / rollback persists pin and blocks auto-upgrade until unpinned
-  const pinned = await rollbackOrPinRuntime({ home, digest: beta2.digest, version: '0.8.0-beta.2', reason: 'test-rollback' });
+  const pinned = await rollbackOrPinRuntime({
+    home,
+    digest: beta2.digest,
+    version: '0.8.0-beta.2',
+    reason: 'test-rollback',
+    nodePath: process.execPath,
+  });
   assert.equal(pinned.action, 'updated');
   assert.equal(readRuntimePointer(root, 'current').pinned.digest, beta2.digest);
 
-  const blockedByPin = await installAndSelectRuntime({ home, runtimeSource: srcC, version: '0.8.0' });
+  const blockedByPin = await select({ home, runtimeSource: srcC, version: '0.8.0' });
   assert.equal(blockedByPin.action, 'pinned-blocked');
   assert.equal(readRuntimePointer(root, 'current').digest, beta2.digest);
 
-  await unpinRuntime(home, 'current');
-  const afterUnpin = await installAndSelectRuntime({ home, runtimeSource: srcC, version: '0.8.0' });
+  await unpinRuntime(home, 'current', { nodePath: process.execPath });
+  const afterUnpin = await select({ home, runtimeSource: srcC, version: '0.8.0' });
   assert.equal(afterUnpin.action, 'updated');
   assert.equal(readRuntimePointer(root, 'current').digest, release.digest);
 });
@@ -132,10 +148,10 @@ test('runtime verification checks job helper SHA-256 before switching pointer', 
   const sourceBundle = path.join(distDir, 'index.cjs');
   const sourceHelper = path.join(distDir, helperRel);
   fs.mkdirSync(path.dirname(sourceHelper), { recursive: true });
-  fs.writeFileSync(sourceBundle, '/* bundle with helper */');
+  fs.writeFileSync(sourceBundle, validMcpBundle('with helper'));
   fs.writeFileSync(sourceHelper, 'valid-job-helper-bytes');
 
-  const res = await installAndSelectRuntime({ home, runtimeSource: sourceBundle, version: '0.8.0' });
+  const res = await installAndSelectVerifiedRuntime({ home, runtimeSource: sourceBundle, version: '0.8.0', nodePath: process.execPath });
   assert.equal(res.action, 'installed');
   const copiedHelper = path.join(root, 'runtime', res.digest, helperRel);
   assert.equal(fs.readFileSync(copiedHelper, 'utf8'), 'valid-job-helper-bytes');
@@ -145,9 +161,9 @@ test('runtime verification checks job helper SHA-256 before switching pointer', 
   const sourceBundle2 = path.join(dist2, 'index.cjs');
   const sourceHelper2 = path.join(dist2, helperRel);
   fs.mkdirSync(path.dirname(sourceHelper2), { recursive: true });
-  fs.writeFileSync(sourceBundle2, '/* bundle 2 */');
+  fs.writeFileSync(sourceBundle2, validMcpBundle('bundle 2'));
   fs.writeFileSync(sourceHelper2, 'expected-helper-v2');
-  const digest2 = createHash('sha256').update('/* bundle 2 */').digest('hex');
+  const digest2 = createHash('sha256').update(fs.readFileSync(sourceBundle2)).digest('hex');
   const targetHelper2 = path.join(root, 'runtime', digest2, helperRel);
   fs.mkdirSync(path.dirname(targetHelper2), { recursive: true });
   fs.writeFileSync(targetHelper2, 'corrupt-locked-helper');
@@ -173,8 +189,8 @@ test('stable launcher runs in-process, preserves immutable getRuntimePath() for 
   fs.writeFileSync(bundleV2, realBytes + '\n// v2\n');
 
   // Install v0, then upgrade to v1
-  const r0 = await installAndSelectRuntime({ home, runtimeSource: bundleV0, version: '0.7.0' });
-  const r1 = await installAndSelectRuntime({ home, runtimeSource: bundleV1, version: '0.7.1' });
+  const r0 = await installAndSelectVerifiedRuntime({ home, runtimeSource: bundleV0, version: '0.7.0', nodePath: process.execPath });
+  const r1 = await installAndSelectVerifiedRuntime({ home, runtimeSource: bundleV1, version: '0.7.1', nodePath: process.execPath });
   const launcher = r1.launcherPath;
   assert.equal(launcher, path.join(root, 'runtime', 'current', 'index.cjs'));
 
@@ -220,7 +236,7 @@ test('stable launcher runs in-process, preserves immutable getRuntimePath() for 
     );
 
     // Upgrade pointer to v2 while v1 server is still open
-    const r2 = await installAndSelectRuntime({ home, runtimeSource: bundleV2, version: '0.8.0' });
+    const r2 = await installAndSelectVerifiedRuntime({ home, runtimeSource: bundleV2, version: '0.8.0', nodePath: process.execPath });
     assert.equal(readRuntimePointer(root, 'current').digest, r2.digest);
 
     // Cleanup removes unused v0, NEVER deletes v1 (active lease) or v2 (active pointer)
@@ -268,11 +284,11 @@ test('cleanup reclaims dead PID leases, handles aged PID reuse checks, and prese
   const root = coagentRootForHome(home);
   const bundleA = path.join(home, 'a.cjs');
   const bundleB = path.join(home, 'b.cjs');
-  fs.writeFileSync(bundleA, '/* copy A */');
-  fs.writeFileSync(bundleB, '/* copy B */');
+  fs.writeFileSync(bundleA, validMcpBundle('copy A'));
+  fs.writeFileSync(bundleB, validMcpBundle('copy B'));
 
-  const rA = await installAndSelectRuntime({ home, runtimeSource: bundleA, version: '0.7.0' });
-  const rB = await installAndSelectRuntime({ home, runtimeSource: bundleB, version: '0.8.0' });
+  const rA = await installAndSelectVerifiedRuntime({ home, runtimeSource: bundleA, version: '0.7.0', nodePath: process.execPath });
+  const rB = await installAndSelectVerifiedRuntime({ home, runtimeSource: bundleB, version: '0.8.0', nodePath: process.execPath });
 
   // Dead PID lease for rA does not protect rA
   const leasesDir = runtimeLeasesDir(root);
@@ -340,21 +356,24 @@ test('cleanup reclaims dead PID leases, handles aged PID reuse checks, and prese
   assert.equal(fs.existsSync(rB.runtimePath), true);
 });
 
-test('selectRuntimePointer re-verifies target exists and installAndSelectRuntime holds lock through selection', async t => {
+test('verified runtime selection rejects missing copy and holds lock through selection', async t => {
   const home = makeHome(t);
   const root = coagentRootForHome(home);
   const srcA = path.join(home, 'a.cjs');
   const srcB = path.join(home, 'b.cjs');
-  fs.writeFileSync(srcA, '/* copy A */');
-  fs.writeFileSync(srcB, '/* copy B */');
+  fs.writeFileSync(srcA, validMcpBundle('copy A'));
+  fs.writeFileSync(srcB, validMcpBundle('copy B'));
 
   const copyA = installAndVerifyRuntimeCopy({ home, runtimeSource: srcA, version: '0.7.0' });
   fs.rmSync(copyA.runtimeDir, { recursive: true, force: true });
-  await assert.rejects(() => selectRuntimePointer(copyA), /missing before pointer selection/);
+  await assert.rejects(
+    () => rollbackOrPinRuntime({ home, digest: copyA.digest, version: '0.7.0', nodePath: process.execPath }),
+    /not installed/,
+  );
   assert.equal(readRuntimePointer(root, 'current'), null, 'missing target never writes a dangling pointer');
 
-  // installAndSelectRuntime holds runtime-lock across install and selection, so cleanup cannot delete in between
-  const resB = await installAndSelectRuntime({ home, runtimeSource: srcB, version: '0.8.0' });
+  // installAndSelectVerifiedRuntime holds runtime-lock across install and selection
+  const resB = await installAndSelectVerifiedRuntime({ home, runtimeSource: srcB, version: '0.8.0', nodePath: process.execPath });
   assert.equal(resB.action, 'installed');
   assert.equal(fs.existsSync(resB.runtimePath), true);
   assert.equal(readRuntimePointer(root, 'current').digest, resB.digest);
@@ -430,8 +449,8 @@ test('cleanup never deletes pre-lease copies outside full uninstall, protects al
   const home = makeHome(t);
   const root = coagentRootForHome(home);
   const bundleV1 = path.join(home, 'v1.cjs');
-  fs.writeFileSync(bundleV1, '/* v1 */');
-  const active = await installAndSelectRuntime({ home, runtimeSource: bundleV1, version: '0.8.0' });
+  fs.writeFileSync(bundleV1, validMcpBundle('v1'));
+  const active = await installAndSelectVerifiedRuntime({ home, runtimeSource: bundleV1, version: '0.8.0', nodePath: process.execPath });
 
   // 1. Pre-lease copy without .lease-capable is never deleted by automatic or explicit runtime cleanup
   const preLeaseSha = 'e'.repeat(64);
@@ -458,7 +477,7 @@ test('cleanup never deletes pre-lease copies outside full uninstall, protects al
   assert.equal(fs.existsSync(preLeaseIndex), false);
 
   // Re-install active copy since keepStableNamespaces: false pruned pointer/copy above
-  const active2 = await installAndSelectRuntime({ home, runtimeSource: bundleV1, version: '0.8.0' });
+  const active2 = await installAndSelectVerifiedRuntime({ home, runtimeSource: bundleV1, version: '0.8.0', nodePath: process.execPath });
 
   // 2. Cleanup protects copies referenced via command, shell-wrapped args, env (NODE_OPTIONS), custom string fields, and VS Code mcp.json
   const cmdSha = 'c'.repeat(64);
@@ -631,9 +650,9 @@ test('reusing an existing unmarked runtime copy never marks it lease-capable and
   fs.mkdirSync(v1Dir, { recursive: true });
   fs.writeFileSync(path.join(v1Dir, 'index.cjs'), v1Text);
 
-  // Reusing the unmarked copy via installAndSelectRuntime and installAndSelectVerifiedRuntime never adds .lease-capable.
-  await installAndSelectRuntime({ home, runtimeSource: v1Source, version: '0.7.0' });
-  assert.equal(fs.existsSync(path.join(v1Dir, '.lease-capable')), false, 'installAndSelectRuntime keeps unmarked copy pre-lease');
+  // Reusing the unmarked copy via installAndVerifyRuntimeCopy and installAndSelectVerifiedRuntime never adds .lease-capable.
+  installAndVerifyRuntimeCopy({ home, runtimeSource: v1Source, version: '0.7.0' });
+  assert.equal(fs.existsSync(path.join(v1Dir, '.lease-capable')), false, 'installAndVerifyRuntimeCopy keeps unmarked copy pre-lease');
   await installAndSelectVerifiedRuntime({ home, runtimeSource: v1Source, version: '0.7.0', nodePath: process.execPath });
   assert.equal(fs.existsSync(path.join(v1Dir, '.lease-capable')), false, 'installAndSelectVerifiedRuntime keeps unmarked copy pre-lease');
 
@@ -731,4 +750,53 @@ test('installAndSelectVerifiedRuntime revalidates under final lock and probes be
     assert.ok(res.tools.includes('doctor'));
     assert.equal(readRuntimePointer(root, 'current').version, '0.7.0');
   }
+});
+
+test('rollbackOrPinRuntime probes before pinning and keeps incumbent when installed copy or source bundle fails probe', async t => {
+  const runtimeMgr = require('../../src/integrations/runtime-manager.ts');
+  assert.equal(runtimeMgr.selectRuntimePointer, undefined, 'unverified selectRuntimePointer is not exported');
+  assert.equal(runtimeMgr.installAndSelectRuntime, undefined, 'unverified installAndSelectRuntime is not exported');
+
+  const home = makeHome(t);
+  const root = coagentRootForHome(home);
+  const v1 = path.join(home, 'v1.cjs');
+  const v2 = path.join(home, 'v2.cjs');
+  const broken = path.join(home, 'broken.cjs');
+  fs.writeFileSync(v1, validMcpBundle('v1'));
+  fs.writeFileSync(v2, validMcpBundle('v2'));
+  fs.writeFileSync(broken, 'process.exit(1);\n');
+
+  const res1 = await installAndSelectVerifiedRuntime({ home, runtimeSource: v1, version: '0.7.0', nodePath: process.execPath });
+  const res2 = await installAndSelectVerifiedRuntime({ home, runtimeSource: v2, version: '0.8.0', nodePath: process.execPath });
+  const brokenCopy = installAndVerifyRuntimeCopy({ home, runtimeSource: broken, version: '0.6.0' });
+
+  // Pinning a broken already-installed copy rejects and leaves healthy incumbent 0.8.0 unpinned and untouched.
+  await assert.rejects(
+    () => rollbackOrPinRuntime({ home, digest: brokenCopy.digest, version: '0.6.0', nodePath: process.execPath }),
+    /Probe process exited/,
+  );
+  const afterDigestFail = readRuntimePointer(root, 'current');
+  assert.equal(afterDigestFail.digest, res2.digest);
+  assert.equal(afterDigestFail.pinned, undefined);
+
+  // Pinning a broken source bundle rejects and leaves incumbent 0.8.0 untouched.
+  await assert.rejects(
+    () => rollbackOrPinRuntime({ home, runtimeSource: broken, version: '0.6.0', nodePath: process.execPath }),
+    /Probe process exited/,
+  );
+  const afterSourceFail = readRuntimePointer(root, 'current');
+  assert.equal(afterSourceFail.digest, res2.digest);
+  assert.equal(afterSourceFail.pinned, undefined);
+
+  // Pinning a healthy installed copy succeeds and records pin.
+  const pinned = await rollbackOrPinRuntime({
+    home,
+    digest: res1.digest,
+    version: '0.7.0',
+    reason: 'verified-rollback',
+    nodePath: process.execPath,
+  });
+  assert.equal(pinned.action, 'updated');
+  assert.ok(pinned.tools.includes('doctor'));
+  assert.equal(readRuntimePointer(root, 'current').pinned.digest, res1.digest);
 });

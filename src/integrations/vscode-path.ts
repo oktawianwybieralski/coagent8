@@ -17,8 +17,8 @@ import { hash, classifyRuntimePath, extractRuntimeVersion, newerVersion } from '
 import {
   cleanupUnreferencedRuntimes,
   coagentRootForHome,
-  installAndSelectRuntime,
   installAndSelectVerifiedRuntime,
+  type VerifiedRuntimeInstallResult,
 } from './runtime-manager.js';
 import { withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
@@ -406,6 +406,23 @@ async function entryMayRemain(adapter: PathSystemAdapter, normalizedEntry: strin
   }
 }
 
+/** Installs/selects and MCP-probes the runtime bundle for PATH shim creation or synchronization. */
+async function installVerifiedPathRuntime(options: PathOptInOptions, nodeExec: string): Promise<VerifiedRuntimeInstallResult> {
+  try {
+    return await installAndSelectVerifiedRuntime({
+      home: options.home,
+      runtimeSource: options.bundle,
+      version: options.version,
+      nodePath: nodeExec,
+      env: options.env,
+      cwd: options.cwd ?? options.home,
+      probeEnv: options.probeEnv,
+    });
+  } catch (err) {
+    throw new Error(`Runtime verification failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 export async function enablePathIntegration(
   options: PathOptInOptions,
   adapter: PathSystemAdapter = new DefaultWindowsPathAdapter(),
@@ -449,20 +466,7 @@ export async function enablePathIntegration(
       .filter(Boolean);
 
     const nodeExec = options.nodePath?.trim() || 'node';
-    let installed;
-    try {
-      installed = await installAndSelectVerifiedRuntime({
-        home: options.home,
-        runtimeSource: options.bundle,
-        version: options.version,
-        nodePath: nodeExec,
-        env: options.env,
-        cwd: options.cwd ?? options.home,
-        probeEnv: options.probeEnv,
-      });
-    } catch (err) {
-      throw new Error(`Runtime verification failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    const installed = await installVerifiedPathRuntime(options, nodeExec);
     const runtimeTarget = installed.launcherPath;
     const shimContent = generateShimContent(nodeExec, runtimeTarget);
     const shimDigest = hash(shimContent);
@@ -580,13 +584,9 @@ export async function syncPathShim(
       }
     }
 
-    const installed = await installAndSelectRuntime({
-      home: options.home,
-      runtimeSource: options.bundle,
-      version: options.version,
-    });
-    const runtimeTarget = installed.launcherPath;
     const nodeExec = options.nodePath?.trim() || 'node';
+    const installed = await installVerifiedPathRuntime(options, nodeExec);
+    const runtimeTarget = installed.launcherPath;
     const newShimContent = generateShimContent(nodeExec, runtimeTarget);
     const newShimHash = hash(newShimContent);
 

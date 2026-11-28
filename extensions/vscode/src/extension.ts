@@ -2501,6 +2501,8 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
               bundle: context.asAbsolutePath('dist/index.cjs'),
               nodePath: vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim(),
               version,
+              env: setupEnvironment(),
+              cwd: os.homedir(),
             },
             activePathAdapter(),
           );
