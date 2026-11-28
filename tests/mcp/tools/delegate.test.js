@@ -965,6 +965,49 @@ test('deducts post-reservation elapsed time from root remaining duration and ref
     } finally {
       fsp.rename = realRename;
     }
+
+    // 5. Delay while waiting for the root file lock before accounting is NOT deducted or charged as ROOT_LIMIT.
+    const { withFileLock } = require('../../../src/storage/lock.ts');
+    const forLockDelay = readRoot(root.rootHandle);
+    forLockDelay.refundedMs = 0;
+    forLockDelay.tasks[0].startedAt = atMsAgo(20 * 60_000);
+    forLockDelay.tasks[0].endedAt = atMsAgo(12 * 60_000); // 8m used -> 120_000 ms left
+    for (const extra of forLockDelay.tasks.slice(1)) {
+      extra.startedAt = atMsAgo(25 * 60_000);
+      extra.endedAt = atMsAgo(25 * 60_000);
+    }
+    await atomicWrite(rootFile, JSON.stringify(forLockDelay));
+
+    let lockNow = 1_000;
+    let releaseLock;
+    let lockEnteredResolve;
+    const lockEntered = new Promise(resolve => {
+      lockEnteredResolve = resolve;
+    });
+    const holdLock = withFileLock(rootFile, async () => {
+      lockEnteredResolve();
+      await new Promise(resolve => {
+        releaseLock = resolve;
+      });
+    });
+    await lockEntered;
+
+    const pendingStart = startDelegate(
+      { task: 'Lock contention before accounting', backend: 'codex', model: MODEL, root_handle: root.rootHandle, timeout_ms: 100_000 },
+      repo,
+      null,
+      null,
+      { ...approve, clock: () => lockNow },
+    );
+    await delay(50);
+    // Advance clock by 150_000 ms (more than the 120_000 ms left in the root) while waiting on the lock.
+    lockNow += 150_000;
+    releaseLock();
+    await holdLock;
+    const lockContended = await pendingStart;
+    assert.equal(lockContended.structuredContent.timeoutBound, 'timeout_ms', 'lock wait must not count against root budget');
+    assert.equal(lockContended.structuredContent.timeoutMs, 100_000, 'lock wait must not reduce timeoutMs');
+    await waitTask(lockContended.structuredContent.taskHandle);
   } finally {
     await stopActiveDelegations();
     adapterRegistry.codex = originalCodex;

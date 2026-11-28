@@ -371,9 +371,19 @@ function taskHasSession(task: RootTask, sessionHandle: string): boolean {
   return task.sessionHandle === sessionHandle || Boolean(task.sessionHandles?.includes(sessionHandle));
 }
 
+/**
+ * Reserves one task of a root, atomically with every limit it is subject to.
+ * @param handle - Target root handle.
+ * @param request - The task, its parent, the worker session it continues, and an optional monotonic clock.
+ * @returns The task's depth, its parent, named or inherited, its deadline, remaining times, continuation flag,
+ * and `accountedAtMs` captured monotonically at the accounting point inside the lock (before the awaited write).
+ * @throws `ROOT_LIMIT` at a limit, `ABORTED` for a cancelled root, `SESSION_BUSY` while the same task
+ * is reserved, `INPUT_LIMIT` for a parent outside the root or another than a continued session has,
+ * `SESSION_INVALID` without such a root.
+ */
 export function reserveRootTask(
   handle: string,
-  request: { taskHandle: string; parentTask?: string; continues?: string },
+  request: { taskHandle: string; parentTask?: string; continues?: string; clock?: () => number },
 ): Promise<{
   depth: number;
   parentTask?: string;
@@ -381,12 +391,15 @@ export function reserveRootTask(
   remainingMs: number;
   baseRemainingMs: number;
   continuation: boolean;
+  accountedAtMs: number;
 }> {
   return updateRoot(handle, (record, now) => {
     // A continuation is classified once, here, and its entry keeps the class for its later rounds.
     const earlier = request.continues ? record.tasks.findLast(task => taskHasSession(task, request.continues!)) : undefined;
     const continuation = Boolean(earlier);
     const { remainingMs, baseRemainingMs } = assertUsable(record, now, continuation);
+    // Capture monotonic time at the accounting point inside the lock so lock wait is excluded and persistence is included.
+    const accountedAtMs = (request.clock ?? (() => performance.now()))();
     if (record.tasks.some(task => task.taskHandle === request.taskHandle && isRootTaskActive(task))) {
       throw new ToolError('SESSION_BUSY', `Task ${request.taskHandle} is already starting in this root.`);
     }
@@ -429,6 +442,7 @@ export function reserveRootTask(
       remainingMs,
       baseRemainingMs,
       continuation,
+      accountedAtMs,
     };
   });
 }

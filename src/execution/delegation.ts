@@ -648,20 +648,21 @@ async function launchTask(start: BackgroundTaskStart, taskHandle: string, finger
   const giveUpNewRoot = async () => {
     if (!joined) await removeUnusedRoot(rootHandle);
   };
-  // Measured before reserveRootTask so lock acquisition and atomic persistence are conservatively included.
-  const reservedAt = clock();
-  const elapsedMs = () => Math.max(0, clock() - reservedAt);
   let reservation: Awaited<ReturnType<typeof reserveRootTask>>;
   try {
     reservation = await reserveRootTask(rootHandle, {
       taskHandle,
       ...(start.root?.parentTask ? { parentTask: start.root.parentTask } : {}),
       ...(typeof start.args.session_handle === 'string' ? { continues: start.args.session_handle } : {}),
+      ...(start.options.clock ? { clock: start.options.clock } : {}),
     });
   } catch (err) {
     await giveUpNewRoot();
     throw err;
   }
+  // Measured from the accounting point inside the locked reservation (excludes lock wait, includes persistence).
+  const reservedAt = reservation.accountedAtMs;
+  const elapsedMs = () => Math.max(0, clock() - reservedAt);
   /** Returns the charge of a start that never reached a turn; a failure here must not hide its reason. */
   const refund = async () => {
     try {
