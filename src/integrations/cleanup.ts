@@ -64,6 +64,8 @@ export interface CleanupPreview {
   token: string;
   results: CleanupStatus[];
   stateError?: string;
+  /** Non-fatal cleanup diagnostic when unreferenced runtime cleanup reported warnings. */
+  cleanupWarning?: string;
 }
 
 function removeEntry(client: SetupClient, before: string): string {
@@ -110,8 +112,9 @@ export async function pruneUnreferencedRuntimes(
   home: string,
   env: NodeJS.ProcessEnv = process.env,
   options: RuntimeCleanupOptions = {},
-): Promise<{ removed: string[]; kept: string[]; warnings?: string[] }> {
-  return cleanupUnreferencedRuntimes(root, home, env, options);
+): Promise<{ removed: string[]; kept: string[]; warnings?: string[]; cleanupWarning?: string }> {
+  const result = await cleanupUnreferencedRuntimes(root, home, env, options);
+  return result.warnings?.length ? { ...result, cleanupWarning: redactDiagnostic(result.warnings.join('; '), 1024) } : result;
 }
 
 /**
@@ -124,8 +127,8 @@ async function removeUnreferencedSetup(
   env: NodeJS.ProcessEnv,
   stateFile: string,
   leaseTimeoutMs?: number,
-): Promise<void> {
-  await cleanupUnreferencedRuntimes(root, home, env, {
+): Promise<string[]> {
+  const pruneResult = await cleanupUnreferencedRuntimes(root, home, env, {
     keepStableNamespaces: false,
     removePreLeaseCopies: true,
     ...(leaseTimeoutMs !== undefined ? { leaseTimeoutMs } : {}),
@@ -145,6 +148,7 @@ async function removeUnreferencedSetup(
     !Object.keys(saved.disabledSkills ?? {}).length
   )
     fs.rmSync(stateFile, { force: true });
+  return pruneResult.warnings ?? [];
 }
 
 /** Previews cleanup or applies a matching preview under the same lease as setup. */
@@ -251,6 +255,7 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
         };
       }
     }
+    let cleanupWarning: string | undefined;
     if (options.uninstall) {
       try {
         let remainingTimeoutMs: number | undefined;
@@ -259,7 +264,10 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
           if (remaining <= 0) throw new LockTimeoutError();
           remainingTimeoutMs = Math.max(1, remaining);
         }
-        await removeUnreferencedSetup(root, home, env, stateFile, remainingTimeoutMs);
+        const warnings = await removeUnreferencedSetup(root, home, env, stateFile, remainingTimeoutMs);
+        if (warnings.length) {
+          cleanupWarning = redactDiagnostic(warnings.join('; '), 1024);
+        }
       } catch (error) {
         return {
           token,
@@ -268,7 +276,7 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
         };
       }
     }
-    return { token, results };
+    return { token, results, ...(cleanupWarning ? { cleanupWarning } : {}) };
   }
   if (options.apply === undefined) return perform();
   const applied = await withFileLock(path.join(root, 'setup'), perform, options.leaseTimeoutMs);

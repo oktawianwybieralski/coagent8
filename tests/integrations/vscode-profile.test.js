@@ -570,3 +570,28 @@ test('syncVscodeRegistration keeps registration active and surfaces warning when
     await holder;
   }
 });
+
+test('syncVscodeRegistration surfaces returned warnings from cleanupUnreferencedRuntimes via onCleanupWarning', async t => {
+  const p = profile(t);
+  const lockedDigest = 'f'.repeat(64);
+  const lockedDir = path.join(p.storagePath, 'runtime', lockedDigest);
+  fs.mkdirSync(lockedDir, { recursive: true });
+  fs.writeFileSync(path.join(lockedDir, 'index.cjs'), 'locked');
+  fs.writeFileSync(path.join(lockedDir, '.lease-capable'), '1\n');
+
+  const origRmSync = fs.rmSync;
+  t.mock.method(fs, 'rmSync', (target, opts) => {
+    if (String(target) === lockedDir) {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    }
+    return origRmSync(target, opts);
+  });
+
+  const warnings = [];
+  const res = await p.sync({ onCleanupWarning: warning => warnings.push(warning) });
+  t.mock.restoreAll();
+
+  assert.equal(res, 'registered');
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], new RegExp(`Retained unreferenced runtime copy ${lockedDigest.slice(0, 12)}`));
+});

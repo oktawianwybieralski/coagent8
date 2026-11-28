@@ -1209,4 +1209,28 @@ test('setupClients surfaces redacted cleanupWarning for post-selection lease fai
     assert.match(results[0].cleanupWarning ?? '', /Simulated prune EIO/);
     assert.doesNotMatch(results[0].cleanupWarning ?? '', /secret-prune-pw/);
   }
+
+  // 3. Returned (non-thrown) warnings from cleanupUnreferencedRuntimes propagate into SetupStatus.cleanupWarning.
+  {
+    const options = { ...profile(t), clients: ['claude'] };
+    const root = path.join(options.home, '.coagent8');
+    const lockedDigest = 'f'.repeat(64);
+    const lockedDir = path.join(root, 'runtime', lockedDigest);
+    fs.mkdirSync(lockedDir, { recursive: true });
+    fs.writeFileSync(path.join(lockedDir, 'index.cjs'), 'locked');
+    fs.writeFileSync(path.join(lockedDir, '.lease-capable'), '1\n');
+
+    t.mock.method(fs, 'rmSync', (target, opts) => {
+      if (String(target) === lockedDir) {
+        throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+      }
+      return origRmSync(target, opts);
+    });
+
+    const results = await setupClients(options);
+    t.mock.restoreAll();
+
+    assert.equal(results[0].action, 'installed');
+    assert.match(results[0].cleanupWarning ?? '', new RegExp(`Retained unreferenced runtime copy ${lockedDigest.slice(0, 12)}`));
+  }
 });

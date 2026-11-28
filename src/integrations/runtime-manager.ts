@@ -1752,6 +1752,12 @@ export async function cleanupUnreferencedRuntimes(
                   removed.push(name);
                 } else {
                   kept.push(name);
+                  warnings.push(
+                    redactDiagnostic(
+                      `Retained unreferenced runtime copy ${name.slice(0, 12)} because directory could not be removed (files in use).`,
+                      512,
+                    ),
+                  );
                 }
               } else if (name === 'current' || name === 'dev') {
                 if (!referencedNamespaces.has(name)) {

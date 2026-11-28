@@ -2529,9 +2529,15 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         const homeDir = os.homedir();
         return cleanupUnreferencedRuntimes(coagentRootForHome(homeDir), homeDir, setupEnvironment(), {
           keepStableNamespaces: true,
-        }).catch(error => {
-          report({ runtimeCleanupError: redactDiagnostic(error instanceof Error ? error.message : 'Runtime cleanup failed.') });
-        });
+        })
+          .then(result => {
+            if (result.warnings?.length) {
+              report({ runtimeCleanupWarning: redactDiagnostic(result.warnings.join('; '), 1024) });
+            }
+          })
+          .catch(error => {
+            report({ runtimeCleanupError: redactDiagnostic(error instanceof Error ? error.message : 'Runtime cleanup failed.') });
+          });
       }),
     );
   }

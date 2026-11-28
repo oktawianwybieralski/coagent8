@@ -1201,4 +1201,24 @@ test('atomicWriteText ignores temp-removal failure after rename, preserves pre-r
     stagedWarnRes.warnings?.some(warning => /Failed to remove staged pointer for current/.test(warning)),
     `expected staged pointer removal warning, got: ${JSON.stringify(stagedWarnRes.warnings)}`,
   );
+
+  // 5. cleanupUnreferencedRuntimes returns a warning and keeps the digest when removeRuntimeDirectory returns false (EBUSY).
+  const lockedDigest = 'f'.repeat(64);
+  const lockedDir = path.join(root, 'runtime', lockedDigest);
+  fs.mkdirSync(lockedDir, { recursive: true });
+  fs.writeFileSync(path.join(lockedDir, 'index.cjs'), 'locked');
+  fs.writeFileSync(path.join(lockedDir, '.lease-capable'), '1\n');
+  t.mock.method(fs, 'rmSync', (target, opts) => {
+    if (String(target) === lockedDir) {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    }
+    return origRmSync(target, opts);
+  });
+  const ebusyRes = await cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: true });
+  t.mock.restoreAll();
+  assert.ok(ebusyRes.kept.includes(lockedDigest), 'in-use copy stays in kept');
+  assert.ok(
+    ebusyRes.warnings?.some(warning => new RegExp(`Retained unreferenced runtime copy ${lockedDigest.slice(0, 12)}`).test(warning)),
+    `expected in-use retention warning, got: ${JSON.stringify(ebusyRes.warnings)}`,
+  );
 });

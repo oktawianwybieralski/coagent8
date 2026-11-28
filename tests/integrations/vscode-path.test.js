@@ -940,3 +940,38 @@ test('syncPathShim reports cleanupWarning without failing when post-commit pruni
   assert.equal(readPathRecord(f.home).version, '0.8.0', 'PATH record was updated before cleanup failed');
   assert.equal(readRuntimePointer(root, 'current').version, '0.8.0', 'stable pointer was updated before cleanup failed');
 });
+
+test('syncPathShim and removePathIntegration surface returned cleanupUnreferencedRuntimes warnings', async t => {
+  const f = fixture(t);
+  const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+  await enablePathIntegration(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: process.execPath, version: '0.7.0' },
+    adapter,
+  );
+
+  const lockedDigest = 'f'.repeat(64);
+  const lockedDir = path.join(f.home, '.coagent8', 'runtime', lockedDigest);
+  fs.mkdirSync(lockedDir, { recursive: true });
+  fs.writeFileSync(path.join(lockedDir, 'index.cjs'), 'locked');
+  fs.writeFileSync(path.join(lockedDir, '.lease-capable'), '1\n');
+
+  const origRmSync = fs.rmSync;
+  t.mock.method(fs, 'rmSync', (target, opts) => {
+    if (String(target) === lockedDir) {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    }
+    return origRmSync(target, opts);
+  });
+
+  const syncRes = await syncPathShim(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: process.execPath, version: '0.7.0' },
+    adapter,
+  );
+  assert.equal(syncRes.action, 'noop');
+  assert.match(syncRes.cleanupWarning ?? '', new RegExp(`Retained unreferenced runtime copy ${lockedDigest.slice(0, 12)}`));
+
+  const removeRes = await removePathIntegration(f.home, f.installation, 5000, adapter);
+  t.mock.restoreAll();
+  assert.equal(removeRes.action, 'removed');
+  assert.match(removeRes.cleanupWarning ?? '', new RegExp(`Retained unreferenced runtime copy ${lockedDigest.slice(0, 12)}`));
+});

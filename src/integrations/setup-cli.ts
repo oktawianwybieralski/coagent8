@@ -48,6 +48,9 @@ async function runRuntimeCli(args: string[]): Promise<void> {
   if (action === 'prune') {
     const result = await cleanupUnreferencedRuntimes(coagentRootForHome(home), home, process.env, { keepStableNamespaces: true });
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    if (result.warnings?.length) {
+      process.stderr.write(`Warning: ${redactDiagnostic(result.warnings.join('; '), 1024)}\n`);
+    }
     return;
   }
   throw new Error('Usage: coagent8 runtime status|rollback|pin|unpin|prune [<sha256>] [--namespace=current|dev]');
@@ -142,6 +145,9 @@ export async function runSetupCli(args: string[]): Promise<boolean> {
   if (args[0] === 'cleanup') {
     const preview = await cleanupClients({ clients: clients as SetupClient[] | undefined, apply: apply?.slice('--apply='.length) });
     process.stdout.write(JSON.stringify(preview, null, 2) + '\n');
+    if (preview.cleanupWarning) {
+      process.stderr.write(`Warning: ${preview.cleanupWarning}\n`);
+    }
     const kept = (action: string) => action === 'blocked' || action === 'preserved';
     if (preview.stateError || preview.results.some(result => kept(result.action) || result.skills?.some(skill => kept(skill.action))))
       process.exitCode = 1;

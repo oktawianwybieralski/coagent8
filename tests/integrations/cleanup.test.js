@@ -523,3 +523,33 @@ test('uninstall cleanup ignores trailing rmdirSync failure on empty root after r
     true,
   );
 });
+
+test('cleanupClients uninstall and pruneUnreferencedRuntimes propagate returned cleanup warnings', async t => {
+  const { pruneUnreferencedRuntimes } = require('../../src/integrations/cleanup.ts');
+  const p = profile(t);
+  const root = path.join(p.home, '.coagent8');
+  const lockedDigest = 'f'.repeat(64);
+  const lockedDir = path.join(root, 'runtime', lockedDigest);
+  fs.mkdirSync(lockedDir, { recursive: true });
+  fs.writeFileSync(path.join(lockedDir, 'index.cjs'), 'locked');
+  fs.writeFileSync(path.join(lockedDir, '.lease-capable'), '1\n');
+
+  const origRmSync = fs.rmSync;
+  t.mock.method(fs, 'rmSync', (target, opts) => {
+    if (String(target) === lockedDir) {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    }
+    return origRmSync(target, opts);
+  });
+
+  const pruneRes = await pruneUnreferencedRuntimes(root, p.home, process.env, { keepStableNamespaces: true });
+  assert.ok(pruneRes.kept.includes(lockedDigest));
+  assert.match(pruneRes.cleanupWarning ?? '', new RegExp(`Retained unreferenced runtime copy ${lockedDigest.slice(0, 12)}`));
+
+  const preview = await cleanupClients({ ...p, origin: 'vscode-extension', uninstall: true });
+  const applied = await cleanupClients({ ...p, origin: 'vscode-extension', uninstall: true, apply: preview.token });
+  t.mock.restoreAll();
+
+  assert.equal(applied.stateError, undefined);
+  assert.match(applied.cleanupWarning ?? '', new RegExp(`Retained unreferenced runtime copy ${lockedDigest.slice(0, 12)}`));
+});
