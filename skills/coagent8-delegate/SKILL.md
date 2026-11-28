@@ -41,7 +41,7 @@ the user's authority; the delegated agent never does.
 7. **Read the result.** The agent's report comes first, then the block
    "Observed by CoAgent8", which the server read from Git before and after the
    turn. Trust the block over the report for tracked and untracked files;
-   Git-ignored files are not observed, so check them yourself when relevant.
+   Git-ignored files and changes inside submodules are not observed, so check them yourself when relevant.
    Treat every warning as a finding:
    changes outside the scope, files that had uncommitted changes before, and a
    moved HEAD (a commit or branch switch the agent was told not to make).

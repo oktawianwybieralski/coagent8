@@ -10,7 +10,8 @@ independent. Every role runs on the host through one runner, without a sandbox,
 after the user's one-time consent (#208); nothing restricts an agent to reading
 or to the workspace. A `consult` or `review` is instructed to leave the
 workspace as it found it, and a review runs in a snapshot work tree of the
-reviewed state. `delegate` runs workers in the background under one root
+reviewed state when one can be made (otherwise an uncommitted or staged review runs
+in the workspace and other scopes are refused). `delegate` runs workers in the background under one root
 budget, in disjoint scopes of a work tree or in separate linked worktrees,
 optionally in a server-owned loop of checks, review and fix rounds; `scope` is
 an instruction and an observed-change check, not an enforced write boundary.

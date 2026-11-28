@@ -225,7 +225,10 @@ consent (`"hostExecution": "accepted"` in the configuration, or the form).
   review is refused and you narrow the scope.
 - From 0.8.0 the reviewing agent works in a temporary copy of exactly the reviewed state and
   is told to leave your work tree alone; nothing enforces that until containers come (#215).
-  The copy is removed afterwards.
+  The copy is removed afterwards. When no copy can be made (Git filters such as LFS,
+  submodules, or another review of the same work tree running), an uncommitted or staged
+  review runs in your work tree with a warning, and a commit, branch or range review is
+  refused.
 - From 0.8.0, the diff is not pasted into the reviewer's prompt:
   it reads the collected diff from a file CoAgent8 writes for it, and its review is READY only if it
   quotes the random mark at the end of that file.
