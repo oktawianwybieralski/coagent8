@@ -611,7 +611,12 @@ export async function syncPathShim(
     const cleanupWarnings: string[] = installed.cleanupWarning ? [installed.cleanupWarning] : [];
     const pruneBestEffort = async () => {
       try {
-        await cleanupUnreferencedRuntimes(coagentRootForHome(options.home), options.home, process.env, { keepStableNamespaces: true });
+        const pruneResult = await cleanupUnreferencedRuntimes(coagentRootForHome(options.home), options.home, process.env, {
+          keepStableNamespaces: true,
+        });
+        if (pruneResult.warnings?.length) {
+          cleanupWarnings.push(...pruneResult.warnings);
+        }
       } catch (error) {
         // Keep copies if another host config or lease is uncertain.
         cleanupWarnings.push(redactDiagnostic(error instanceof Error ? error.message : 'Runtime cleanup failed.'));
@@ -777,16 +782,23 @@ export async function removePathIntegration(
       delete records.pathV2;
       writeRecordFile(home, records);
       const root = path.join(home, '.coagent8');
-      let cleanupWarning: string | undefined;
+      const cleanupWarnings: string[] = [];
       try {
-        await cleanupUnreferencedRuntimes(root, home, process.env, {
+        const pruneResult = await cleanupUnreferencedRuntimes(root, home, process.env, {
           keepStableNamespaces: false,
           leaseTimeoutMs: Math.max(100, timeRemaining()),
         });
+        if (pruneResult.warnings?.length) {
+          cleanupWarnings.push(...pruneResult.warnings);
+        }
       } catch (error) {
-        cleanupWarning = redactDiagnostic(error instanceof Error ? error.message : 'Runtime cleanup failed.');
+        cleanupWarnings.push(redactDiagnostic(error instanceof Error ? error.message : 'Runtime cleanup failed.'));
       }
-      return { action: 'removed', environmentNotified, ...(cleanupWarning ? { cleanupWarning } : {}) };
+      return {
+        action: 'removed',
+        environmentNotified,
+        ...(cleanupWarnings.length ? { cleanupWarning: redactDiagnostic(cleanupWarnings.join('; '), 1024) } : {}),
+      };
     },
     Math.min(leaseTimeoutMs, Math.max(100, timeRemaining())),
   );

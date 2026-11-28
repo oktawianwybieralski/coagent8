@@ -1459,7 +1459,7 @@ export async function cleanupUnreferencedRuntimes(
   home: string,
   env: NodeJS.ProcessEnv = process.env,
   options: RuntimeCleanupOptions = {},
-): Promise<{ removed: string[]; kept: string[] }> {
+): Promise<{ removed: string[]; kept: string[]; warnings?: string[] }> {
   const resolvedRoot = path.resolve(root);
   const runtimes = runtimeRootDir(resolvedRoot);
   const sharedRoot = coagentRootForHome(home);
@@ -1737,6 +1737,7 @@ export async function cleanupUnreferencedRuntimes(
 
           const removed: string[] = [];
           const kept: string[] = [];
+          const warnings: string[] = [];
           if (fs.existsSync(runtimes)) {
             for (const name of fs.readdirSync(runtimes)) {
               const dirPath = path.join(runtimes, name);
@@ -1758,7 +1759,14 @@ export async function cleanupUnreferencedRuntimes(
                 } else {
                   try {
                     fs.rmSync(path.join(dirPath, STAGED_POINTER_NAME), { force: true });
-                  } catch {}
+                  } catch (error) {
+                    warnings.push(
+                      redactDiagnostic(
+                        `Failed to remove staged pointer for ${name}: ${error instanceof Error ? error.message : String(error)}`,
+                        512,
+                      ),
+                    );
+                  }
                 }
               }
             }
@@ -1766,12 +1774,28 @@ export async function cleanupUnreferencedRuntimes(
               if (fs.existsSync(leasesDir) && fs.readdirSync(leasesDir).length === 0) {
                 fs.rmdirSync(leasesDir);
               }
+            } catch (error) {
+              warnings.push(
+                redactDiagnostic(
+                  `Failed to remove empty runtime leases directory: ${error instanceof Error ? error.message : String(error)}`,
+                  512,
+                ),
+              );
+            }
+            try {
               if (fs.readdirSync(runtimes).length === 0) {
                 fs.rmdirSync(runtimes);
               }
-            } catch {}
+            } catch (error) {
+              warnings.push(
+                redactDiagnostic(
+                  `Failed to remove empty runtime root directory: ${error instanceof Error ? error.message : String(error)}`,
+                  512,
+                ),
+              );
+            }
           }
-          return { removed, kept };
+          return { removed, kept, ...(warnings.length ? { warnings } : {}) };
         },
         innerTimeoutMs,
       );

@@ -1161,3 +1161,52 @@ test('prerelease downgrade guard keeps newer SemVer pointer and registration int
   assert.match(res.message, /newer CoAgent8 version \(0\.8\.0-rc\.2\)/);
   assert.equal(readRuntimePointer(root, 'current').version, '0.8.0-rc.2');
 });
+
+test('setupClients surfaces redacted cleanupWarning for post-selection lease failure and pruning errors', async t => {
+  const origRmSync = fs.rmSync;
+
+  // 1. Reservation-lease removal failure in installAndSelectVerifiedRuntime propagates to SetupStatus.cleanupWarning.
+  {
+    const options = { ...profile(t), clients: ['claude'] };
+    const root = path.join(options.home, '.coagent8');
+    const leasesPrefix = path.join(root, 'runtime', 'leases') + path.sep;
+    t.mock.method(fs, 'rmSync', (target, opts) => {
+      const targetStr = String(target);
+      if (targetStr.startsWith(leasesPrefix) && targetStr.includes('-reserve-') && !targetStr.includes('.tmp.')) {
+        throw new Error('Simulated reservation lease fail token=secret-lease-tok');
+      }
+      return origRmSync(target, opts);
+    });
+
+    const results = await setupClients(options);
+    t.mock.restoreAll();
+
+    assert.equal(results[0].action, 'installed');
+    assert.match(results[0].cleanupWarning ?? '', /Simulated reservation lease fail/);
+    assert.doesNotMatch(results[0].cleanupWarning ?? '', /secret-lease-tok/);
+  }
+
+  // 2. Post-setup cleanupUnreferencedRuntimes failure propagates to SetupStatus.cleanupWarning without failing setup.
+  {
+    const options = { ...profile(t), clients: ['claude'] };
+    const root = path.join(options.home, '.coagent8');
+    const staleDir = path.join(root, 'runtime', 'e'.repeat(64));
+    fs.mkdirSync(staleDir, { recursive: true });
+    fs.writeFileSync(path.join(staleDir, 'index.cjs'), 'stale');
+    fs.writeFileSync(path.join(staleDir, '.lease-capable'), '1\n');
+
+    t.mock.method(fs, 'rmSync', (target, opts) => {
+      if (String(target) === staleDir) {
+        throw Object.assign(new Error('Simulated prune EIO password=secret-prune-pw'), { code: 'EIO' });
+      }
+      return origRmSync(target, opts);
+    });
+
+    const results = await setupClients(options);
+    t.mock.restoreAll();
+
+    assert.equal(results[0].action, 'installed');
+    assert.match(results[0].cleanupWarning ?? '', /Simulated prune EIO/);
+    assert.doesNotMatch(results[0].cleanupWarning ?? '', /secret-prune-pw/);
+  }
+});

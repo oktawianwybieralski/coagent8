@@ -110,7 +110,7 @@ export async function pruneUnreferencedRuntimes(
   home: string,
   env: NodeJS.ProcessEnv = process.env,
   options: RuntimeCleanupOptions = {},
-): Promise<{ removed: string[]; kept: string[] }> {
+): Promise<{ removed: string[]; kept: string[]; warnings?: string[] }> {
   return cleanupUnreferencedRuntimes(root, home, env, options);
 }
 

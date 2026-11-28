@@ -155,6 +155,10 @@ export async function runSetupCli(args: string[]): Promise<boolean> {
     skillsSource: resolveSkillsDir(),
   });
   process.stdout.write(JSON.stringify(results, null, 2) + '\n');
+  const cleanupWarning = results.find(result => result.cleanupWarning)?.cleanupWarning;
+  if (cleanupWarning) {
+    process.stderr.write(`Warning: ${cleanupWarning}\n`);
+  }
   if (
     args[0] === 'status'
       ? !results.some(result => result.ready)

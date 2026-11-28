@@ -82,6 +82,8 @@ export interface SetupStatus extends CliReadiness {
   message: string;
   /** Skill packages synchronized after a working registration; absent without a catalog or registration. */
   skills?: SkillStatus[];
+  /** Non-fatal cleanup diagnostic when post-selection or post-setup runtime cleanup reported warnings. */
+  cleanupWarning?: string;
 }
 export interface SetupOptions {
   /** Explicit selections authorize setup; omitted selections reuse the saved list. */
@@ -662,6 +664,7 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
     let catalog: SkillPackage[] | null = null;
     let candidateVersion = options.version ?? extractRuntimeVersion(options.runtimeSource) ?? BRAND.SERVER_VERSION;
     let pointerMessage: string | undefined;
+    const cleanupWarnings: string[] = [];
     if (!options.statusOnly) {
       // An invalid catalog is a package defect; it stops setup before any client changes.
       if (options.skillsSource) catalog = readSkillCatalog(options.skillsSource);
@@ -682,6 +685,9 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
       });
       if (selected.action === 'kept-incumbent' || selected.action === 'downgrade-blocked' || selected.action === 'pinned-blocked') {
         pointerMessage = selected.message;
+      }
+      if (selected.cleanupWarning) {
+        cleanupWarnings.push(redactDiagnostic(selected.cleanupWarning, 512));
       }
     }
     const results: SetupStatus[] = (selected.length ? selected : SETUP_CLIENTS).map(client => ({
@@ -713,9 +719,21 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
       saved.clients = selected;
       writeChecked(stateFile, stateBefore, serializeSelection(saved));
       try {
-        await cleanupUnreferencedRuntimes(root, home, env, { keepStableNamespaces: true });
-      } catch {
+        const pruneResult = await cleanupUnreferencedRuntimes(root, home, env, { keepStableNamespaces: true });
+        if (pruneResult.warnings?.length) {
+          for (const warning of pruneResult.warnings) {
+            cleanupWarnings.push(redactDiagnostic(warning, 512));
+          }
+        }
+      } catch (error) {
         // Preserve all copies if another host config or runtime lease is uncertain.
+        cleanupWarnings.push(redactDiagnostic(error instanceof Error ? error.message : 'Runtime cleanup failed.', 512));
+      }
+      if (cleanupWarnings.length > 0) {
+        const cleanupWarning = redactDiagnostic(cleanupWarnings.join('; '), 1024);
+        for (const result of results) {
+          result.cleanupWarning = cleanupWarning;
+        }
       }
     }
     return results;

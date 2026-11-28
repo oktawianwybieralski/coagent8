@@ -1178,7 +1178,7 @@ test('atomicWriteText ignores temp-removal failure after rename, preserves pre-r
   t.mock.restoreAll();
   assert.equal(readRuntimePointer(root, 'current')?.digest, res1.digest, 'incumbent pointer stayed unchanged');
 
-  // 3. cleanupUnreferencedRuntimes still resolves if trailing empty-dir rmdirSync throws EBUSY.
+  // 3. cleanupUnreferencedRuntimes still resolves and returns warnings if trailing empty-dir rmdirSync throws EBUSY.
   fs.mkdirSync(runtimeLeasesDir(root), { recursive: true });
   t.mock.method(fs, 'rmdirSync', (target, opts) => {
     if (String(target) === runtimeLeasesDir(root)) {
@@ -1189,4 +1189,16 @@ test('atomicWriteText ignores temp-removal failure after rename, preserves pre-r
   const cleanupRes = await cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: true });
   t.mock.restoreAll();
   assert.ok(cleanupRes.kept.includes(res1.digest));
+  assert.match(cleanupRes.warnings?.[0] ?? '', /Failed to remove empty runtime leases directory/);
+
+  // 4. cleanupUnreferencedRuntimes returns a warning when removing staged pointer.next.json fails (e.g. non-empty directory).
+  const stagedDir = path.join(path.dirname(pointerFile), 'pointer.next.json');
+  fs.mkdirSync(stagedDir, { recursive: true });
+  fs.writeFileSync(path.join(stagedDir, 'stale.txt'), 'keep');
+  const stagedWarnRes = await cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: true });
+  assert.ok(stagedWarnRes.kept.includes(res1.digest));
+  assert.ok(
+    stagedWarnRes.warnings?.some(warning => /Failed to remove staged pointer for current/.test(warning)),
+    `expected staged pointer removal warning, got: ${JSON.stringify(stagedWarnRes.warnings)}`,
+  );
 });

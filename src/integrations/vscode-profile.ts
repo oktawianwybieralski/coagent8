@@ -225,10 +225,13 @@ async function pruneRuntimes(
 ): Promise<void> {
   const keepDigest = path.basename(path.dirname(keep));
   try {
-    await cleanupUnreferencedRuntimes(storagePath, home, process.env, {
+    const pruneResult = await cleanupUnreferencedRuntimes(storagePath, home, process.env, {
       extraReferencedDigests: /^[a-f0-9]{64}$/.test(keepDigest) ? [keepDigest] : [],
       ...(options.cleanupTimeoutMs !== undefined ? { leaseTimeoutMs: options.cleanupTimeoutMs } : {}),
     });
+    if (pruneResult.warnings?.length) {
+      options.onCleanupWarning?.(redactDiagnostic(pruneResult.warnings.join('; '), 1024));
+    }
   } catch (error) {
     options.onCleanupWarning?.(redactDiagnostic(error instanceof Error ? error.message : 'Profile runtime cleanup failed.'));
   }
