@@ -449,7 +449,7 @@ routing configuration, with fallback when a default is unavailable), so when a
 role must use a particular backend, name it in your project rules and have the
 coordinator pass `backend` explicitly on that call:
 
-```markdown
+```text
 ## Agent roles
 
 Follow `coagent8-coordinate`:
