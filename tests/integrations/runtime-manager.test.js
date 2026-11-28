@@ -847,16 +847,16 @@ test('updater lock serializes concurrent failing updates, restores pin on unpin 
   assert.equal(pointerAfterConcurrent.digest, res3.digest, 'original pointer preserved across concurrent failing updates');
   assert.equal(pointerAfterConcurrent.version, '0.9.0');
 
-  // 3. unpinRuntime with a failing launcher probe restores the pin (and action is not noop).
+  // 3. unpinRuntime with a failing launcher probe leaves the pinned pointer byte-identical (and action is not noop).
   const pointerFile = runtimePointerPath(root, 'current');
+  const failUnpinMarker = path.join(home, 'fail-unpin-marker');
   const pinOnlyBundle = path.join(home, 'pin-only.cjs');
   fs.writeFileSync(
     pinOnlyBundle,
     [
       `const fs = require('node:fs');`,
-      `if (globalThis[Symbol.for('coagent8.runtimePath')]) {`,
-      `  const p = JSON.parse(fs.readFileSync(${JSON.stringify(pointerFile)}, 'utf8'));`,
-      `  if (!p.pinned) process.exit(1);`,
+      `if (globalThis[Symbol.for('coagent8.runtimePath')] && fs.existsSync(${JSON.stringify(failUnpinMarker)})) {`,
+      `  process.exit(1);`,
       `}`,
       validMcpBundle('pin-only'),
     ].join('\n'),
@@ -870,14 +870,14 @@ test('updater lock serializes concurrent failing updates, restores pin on unpin 
   });
   assert.equal(pinned.action, 'updated');
   assert.equal(readRuntimePointer(root, 'current').pinned.digest, pinned.digest);
+  const pinnedBytes = fs.readFileSync(pointerFile);
 
+  fs.writeFileSync(failUnpinMarker, '1');
   await assert.rejects(() => unpinRuntime(home, 'current', { nodePath: process.execPath }), /Probe process exited/);
   assert.equal(fs.existsSync(updateLease), false, 'updater lock released after failed unpin');
-  const pointerAfterFailedUnpin = readRuntimePointer(root, 'current');
-  assert.equal(pointerAfterFailedUnpin.digest, pinned.digest);
-  assert.equal(pointerAfterFailedUnpin.pinned?.digest, pinned.digest, 'previous pin restored when unpin launcher probe fails');
+  assert.deepEqual(fs.readFileSync(pointerFile), pinnedBytes, 'pinned pointer.json stays byte-identical when unpin launcher probe fails');
 
-  // Also verify installAndSelectVerifiedRuntime({ ..., unpin: true }) restores pin on failure rather than returning noop.
+  // Also verify installAndSelectVerifiedRuntime({ ..., unpin: true }) preserves pin on failure rather than returning noop.
   await assert.rejects(
     () =>
       installAndSelectVerifiedRuntime({
@@ -890,7 +890,7 @@ test('updater lock serializes concurrent failing updates, restores pin on unpin 
       }),
     /Probe process exited/,
   );
-  assert.equal(readRuntimePointer(root, 'current').pinned?.digest, pinned.digest, 'pin restored on unpin option failure');
+  assert.deepEqual(fs.readFileSync(pointerFile), pinnedBytes, 'pinned pointer.json stays byte-identical on unpin option failure');
 });
 
 test('cleanupUnreferencedRuntimes with keepStableNamespaces false waits for runtime-update lock and keeps update pointer', async t => {
@@ -948,15 +948,63 @@ test('cleanupUnreferencedRuntimes with keepStableNamespaces false waits for runt
   assert.equal(readRuntimePointer(root, 'current')?.digest, v1Copy.digest, 'pointer published by update is preserved');
 });
 
-test('installAndSelectVerifiedRuntime retries incumbent restore and reports restore failure when rollback write fails', async t => {
-  const { runtimePointerPath } = require('../../src/integrations/runtime-manager.ts');
+test('cleanupUnreferencedRuntimes enforces a single deadline across runtime-update and runtime-lock', async t => {
+  const { LockTimeoutError, withFileLock } = require('../../src/storage/lock.ts');
+  const { runtimeLockResource, runtimeUpdateLockResource } = require('../../src/integrations/runtime-manager.ts');
+  const home = makeHome(t);
+  const root = coagentRootForHome(home);
+
+  // Hold runtime-update for 300ms and runtime-lock for 250ms; with a 400ms single budget cleanup must fail near 400ms, not 800ms.
+  let releaseUpdate;
+  let updateHeld;
+  const updateGate = new Promise(resolve => {
+    releaseUpdate = resolve;
+  });
+  const updateAcquired = new Promise(resolve => {
+    updateHeld = resolve;
+  });
+  const updateHolder = withFileLock(runtimeUpdateLockResource(root), async () => {
+    updateHeld();
+    await updateGate;
+  });
+  await updateAcquired;
+
+  let releaseRuntime;
+  let runtimeHeld;
+  const runtimeGate = new Promise(resolve => {
+    releaseRuntime = resolve;
+  });
+  const runtimeAcquired = new Promise(resolve => {
+    runtimeHeld = resolve;
+  });
+  const runtimeHolder = withFileLock(runtimeLockResource(root), async () => {
+    runtimeHeld();
+    await runtimeGate;
+  });
+  await runtimeAcquired;
+
+  setTimeout(() => releaseUpdate(), 300);
+  setTimeout(() => releaseRuntime(), 650);
+
+  const started = Date.now();
+  await assert.rejects(
+    () => cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: false, leaseTimeoutMs: 400 }),
+    err => err instanceof LockTimeoutError,
+  );
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 600, `expected single-budget timeout under 600ms, took ${elapsed}ms`);
+
+  releaseUpdate();
+  releaseRuntime();
+  await Promise.all([updateHolder, runtimeHolder]);
+});
+
+test('staged launcher probe leaves pointer.json byte-identical on failure, rejects invalid stage args, and cleanup removes stale staged files', async t => {
+  const { runtimePointerPath, stableLauncherPath } = require('../../src/integrations/runtime-manager.ts');
   const home = makeHome(t);
   const root = coagentRootForHome(home);
   const pointerFile = runtimePointerPath(root, 'current');
-
-  const v1 = path.join(home, 'v1.cjs');
-  fs.writeFileSync(v1, validMcpBundle('v1'));
-  const res1 = await installAndSelectVerifiedRuntime({ home, runtimeSource: v1, version: '0.7.0', nodePath: process.execPath });
+  const stagedFile = path.join(path.dirname(pointerFile), 'pointer.next.json');
 
   const launcherFail = path.join(home, 'launcher-fail.cjs');
   fs.writeFileSync(
@@ -964,44 +1012,48 @@ test('installAndSelectVerifiedRuntime retries incumbent restore and reports rest
     ["if (globalThis[Symbol.for('coagent8.runtimePath')]) process.exit(1);", validMcpBundle('v2-launcher-fail')].join('\n'),
   );
 
-  // 1. Transient restore failure recovers on retry and restores incumbent cleanly.
-  {
-    const origRename = fs.renameSync;
-    let pointerRenames = 0;
-    t.mock.method(fs, 'renameSync', (from, to) => {
-      if (to === pointerFile) {
-        pointerRenames++;
-        if (pointerRenames === 2) throw new Error('Transient restore lock/write error');
-      }
-      return origRename(from, to);
-    });
-    await assert.rejects(
-      () => installAndSelectVerifiedRuntime({ home, runtimeSource: launcherFail, version: '0.8.0', nodePath: process.execPath }),
-      /Probe process exited/,
-    );
-    t.mock.restoreAll();
-    assert.equal(readRuntimePointer(root, 'current')?.digest, res1.digest, 'transient restore error recovered on retry');
-  }
+  // 1. No incumbent: failing staged launcher probe never creates pointer.json and cleans up pointer.next.json.
+  await assert.rejects(
+    () => installAndSelectVerifiedRuntime({ home, runtimeSource: launcherFail, version: '0.7.0', nodePath: process.execPath }),
+    /Probe process exited/,
+  );
+  assert.equal(fs.existsSync(pointerFile), false, 'pointer.json is never created on staged launcher probe failure');
+  assert.equal(fs.existsSync(stagedFile), false, 'pointer.next.json cleaned up after failure');
 
-  // 2. Persistent restore failure is never swallowed and surfaces both the probe error and restore error.
-  {
-    const origRename = fs.renameSync;
-    let pointerRenames = 0;
-    t.mock.method(fs, 'renameSync', (from, to) => {
-      if (to === pointerFile) {
-        pointerRenames++;
-        if (pointerRenames >= 2) throw new Error('Simulated restore write failure');
-      }
-      return origRename(from, to);
-    });
-    await assert.rejects(
-      () => installAndSelectVerifiedRuntime({ home, runtimeSource: launcherFail, version: '0.8.0', nodePath: process.execPath }),
-      err => {
-        assert.match(err.message, /Probe process exited/);
-        assert.match(err.message, /failed to restore previous runtime pointer:.*Simulated restore write failure/);
-        return true;
-      },
-    );
-    t.mock.restoreAll();
-  }
+  // 2. Existing incumbent: failing staged launcher probe performs zero writes to pointer.json and leaves it byte-identical.
+  const v1 = path.join(home, 'v1.cjs');
+  fs.writeFileSync(v1, validMcpBundle('v1'));
+  const res1 = await installAndSelectVerifiedRuntime({ home, runtimeSource: v1, version: '0.7.0', nodePath: process.execPath });
+  const beforeBytes = fs.readFileSync(pointerFile);
+
+  const pointerRenames = [];
+  const origRename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (to === pointerFile) pointerRenames.push(to);
+    return origRename(from, to);
+  });
+  await assert.rejects(
+    () => installAndSelectVerifiedRuntime({ home, runtimeSource: launcherFail, version: '0.8.0', nodePath: process.execPath }),
+    /Probe process exited/,
+  );
+  t.mock.restoreAll();
+  assert.deepEqual(pointerRenames, [], 'pointer.json was never written during failing staged probe');
+  assert.deepEqual(fs.readFileSync(pointerFile), beforeBytes, 'pointer.json remained byte-identical');
+  assert.equal(fs.existsSync(stagedFile), false, 'pointer.next.json cleaned up after failure');
+
+  // 3. Stale pointer.next.json left by a crashed updater is removed by cleanupUnreferencedRuntimes.
+  fs.writeFileSync(stagedFile, JSON.stringify({ stale: true }));
+  const cleanupRes = await cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: true });
+  assert.ok(cleanupRes.kept.includes(res1.digest));
+  assert.equal(fs.existsSync(stagedFile), false, 'stale pointer.next.json removed during cleanup');
+
+  // 4. Launcher rejects arbitrary/traversal --probe-pointer arguments.
+  const launcher = stableLauncherPath(root, 'current');
+  const badArg = cp.spawnSync(process.execPath, [launcher, '--probe-pointer=../evil.json', 'mcp'], {
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 5_000,
+  });
+  assert.notEqual(badArg.status, 0);
+  assert.match(badArg.stderr, /invalid staged pointer name/);
 });

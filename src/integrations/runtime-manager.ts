@@ -19,7 +19,7 @@ import path from 'node:path';
 import { BRAND } from '../brand.js';
 import { resolveCliCommand } from '../execution/cli-resolver.js';
 import { redactDiagnostic } from '../security/redaction.js';
-import { withFileLock } from '../storage/lock.js';
+import { LockTimeoutError, withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { object, withStdioRpc } from './rpc.js';
 import { copyJobHelperBeside, removeRuntimeDirectory } from './runtime-files.js';
@@ -32,6 +32,8 @@ const POINTER_LIMIT = 64 * 1024;
 const BUNDLE_LIMIT = 16 * 1024 * 1024;
 const LEASE_LIMIT = 16 * 1024;
 const LEASE_CAPABLE_MARKER = '.lease-capable';
+const STAGED_POINTER_NAME = 'pointer.next.json';
+const PROBE_POINTER_ARG_PREFIX = '--probe-pointer=';
 /** Maximum age (ms) of an unrenewed runtime lease before identity re-verification runs. */
 export const RUNTIME_LEASE_MAX_AGE_MS = 60_000;
 /** Shared lock timeout for short runtime pointer, copy, and lease metadata operations. */
@@ -361,7 +363,25 @@ export function renderStableLauncher(): string {
     'const NAMESPACE_DIR = __dirname;',
     'const RUNTIME_ROOT = path.dirname(NAMESPACE_DIR);',
     'const COAGENT_ROOT = path.dirname(RUNTIME_ROOT);',
-    "const POINTER_FILE = path.join(NAMESPACE_DIR, 'pointer.json');",
+    "const STAGED_POINTER_ARG_PREFIX = '--probe-pointer=';",
+    "const STAGED_POINTER_NAME = 'pointer.next.json';",
+    'function resolvePointerFile() {',
+    '  const arg = process.argv[2];',
+    "  if (typeof arg === 'string' && arg.startsWith(STAGED_POINTER_ARG_PREFIX) && process.argv[3] === 'mcp') {",
+    '    const candidate = arg.slice(STAGED_POINTER_ARG_PREFIX.length);',
+    '    process.argv.splice(2, 1);',
+    '    if (candidate !== STAGED_POINTER_NAME) {',
+    "      fail('invalid staged pointer name');",
+    '    }',
+    '    const resolved = path.join(NAMESPACE_DIR, candidate);',
+    '    if (path.dirname(resolved) !== NAMESPACE_DIR) {',
+    "      fail('invalid staged pointer path');",
+    '    }',
+    '    return resolved;',
+    '  }',
+    "  return path.join(NAMESPACE_DIR, 'pointer.json');",
+    '}',
+    'const POINTER_FILE = resolvePointerFile();',
     "const LEASES_DIR = path.join(RUNTIME_ROOT, 'leases');",
     "const LOCK_FILE = path.join(COAGENT_ROOT, 'runtime-lock.lease');",
     'const LOCK_TIMEOUT_MS = 5000;',
@@ -668,12 +688,12 @@ function ensureLauncherFile(root: string, namespace: RuntimeNamespace): string {
 }
 
 /**
- * Switches the stable pointer to an already-installed and verified runtime copy; caller MUST hold `runtimeLockResource`.
+ * Evaluates the target pointer selection without writing `pointer.json`; caller MUST hold `runtimeLockResource`.
  */
-function selectRuntimePointerLocked(
+function planRuntimePointerSelectionLocked(
   copy: InstalledRuntimeCopy,
   options: { namespace?: RuntimeNamespace; allowDevInCurrent?: boolean; pin?: boolean; unpin?: boolean; reason?: string } = {},
-): RuntimeInstallResult {
+): { result: RuntimeInstallResult; nextPointer: RuntimePointer | null } {
   const namespace = resolveRuntimeNamespace(copy.version, options);
   const targetStat = fs.statSync(copy.runtimePath, { throwIfNoEntry: false });
   if (!targetStat || !targetStat.isFile()) {
@@ -687,167 +707,193 @@ function selectRuntimePointerLocked(
   const existing = readRuntimePointer(copy.root, namespace);
   const existingTarget = existing ? path.join(copy.runtimeRoot, existing.digest, 'index.cjs') : null;
   const existingHealthy = Boolean(existing && existingTarget && fs.statSync(existingTarget, { throwIfNoEntry: false })?.isFile());
-
-  const writePointer = (pointer: RuntimePointer) => {
-    atomicWriteText(pointerFile, JSON.stringify(pointer, null, 2) + '\n', 0o600);
-  };
   const nowIso = new Date().toISOString();
 
   if (options.pin) {
-    writePointer({
-      schemaVersion: 1,
-      digest: copy.digest,
-      version: copy.version,
-      updatedAt: nowIso,
-      pinned: {
+    return {
+      nextPointer: {
+        schemaVersion: 1,
         digest: copy.digest,
         version: copy.version,
-        pinnedAt: nowIso,
-        ...(options.reason ? { reason: options.reason } : {}),
+        updatedAt: nowIso,
+        pinned: {
+          digest: copy.digest,
+          version: copy.version,
+          pinnedAt: nowIso,
+          ...(options.reason ? { reason: options.reason } : {}),
+        },
       },
-    });
-    return {
-      namespace,
-      launcherPath,
-      pointerFile,
-      runtimePath: copy.runtimePath,
-      digest: copy.digest,
-      version: copy.version,
-      action: existingHealthy ? 'updated' : 'installed',
-      ...(existing && existingHealthy
-        ? { incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned } }
-        : {}),
-      message: `Pinned ${namespace} runtime to ${copy.version} (${copy.digest.slice(0, 12)}).`,
+      result: {
+        namespace,
+        launcherPath,
+        pointerFile,
+        runtimePath: copy.runtimePath,
+        digest: copy.digest,
+        version: copy.version,
+        action: existingHealthy ? 'updated' : 'installed',
+        ...(existing && existingHealthy
+          ? { incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned } }
+          : {}),
+        message: `Pinned ${namespace} runtime to ${copy.version} (${copy.digest.slice(0, 12)}).`,
+      },
     };
   }
 
   if (!existing || !existingHealthy) {
-    writePointer({
-      schemaVersion: 1,
-      digest: copy.digest,
-      version: copy.version,
-      updatedAt: nowIso,
-    });
     return {
-      namespace,
-      launcherPath,
-      pointerFile,
-      runtimePath: copy.runtimePath,
-      digest: copy.digest,
-      version: copy.version,
-      action: existing ? 'updated' : 'installed',
-      message: existing
-        ? `Repaired dangling ${namespace} runtime pointer to ${copy.version} (${copy.digest.slice(0, 12)}).`
-        : `Installed ${namespace} runtime ${copy.version} (${copy.digest.slice(0, 12)}).`,
+      nextPointer: {
+        schemaVersion: 1,
+        digest: copy.digest,
+        version: copy.version,
+        updatedAt: nowIso,
+      },
+      result: {
+        namespace,
+        launcherPath,
+        pointerFile,
+        runtimePath: copy.runtimePath,
+        digest: copy.digest,
+        version: copy.version,
+        action: existing ? 'updated' : 'installed',
+        message: existing
+          ? `Repaired dangling ${namespace} runtime pointer to ${copy.version} (${copy.digest.slice(0, 12)}).`
+          : `Installed ${namespace} runtime ${copy.version} (${copy.digest.slice(0, 12)}).`,
+      },
     };
   }
 
   if (existing.pinned && !options.unpin) {
     if (existing.pinned.digest === copy.digest && compareSemver(copy.version, existing.pinned.version) === 0) {
       return {
-        namespace,
-        launcherPath,
-        pointerFile,
-        runtimePath: copy.runtimePath,
-        digest: copy.digest,
-        version: copy.version,
-        action: 'noop',
-        incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
-        message: `Runtime ${namespace} already points to pinned ${copy.version}.`,
-      };
-    }
-    return {
-      namespace,
-      launcherPath,
-      pointerFile,
-      runtimePath: existingTarget!,
-      digest: existing.digest,
-      version: existing.version,
-      action: 'pinned-blocked',
-      incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
-      message: `Kept pinned ${namespace} runtime ${existing.version} (${existing.digest.slice(0, 12)}) instead of ${copy.version}.`,
-    };
-  }
-
-  const cmp = compareSemver(copy.version, existing.version);
-  if (cmp === 1) {
-    writePointer({
-      schemaVersion: 1,
-      digest: copy.digest,
-      version: copy.version,
-      updatedAt: nowIso,
-    });
-    return {
-      namespace,
-      launcherPath,
-      pointerFile,
-      runtimePath: copy.runtimePath,
-      digest: copy.digest,
-      version: copy.version,
-      action: 'updated',
-      incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
-      message: `Updated ${namespace} runtime from ${existing.version} to ${copy.version} (${copy.digest.slice(0, 12)}).`,
-    };
-  }
-
-  if (cmp === 0) {
-    if (copy.digest === existing.digest) {
-      if (existing.pinned && options.unpin) {
-        writePointer({
-          schemaVersion: 1,
-          digest: existing.digest,
-          version: existing.version,
-          updatedAt: nowIso,
-        });
-        return {
+        nextPointer: null,
+        result: {
           namespace,
           launcherPath,
           pointerFile,
           runtimePath: copy.runtimePath,
           digest: copy.digest,
           version: copy.version,
-          action: 'updated',
+          action: 'noop',
           incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
-          message: `Unpinned ${namespace} runtime ${copy.version} (${copy.digest.slice(0, 12)}).`,
-        };
-      }
-      return {
+          message: `Runtime ${namespace} already points to pinned ${copy.version}.`,
+        },
+      };
+    }
+    return {
+      nextPointer: null,
+      result: {
+        namespace,
+        launcherPath,
+        pointerFile,
+        runtimePath: existingTarget!,
+        digest: existing.digest,
+        version: existing.version,
+        action: 'pinned-blocked',
+        incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
+        message: `Kept pinned ${namespace} runtime ${existing.version} (${existing.digest.slice(0, 12)}) instead of ${copy.version}.`,
+      },
+    };
+  }
+
+  const cmp = compareSemver(copy.version, existing.version);
+  if (cmp === 1) {
+    return {
+      nextPointer: {
+        schemaVersion: 1,
+        digest: copy.digest,
+        version: copy.version,
+        updatedAt: nowIso,
+      },
+      result: {
         namespace,
         launcherPath,
         pointerFile,
         runtimePath: copy.runtimePath,
         digest: copy.digest,
         version: copy.version,
-        action: 'noop',
-        incumbent: { digest: existing.digest, version: existing.version },
-        message: `Runtime ${namespace} already points to ${copy.version} (${copy.digest.slice(0, 12)}).`,
+        action: 'updated',
+        incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
+        message: `Updated ${namespace} runtime from ${existing.version} to ${copy.version} (${copy.digest.slice(0, 12)}).`,
+      },
+    };
+  }
+
+  if (cmp === 0) {
+    if (copy.digest === existing.digest) {
+      if (existing.pinned && options.unpin) {
+        return {
+          nextPointer: {
+            schemaVersion: 1,
+            digest: existing.digest,
+            version: existing.version,
+            updatedAt: nowIso,
+          },
+          result: {
+            namespace,
+            launcherPath,
+            pointerFile,
+            runtimePath: copy.runtimePath,
+            digest: copy.digest,
+            version: copy.version,
+            action: 'updated',
+            incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
+            message: `Unpinned ${namespace} runtime ${copy.version} (${copy.digest.slice(0, 12)}).`,
+          },
+        };
+      }
+      return {
+        nextPointer: null,
+        result: {
+          namespace,
+          launcherPath,
+          pointerFile,
+          runtimePath: copy.runtimePath,
+          digest: copy.digest,
+          version: copy.version,
+          action: 'noop',
+          incumbent: { digest: existing.digest, version: existing.version },
+          message: `Runtime ${namespace} already points to ${copy.version} (${copy.digest.slice(0, 12)}).`,
+        },
       };
     }
     return {
+      nextPointer: null,
+      result: {
+        namespace,
+        launcherPath,
+        pointerFile,
+        runtimePath: existingTarget!,
+        digest: existing.digest,
+        version: existing.version,
+        action: 'kept-incumbent',
+        incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
+        message: `Kept incumbent ${namespace} runtime ${existing.version} (${existing.digest.slice(0, 12)}) with equal version and different hash (${copy.digest.slice(0, 12)}).`,
+      },
+    };
+  }
+
+  // Downgrade guard: never switch pointer back to an older version without an explicit pin.
+  return {
+    nextPointer: null,
+    result: {
       namespace,
       launcherPath,
       pointerFile,
       runtimePath: existingTarget!,
       digest: existing.digest,
       version: existing.version,
-      action: 'kept-incumbent',
+      action: 'downgrade-blocked',
       incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
-      message: `Kept incumbent ${namespace} runtime ${existing.version} (${existing.digest.slice(0, 12)}) with equal version and different hash (${copy.digest.slice(0, 12)}).`,
-    };
-  }
-
-  // Downgrade guard: never switch pointer back to an older version without an explicit pin.
-  return {
-    namespace,
-    launcherPath,
-    pointerFile,
-    runtimePath: existingTarget!,
-    digest: existing.digest,
-    version: existing.version,
-    action: 'downgrade-blocked',
-    incumbent: { digest: existing.digest, version: existing.version, pinned: existing.pinned },
-    message: `Preserved newer ${namespace} runtime ${existing.version} (${existing.digest.slice(0, 12)}); refused downgrade to ${copy.version}.`,
+      message: `Preserved newer ${namespace} runtime ${existing.version} (${existing.digest.slice(0, 12)}); refused downgrade to ${copy.version}.`,
+    },
   };
+}
+
+/**
+ * Atomically writes a validated pointer payload; caller MUST hold `runtimeUpdateLockResource` and `runtimeLockResource`.
+ */
+function publishRuntimePointerLocked(pointerFile: string, pointer: RuntimePointer): void {
+  atomicWriteText(pointerFile, JSON.stringify(pointer, null, 2) + '\n', 0o600);
 }
 
 /**
@@ -907,24 +953,8 @@ export async function probeRuntime(
   );
 }
 
-/**
- * Reports whether `selectRuntimePointerLocked` would publish `copy` (or clear a pin on `copy`)
- * given the current pointer state on disk; caller MUST hold `runtimeLockResource`.
- */
-function wouldPublishCandidate(
-  root: string,
-  copy: InstalledRuntimeCopy,
-  options: { namespace?: RuntimeNamespace; allowDevInCurrent?: boolean; pin?: boolean; unpin?: boolean },
-): boolean {
-  if (options.pin) return true;
-  const namespace = resolveRuntimeNamespace(copy.version, options);
-  const existingPointer = readRuntimePointer(root, namespace);
-  const existingTarget = resolveStableTarget(root, namespace);
-  if (!existingPointer || !existingTarget?.exists) return true;
-  if (existingPointer.pinned && !options.unpin) return false;
-  const cmp = compareSemver(copy.version, existingPointer.version);
-  if (cmp === 1) return true;
-  return cmp === 0 && copy.digest === existingPointer.digest && Boolean(existingPointer.pinned && options.unpin);
+function pointerStageKey(pointer: RuntimePointer): string {
+  return `${pointer.digest}|${pointer.version}|${pointer.pinned?.digest ?? ''}|${pointer.pinned?.version ?? ''}`;
 }
 
 /**
@@ -936,71 +966,11 @@ function withRuntimeUpdateLock<T>(root: string, fn: () => Promise<T>): Promise<T
 }
 
 /**
- * Restores the previous runtime pointer (if its target still exists) or removes the failed pointer
- * under `runtime-lock`, retrying transient lock/write failures before surfacing a combined error.
- */
-async function restoreRuntimePointerOnProbeFailure(params: {
-  root: string;
-  runtimeRoot: string;
-  pointerFile: string;
-  previousPointerRaw: string | null;
-  writtenPointerRaw: string | null;
-  probeError: unknown;
-}): Promise<void> {
-  const { root, runtimeRoot, pointerFile, previousPointerRaw, writtenPointerRaw, probeError } = params;
-  const RESTORE_DEADLINE_MS = RUNTIME_LOCK_TIMEOUT_MS * 3;
-  const MAX_RESTORE_ATTEMPTS = 3;
-  const deadline = Date.now() + RESTORE_DEADLINE_MS;
-  let lastRestoreError: unknown;
-
-  for (let attempt = 0; attempt < MAX_RESTORE_ATTEMPTS; attempt++) {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) break;
-    try {
-      await withFileLock(
-        runtimeLockResource(root),
-        async () => {
-          const currentRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
-          if (currentRaw !== writtenPointerRaw) return;
-          let canRestore = false;
-          if (previousPointerRaw !== null) {
-            try {
-              const parsedPrev = validateRuntimePointer(JSON.parse(previousPointerRaw));
-              const prevTarget = path.join(runtimeRoot, parsedPrev.digest, 'index.cjs');
-              canRestore = Boolean(fs.statSync(prevTarget, { throwIfNoEntry: false })?.isFile());
-            } catch {
-              canRestore = false;
-            }
-          }
-          if (canRestore) {
-            atomicWriteText(pointerFile, previousPointerRaw!, 0o600);
-          } else {
-            fs.rmSync(pointerFile, { force: true });
-          }
-        },
-        Math.max(500, remaining),
-      );
-      return;
-    } catch (restoreErr) {
-      lastRestoreError = restoreErr;
-      if (attempt + 1 < MAX_RESTORE_ATTEMPTS && deadline - Date.now() > 50) {
-        await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
-      }
-    }
-  }
-
-  const probeMsg = redactDiagnostic(probeError instanceof Error ? probeError.message : String(probeError));
-  const restoreMsg = redactDiagnostic(
-    lastRestoreError instanceof Error ? lastRestoreError.message : String(lastRestoreError ?? 'restore deadline exceeded'),
-  );
-  throw new Error(`Runtime launcher probe failed (${probeMsg}); failed to restore previous runtime pointer: ${restoreMsg}`);
-}
-
-/**
  * Shared verified selection path; caller MUST hold `runtimeUpdateLockResource(root)`.
- * Prepares and reserves candidate and incumbent copies under `runtime-lock`, probes the candidate
- * outside `runtime-lock` before any pointer write (revalidating under the final `runtime-lock`),
- * calls `selectRuntimePointerLocked`, and probes the stable launcher with incumbent rollback on failure.
+ * Prepares and reserves candidate and incumbent copies under `runtime-lock`, probes the candidate and
+ * staged launcher (`pointer.next.json`) outside `runtime-lock` before touching `pointer.json`, then
+ * revalidates under the final `runtime-lock` and atomically publishes `pointer.json` only after both
+ * probes succeed.
  */
 async function selectVerifiedRuntimeCopyLocked(
   prepareCopyLocked: () => InstalledRuntimeCopy,
@@ -1024,8 +994,11 @@ async function selectVerifiedRuntimeCopyLocked(
 
   let copy!: InstalledRuntimeCopy;
   let namespace!: RuntimeNamespace;
-  let wouldSwitch = false;
+  let initialPlan!: { result: RuntimeInstallResult; nextPointer: RuntimePointer | null };
   let candidateProbed = false;
+  let probedStageKey: string | null = null;
+  let probedIncumbentDigest: string | null = null;
+  let tools: string[] = [];
   const reservedDigests = new Set<string>();
   const reservationLeaseFiles: string[] = [];
 
@@ -1061,17 +1034,26 @@ async function selectVerifiedRuntimeCopyLocked(
     }
   };
 
+  let stagedPointerFile = '';
+
   await withFileLock(
     runtimeLockResource(root),
     async () => {
       copy = prepareCopyLocked();
       namespace = resolveRuntimeNamespace(copy.version, options);
+      stagedPointerFile = path.join(path.dirname(runtimePointerPath(root, namespace)), STAGED_POINTER_NAME);
       const existingPointer = readRuntimePointer(root, namespace);
       const existingTarget = resolveStableTarget(root, namespace);
-      wouldSwitch = wouldPublishCandidate(root, copy, options);
 
       reserveDigestLocked(copy.digest);
       reservePointerTargetsLocked(existingPointer, Boolean(existingTarget?.exists));
+
+      initialPlan = planRuntimePointerSelectionLocked(copy, options);
+      if (initialPlan.nextPointer) {
+        publishRuntimePointerLocked(stagedPointerFile, initialPlan.nextPointer);
+      } else {
+        fs.rmSync(stagedPointerFile, { force: true });
+      }
     },
     RUNTIME_LOCK_TIMEOUT_MS,
   );
@@ -1079,78 +1061,97 @@ async function selectVerifiedRuntimeCopyLocked(
   try {
     const probeCandidate = () =>
       probeRuntime({ command: node.command, args: [...node.argsPrefix, copy.runtimePath, 'mcp'], env: options.probeEnv }, env, cwd);
+    const probeLauncher = (launcherPath: string, staged: boolean) =>
+      probeRuntime(
+        {
+          command: node.command,
+          args: [
+            ...node.argsPrefix,
+            ...(staged ? [launcherPath, `${PROBE_POINTER_ARG_PREFIX}${STAGED_POINTER_NAME}`, 'mcp'] : [launcherPath, 'mcp']),
+          ],
+          env: options.probeEnv,
+        },
+        env,
+        cwd,
+      );
 
-    if (wouldSwitch) {
+    if (initialPlan.nextPointer) {
       await probeCandidate();
       candidateProbed = true;
+      tools = await probeLauncher(initialPlan.result.launcherPath, true);
+      probedStageKey = pointerStageKey(initialPlan.nextPointer);
+    } else {
+      tools = await probeLauncher(initialPlan.result.launcherPath, false);
+      probedIncumbentDigest = initialPlan.result.digest;
     }
 
     const MAX_SELECTION_ATTEMPTS = 4;
-    let previousPointerRaw: string | null = null;
-    let writtenPointerRaw: string | null = null;
     let selected!: RuntimeInstallResult;
     const pointerFile = runtimePointerPath(root, namespace);
 
     for (let attempt = 0; ; attempt++) {
-      let needsCandidateProbe = false;
+      let pendingCandidateProbe = false;
+      let pendingStagedLauncher: string | null = null;
+      let pendingIncumbentLauncher: string | null = null;
       await withFileLock(
         runtimeLockResource(root),
         async () => {
-          previousPointerRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
-          let currentPointer: RuntimePointer | null = null;
-          let currentTargetExists = false;
-          if (previousPointerRaw !== null) {
+          const currentPointerRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
+          if (currentPointerRaw !== null) {
             try {
-              currentPointer = validateRuntimePointer(JSON.parse(previousPointerRaw));
+              const currentPointer = validateRuntimePointer(JSON.parse(currentPointerRaw));
               const prevTarget = path.join(copy.runtimeRoot, currentPointer.digest, 'index.cjs');
-              currentTargetExists = Boolean(fs.statSync(prevTarget, { throwIfNoEntry: false })?.isFile());
+              const currentTargetExists = Boolean(fs.statSync(prevTarget, { throwIfNoEntry: false })?.isFile());
               reservePointerTargetsLocked(currentPointer, currentTargetExists);
             } catch {
-              // Invalid previous pointer cannot be restored safely; handled during rollback.
+              // Invalid current pointer cannot satisfy incumbent verification; re-evaluation will replace it after probing.
             }
           }
-          // Revalidate under the final lock so a concurrent pointer change never publishes an unprobed candidate.
-          if (!candidateProbed && wouldPublishCandidate(root, copy, options)) {
-            needsCandidateProbe = true;
+          const planAfter = planRuntimePointerSelectionLocked(copy, options);
+          if (planAfter.nextPointer) {
+            const afterKey = pointerStageKey(planAfter.nextPointer);
+            if (candidateProbed && probedStageKey === afterKey) {
+              publishRuntimePointerLocked(pointerFile, planAfter.nextPointer);
+              fs.rmSync(stagedPointerFile, { force: true });
+              selected = planAfter.result;
+              return;
+            }
+            publishRuntimePointerLocked(stagedPointerFile, planAfter.nextPointer);
+            pendingCandidateProbe = !candidateProbed;
+            pendingStagedLauncher = planAfter.result.launcherPath;
+            probedStageKey = afterKey;
             return;
           }
-          selected = selectRuntimePointerLocked(copy, options);
-          if (selected.action === 'installed' || selected.action === 'updated') {
-            writtenPointerRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
+          fs.rmSync(stagedPointerFile, { force: true });
+          if (probedIncumbentDigest === planAfter.result.digest) {
+            selected = planAfter.result;
+            return;
           }
+          pendingIncumbentLauncher = planAfter.result.launcherPath;
+          probedIncumbentDigest = planAfter.result.digest;
         },
         RUNTIME_LOCK_TIMEOUT_MS,
       );
-      if (!needsCandidateProbe) break;
+      if (!pendingStagedLauncher && !pendingIncumbentLauncher) break;
       if (attempt + 1 >= MAX_SELECTION_ATTEMPTS) {
         throw new Error('Concurrent runtime pointer updates prevented verified selection.');
       }
-      await probeCandidate();
-      candidateProbed = true;
+      if (pendingStagedLauncher) {
+        if (pendingCandidateProbe) {
+          await probeCandidate();
+          candidateProbed = true;
+        }
+        tools = await probeLauncher(pendingStagedLauncher, true);
+      } else if (pendingIncumbentLauncher) {
+        tools = await probeLauncher(pendingIncumbentLauncher, false);
+      }
     }
 
-    const switched = selected.action === 'installed' || selected.action === 'updated';
-    try {
-      const tools = await probeRuntime(
-        { command: node.command, args: [...node.argsPrefix, selected.launcherPath, 'mcp'], env: options.probeEnv },
-        env,
-        cwd,
-      );
-      return { ...selected, tools };
-    } catch (err) {
-      if (switched) {
-        await restoreRuntimePointerOnProbeFailure({
-          root,
-          runtimeRoot: copy.runtimeRoot,
-          pointerFile,
-          previousPointerRaw,
-          writtenPointerRaw,
-          probeError: err,
-        });
-      }
-      throw err;
-    }
+    return { ...selected, tools };
   } finally {
+    if (stagedPointerFile) {
+      fs.rmSync(stagedPointerFile, { force: true });
+    }
     for (const leaseFile of reservationLeaseFiles) {
       fs.rmSync(leaseFile, { force: true });
     }
@@ -1421,10 +1422,21 @@ export async function cleanupUnreferencedRuntimes(
   const isSharedRoot = sameOrInside(resolvedRoot, sharedRoot) && resolvedRoot === sharedRoot;
   const removePreLeaseCopies = options.removePreLeaseCopies === true;
 
+  const deadline = options.leaseTimeoutMs !== undefined ? Date.now() + Math.max(1, options.leaseTimeoutMs) : undefined;
+  const outerTimeoutMs = deadline !== undefined ? Math.max(1, options.leaseTimeoutMs!) : RUNTIME_UPDATE_LOCK_TIMEOUT_MS;
+
   return withFileLock(
     runtimeUpdateLockResource(resolvedRoot),
-    async () =>
-      withFileLock(
+    async () => {
+      const innerTimeoutMs =
+        deadline !== undefined
+          ? (() => {
+              const remaining = deadline - Date.now();
+              if (remaining <= 0) throw new LockTimeoutError();
+              return Math.max(1, remaining);
+            })()
+          : RUNTIME_LOCK_TIMEOUT_MS;
+      return withFileLock(
         runtimeLockResource(resolvedRoot),
         async () => {
           const referencedDigests = new Set<string>(options.extraReferencedDigests ?? []);
@@ -1696,8 +1708,12 @@ export async function cleanupUnreferencedRuntimes(
                 } else {
                   kept.push(name);
                 }
-              } else if ((name === 'current' || name === 'dev') && !referencedNamespaces.has(name)) {
-                fs.rmSync(dirPath, { recursive: true, force: true });
+              } else if (name === 'current' || name === 'dev') {
+                if (!referencedNamespaces.has(name)) {
+                  fs.rmSync(dirPath, { recursive: true, force: true });
+                } else {
+                  fs.rmSync(path.join(dirPath, STAGED_POINTER_NAME), { force: true });
+                }
               }
             }
             if (fs.existsSync(leasesDir) && fs.readdirSync(leasesDir).length === 0) {
@@ -1709,9 +1725,10 @@ export async function cleanupUnreferencedRuntimes(
           }
           return { removed, kept };
         },
-        options.leaseTimeoutMs ?? RUNTIME_LOCK_TIMEOUT_MS,
-      ),
-    options.leaseTimeoutMs ?? RUNTIME_UPDATE_LOCK_TIMEOUT_MS,
+        innerTimeoutMs,
+      );
+    },
+    outerTimeoutMs,
   );
 }
 
