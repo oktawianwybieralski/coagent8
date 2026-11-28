@@ -1035,6 +1035,7 @@ async function selectVerifiedRuntimeCopyLocked(
   };
 
   let stagedPointerFile = '';
+  let bodyThrew = false;
 
   try {
     await withFileLock(
@@ -1148,12 +1149,31 @@ async function selectVerifiedRuntimeCopyLocked(
     }
 
     return { ...selected, tools };
+  } catch (error) {
+    bodyThrew = true;
+    throw error;
   } finally {
-    if (stagedPointerFile) {
-      fs.rmSync(stagedPointerFile, { force: true });
-    }
+    let hasLeaseCleanupError = false;
+    let leaseCleanupError: unknown;
     for (const leaseFile of reservationLeaseFiles) {
-      fs.rmSync(leaseFile, { force: true });
+      try {
+        fs.rmSync(leaseFile, { force: true });
+      } catch (error) {
+        if (!hasLeaseCleanupError) {
+          hasLeaseCleanupError = true;
+          leaseCleanupError = error;
+        }
+      }
+    }
+    if (stagedPointerFile) {
+      try {
+        fs.rmSync(stagedPointerFile, { force: true });
+      } catch {
+        // Stale staged files are removed by cleanup later; do not skip lease cleanup or mask body errors.
+      }
+    }
+    if (!bodyThrew && hasLeaseCleanupError) {
+      throw leaseCleanupError;
     }
   }
 }

@@ -1074,4 +1074,16 @@ test('staged launcher probe leaves pointer.json byte-identical on failure, rejec
   const remainingLeases = fs.existsSync(runtimeLeasesDir(root)) ? fs.readdirSync(runtimeLeasesDir(root)) : [];
   assert.deepEqual(remainingLeases, [], 'no reservation leases leaked when staged pointer write fails');
   assert.deepEqual(fs.readFileSync(pointerFile), beforeBytes, 'pointer.json untouched on staged write failure');
+
+  // 6. Directory at pointer.next.json makes staged write and staged rmSync fail without leaking leases or masking the write error.
+  fs.mkdirSync(stagedFile, { recursive: true });
+  const v3 = path.join(home, 'v3.cjs');
+  fs.writeFileSync(v3, validMcpBundle('v3-staged-dir'));
+  await assert.rejects(
+    () => installAndSelectVerifiedRuntime({ home, runtimeSource: v3, version: '0.9.0', nodePath: process.execPath }),
+    err => err instanceof Error && err.code !== 'ERR_FS_EISDIR',
+  );
+  const remainingLeasesAfterDir = fs.existsSync(runtimeLeasesDir(root)) ? fs.readdirSync(runtimeLeasesDir(root)) : [];
+  assert.deepEqual(remainingLeasesAfterDir, [], 'no reservation leases leaked when pointer.next.json is a directory');
+  assert.deepEqual(fs.readFileSync(pointerFile), beforeBytes, 'pointer.json untouched when pointer.next.json is a directory');
 });
