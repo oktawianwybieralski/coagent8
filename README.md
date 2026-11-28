@@ -410,6 +410,7 @@ where CoAgent8 is registered. Codex lists them in `/skills` and runs them as
 | `coagent8-issue` | Report a CoAgent8 defect: the form opens filled in |
 | `coagent8-delegate` (0.8.0) | Hand a defined code change to another agent, then check what it changed |
 | `coagent8-loop` | Plan, get the plan reviewed, implement or delegate, run checks and get an independent review |
+| `coagent8-coordinate` (0.8.0) | Coordinate across roles: your session leads, another implements and a third reviews |
 
 | Client | Skill directory |
 | --- | --- |
@@ -437,6 +438,36 @@ npx -y coagent8@next skills install --clients=agy --skills=coagent8-review
 
 Changes are shown as a preview first; repeat the command for one client with
 `--apply=<token>` to apply them.
+
+### Adopting coordinator roles in project rules
+
+To make this workflow your project's default practice, copy a short role section
+into the project's `AGENTS.md` and link it to the
+[`coagent8-coordinate`](skills/coagent8-coordinate/SKILL.md) skill. CoAgent8's
+`config.json` has no per-role defaults (omitting `backend` follows the user's
+routing configuration, with fallback when a default is unavailable), so when a
+role must use a particular backend, name it in your project rules and have the
+coordinator pass `backend` explicitly on that call:
+
+```text
+## Agent roles
+
+Follow `coagent8-coordinate`:
+
+- **Coordinator** (this session): pick the task, write a self-contained spec
+  (quoted acceptance criteria, `scope`, out of scope with "stop and report",
+  the pattern to follow, exact checks), pass `scope` on `delegate`, read the
+  whole diff against `scope`, run checks and judge whether a `READY` change
+  solves the task without overbuilding.
+- **Implementer** (`delegate` with `backend: <implementer>`): edit code,
+  tests and docs within `scope`; never commit, push or open PRs.
+- **Reviewer** (`review` in a separate session with `backend: <reviewer>`;
+  `consult` on the plan of a non-trivial change): critical areas (security,
+  money, data, release) get an extra review.
+- Commit, push, merge and publication stay with the user's authority. When a
+  backend hits a quota limit, tell the user immediately instead of switching
+  roles.
+```
 
 ## VS Code extension
 

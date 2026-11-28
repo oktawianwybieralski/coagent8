@@ -1589,7 +1589,7 @@ test('Manage Skills installs and toggles only selected packages; picker cancella
   assert.deepEqual(installed.errors, []);
   assert.equal(
     installed.menus[0].items.find(item => item.client === 'agy').description,
-    '0 enabled - 7 not installed',
+    '0 enabled - 8 not installed',
     'each CLI shows its packages',
   );
   assert.deepEqual(
@@ -1599,11 +1599,11 @@ test('Manage Skills installs and toggles only selected packages; picker cancella
   );
   assert.deepEqual(
     installed.menus[1].items.map(item => [item.label, item.description]),
-    [['$(cloud-download) Install / Update', '7 to install or update']],
+    [['$(cloud-download) Install / Update', '8 to install or update']],
     'an icon and the number of packages it changes',
   );
   assert.equal(installed.menus[0].items.find(item => item.client === 'agy').label, '$(circle-large-outline) Antigravity CLI');
-  assert.equal(installed.menus[1].placeholder, '0 enabled - 7 not installed');
+  assert.equal(installed.menus[1].placeholder, '0 enabled - 8 not installed');
   assert.ok(installed.menus[2].many && installed.menus[2].items.every(item => item.picked), 'every package starts selected');
   assert.equal(fs.existsSync(file), true);
   assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(file))), ['coagent8-review']);
@@ -1631,7 +1631,7 @@ test('Manage Skills installs and toggles only selected packages; picker cancella
   );
   assert.equal(disabled.menus[0].items.find(item => item.client === 'agy').label, '$(pass-filled) Antigravity CLI');
   const enabled = await run('enable');
-  assert.equal(enabled.menus[1].placeholder, '0 enabled - 1 disabled - 6 not installed');
+  assert.equal(enabled.menus[1].placeholder, '0 enabled - 1 disabled - 7 not installed');
   assert.equal(fs.existsSync(file), true);
   assert.equal(fs.existsSync(archived), false);
   await run('uninstall');
