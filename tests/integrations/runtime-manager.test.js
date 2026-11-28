@@ -1087,3 +1087,48 @@ test('staged launcher probe leaves pointer.json byte-identical on failure, rejec
   assert.deepEqual(remainingLeasesAfterDir, [], 'no reservation leases leaked when pointer.next.json is a directory');
   assert.deepEqual(fs.readFileSync(pointerFile), beforeBytes, 'pointer.json untouched when pointer.next.json is a directory');
 });
+
+test('post-publication cleanup failures never fail selection and surface redacted cleanupWarning', async t => {
+  const { readRuntimePointer, runtimePointerPath } = require('../../src/integrations/runtime-manager.ts');
+  const home = makeHome(t);
+  const root = coagentRootForHome(home);
+  const pointerFile = runtimePointerPath(root, 'current');
+  const stagedFile = path.join(path.dirname(pointerFile), 'pointer.next.json');
+  const origRmSync = fs.rmSync;
+
+  // 1. Staged-pointer removal failure after publication resolves with active pointer and cleanupWarning.
+  const v1 = path.join(home, 'v1-staged-rm-fail.cjs');
+  fs.writeFileSync(v1, validMcpBundle('v1-staged-rm-fail'));
+  t.mock.method(fs, 'rmSync', (target, opts) => {
+    if (String(target) === stagedFile) {
+      throw new Error('Simulated staged cleanup failure token=secret-value-123');
+    }
+    return origRmSync(target, opts);
+  });
+  const res1 = await installAndSelectVerifiedRuntime({ home, runtimeSource: v1, version: '0.7.0', nodePath: process.execPath });
+  t.mock.restoreAll();
+  origRmSync(stagedFile, { force: true });
+
+  assert.equal(res1.version, '0.7.0');
+  assert.equal(readRuntimePointer(root, 'current')?.digest, res1.digest, 'new pointer is active after staged cleanup failure');
+  assert.match(res1.cleanupWarning ?? '', /Failed to remove staged runtime pointer/);
+  assert.doesNotMatch(res1.cleanupWarning ?? '', /secret-value-123/, 'cleanupWarning redacts sensitive tokens');
+
+  // 2. Reservation-lease removal failure after successful publish resolves with active pointer and cleanupWarning.
+  const v2 = path.join(home, 'v2-lease-rm-fail.cjs');
+  fs.writeFileSync(v2, validMcpBundle('v2-lease-rm-fail'));
+  const leasesPrefix = `${runtimeLeasesDir(root)}${path.sep}`;
+  t.mock.method(fs, 'rmSync', (target, opts) => {
+    const targetStr = String(target);
+    if (targetStr.startsWith(leasesPrefix) && !targetStr.includes('.tmp.')) {
+      throw new Error('Simulated lease cleanup failure');
+    }
+    return origRmSync(target, opts);
+  });
+  const res2 = await installAndSelectVerifiedRuntime({ home, runtimeSource: v2, version: '0.8.0', nodePath: process.execPath });
+  t.mock.restoreAll();
+
+  assert.equal(res2.version, '0.8.0');
+  assert.equal(readRuntimePointer(root, 'current')?.digest, res2.digest, 'new pointer is active after lease cleanup failure');
+  assert.match(res2.cleanupWarning ?? '', /Failed to release runtime reservation lease: Simulated lease cleanup failure/);
+});

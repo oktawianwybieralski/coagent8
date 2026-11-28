@@ -141,6 +141,8 @@ export interface VerifiedRuntimeInstallOptions extends RuntimeInstallOptions {
 /** Result returned by {@link installAndSelectVerifiedRuntime}, including discovered tool names when probed. */
 export interface VerifiedRuntimeInstallResult extends RuntimeInstallResult {
   tools?: string[];
+  /** Non-fatal cleanup diagnostic when post-selection cleanup fails after pointer commit. */
+  cleanupWarning?: string;
 }
 
 function sha256(data: Buffer | string): string {
@@ -1035,7 +1037,14 @@ async function selectVerifiedRuntimeCopyLocked(
   };
 
   let stagedPointerFile = '';
+  let stagedCleanupHandled = false;
   let bodyThrew = false;
+  let result!: VerifiedRuntimeInstallResult;
+  const cleanupWarnings: string[] = [];
+  const recordCleanupWarning = (label: string, error: unknown) => {
+    const raw = error instanceof Error ? error.message : String(error);
+    cleanupWarnings.push(redactDiagnostic(`${label}: ${raw}`, 512));
+  };
 
   try {
     await withFileLock(
@@ -1113,8 +1122,13 @@ async function selectVerifiedRuntimeCopyLocked(
             const afterKey = pointerStageKey(planAfter.nextPointer);
             if (candidateProbed && probedStageKey === afterKey) {
               publishRuntimePointerLocked(pointerFile, planAfter.nextPointer);
-              fs.rmSync(stagedPointerFile, { force: true });
               selected = planAfter.result;
+              stagedCleanupHandled = true;
+              try {
+                fs.rmSync(stagedPointerFile, { force: true });
+              } catch (error) {
+                recordCleanupWarning('Failed to remove staged runtime pointer', error);
+              }
               return;
             }
             publishRuntimePointerLocked(stagedPointerFile, planAfter.nextPointer);
@@ -1123,11 +1137,17 @@ async function selectVerifiedRuntimeCopyLocked(
             probedStageKey = afterKey;
             return;
           }
-          fs.rmSync(stagedPointerFile, { force: true });
           if (probedIncumbentDigest === planAfter.result.digest) {
             selected = planAfter.result;
+            stagedCleanupHandled = true;
+            try {
+              fs.rmSync(stagedPointerFile, { force: true });
+            } catch (error) {
+              recordCleanupWarning('Failed to remove staged runtime pointer', error);
+            }
             return;
           }
+          fs.rmSync(stagedPointerFile, { force: true });
           pendingIncumbentLauncher = planAfter.result.launcherPath;
           probedIncumbentDigest = planAfter.result.digest;
         },
@@ -1148,34 +1168,35 @@ async function selectVerifiedRuntimeCopyLocked(
       }
     }
 
-    return { ...selected, tools };
+    result = { ...selected, tools };
   } catch (error) {
     bodyThrew = true;
     throw error;
   } finally {
-    let hasLeaseCleanupError = false;
-    let leaseCleanupError: unknown;
     for (const leaseFile of reservationLeaseFiles) {
       try {
         fs.rmSync(leaseFile, { force: true });
       } catch (error) {
-        if (!hasLeaseCleanupError) {
-          hasLeaseCleanupError = true;
-          leaseCleanupError = error;
+        if (!bodyThrew) {
+          recordCleanupWarning('Failed to release runtime reservation lease', error);
         }
       }
     }
-    if (stagedPointerFile) {
+    if (stagedPointerFile && !stagedCleanupHandled) {
       try {
         fs.rmSync(stagedPointerFile, { force: true });
-      } catch {
-        // Stale staged files are removed by cleanup later; do not skip lease cleanup or mask body errors.
+      } catch (error) {
+        if (!bodyThrew) {
+          recordCleanupWarning('Failed to remove staged runtime pointer', error);
+        }
       }
     }
-    if (!bodyThrew && hasLeaseCleanupError) {
-      throw leaseCleanupError;
-    }
   }
+
+  return {
+    ...result,
+    ...(cleanupWarnings.length > 0 ? { cleanupWarning: redactDiagnostic(cleanupWarnings.join('; '), 1024) } : {}),
+  };
 }
 
 /**
