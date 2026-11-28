@@ -48,7 +48,7 @@ function npmRun(args, cwd = root) {
     'mcp.json',
     'README.md',
     'LICENSE',
-    ...['consult', 'delegate', 'doctor', 'issue', 'loop', 'review', 'session'].map(n => `skills/coagent8-${n}/SKILL.md`),
+    ...['consult', 'coordinate', 'delegate', 'doctor', 'issue', 'loop', 'review', 'session'].map(n => `skills/coagent8-${n}/SKILL.md`),
   ])
     assert.ok(
       pack.files.some(f => f.path === name),

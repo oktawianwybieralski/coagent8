@@ -41,10 +41,10 @@ tags, publication and repository settings stay the owner's.
 
 | Area | Present on `develop` | Remaining for `0.8.0` |
 | --- | --- | --- |
-| Execution | Seven tools, three CLI adapters on the host behind a one-time consent (#208, #211), explicit model/effort, asynchronous `delegate` with task records and `wait`, a server-owned loop, parallel workers under one root budget, coordinated by the calling agent | Async review and consult, longer async turns (#246); turns isolated from the user's CoAgent8 files (#248) |
-| Safety | Owned cleanup, hidden Windows launches, per-call Windows containment, redaction, explicit model and check consent, agy turns without the user's MCP servers on Windows | #248 |
-| Review | Completeness, snapshot gate, post-turn recheck, reviews in parts with part coverage, checks the server runs before the turn | No diff in the prompt (#247) |
-| Integrations | Shared config, setup, VSIX, owned registration/uninstall, client skills, Claude Code wake-up | One restart per update (#250), the coordinator skill (#234), documentation access for Codex delegates (#227), agy schema check (#138) |
+| Execution | Seven tools, three CLI adapters on the host behind a one-time consent (#208, #211), explicit model/effort, asynchronous `delegate` with task records and `wait`, a server-owned loop, parallel workers under one root budget, coordinated by the calling agent | Delivered: async review and consult, longer async turns (#246); turns isolated from the user's CoAgent8 files (#248) |
+| Safety | Owned cleanup, hidden Windows launches, per-call Windows containment, redaction, explicit model and check consent, agy turns without the user's MCP servers on Windows, turns isolated from the user's CoAgent8 files (#248) | Dependabot alerts (#120) |
+| Review | Completeness, snapshot gate, post-turn recheck, reviews in parts with part coverage, checks the server runs before the turn | Delivered: no diff in the prompt (#247) |
+| Integrations | Shared config, setup, VSIX, owned registration/uninstall, client skills, Claude Code wake-up | One restart per update (#250), the coordinator skill (#234) |
 
 ## 0.8.0 plan
 
@@ -53,8 +53,7 @@ headline is full delegation: a coordinating agent hands complete tasks to
 cooperating agents that write, check and review, with `delegate`, `review` and
 `consult` as tasks. It ships what is on `develop` plus the
 [`0.8.0` milestone](https://github.com/oktawianwybieralski/coagent8/milestone/1):
-#246, #248, #250, #247, #234, #227, #138, the remainder of the single runner
-(#208, #211) and the Dependabot alerts (#120). Its gate is the one `0.7.0` had:
+#246, #248, #250, #247, #234 and the Dependabot alerts (#120). Its gate is the one `0.7.0` had:
 six OS/Node CI jobs, the full package gate, an independent review and a native
 upgrade from the published version.
 
@@ -64,6 +63,11 @@ read-only and workspace-write profiles and the work built on them (#160, #165,
 of the parallel-workers group, which is delivered (#159, #161, #162); early
 handles for consult and review come with #246 (#188).
 
+A second cut (owner, 2026-11-28) moved to `0.9.0` what full delegation does not
+need: the `task` tool, the `coagent8 task` command and recorded real turns of
+the single runner (#208, #211), documentation access for Codex delegates
+(#227) and the agy schema stall (#138).
+
 ## 0.9.0 plan
 
 `0.9.0` is rc.1, the first release candidate on `1.0.x`
@@ -71,7 +75,9 @@ handles for consult and review come with #246 (#188).
 release-candidate acceptance (#148, #149, #150, #156, #158, #166, #172, #184,
 #189), wake-up for Codex and agy (#113, #114, with #137), plugins (#151),
 form-less consent (#154), POSIX cleanup and agy isolation (#186, #239), the
-remaining findings (#199, #200, #203, #235), the additions requested after
+remaining findings (#199, #200, #203, #235), the rest of the single runner
+(#208, #211), documentation access for Codex delegates (#227), the agy schema
+stall (#138), the additions requested after
 `0.8.0` (the live panel and TUI, #243; several accounts per backend, #251) and
 the owner's release steps (#111, #112, #174, #177, #179). The additions come
 first after `0.8.0`, then the feature freeze and the acceptance.
