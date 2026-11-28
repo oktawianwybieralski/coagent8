@@ -12,10 +12,9 @@ import { executeDelegation, startDelegation, type DelegationStart, type Supervis
 import { approveChecks, parseCheckCommand, type CheckApprovalPrompt } from '../../execution/checks.js';
 import { reviewOnAnotherBackend, superviseChange } from '../../execution/loop.js';
 import { getCallerProvider, resolveBackend } from '../../execution/routing.js';
-import { loadConfig } from '../../config.js';
+import { loadConfig, resolveExecutionLimits, resolveTurnTimeout } from '../../config.js';
 import { executeReview } from './review.tool.js';
-import { getDataDir, getRuntimePath } from '../../paths.js';
-import { endNotesPath, isTaskFinished, type DelegationTask } from '../../sessions/tasks.js';
+import { formatTaskOutcome, formatTaskStarted, resolveExecutionMode, waitCommand } from './async-task.js';
 import { findRootOfSession } from '../../sessions/roots.js';
 import type { ExecutionRequest, TaskOptions } from '../../execution/controller.js';
 import { normalizeScopeEntry } from '../../workspace/changes.js';
@@ -43,7 +42,8 @@ const MAX_LIST_ENTRIES = 50;
 export function getCanonicalDelegateToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.DELEGATE,
-    description: 'Another agent edits code here, no commits; returns a task handle, then report and files seen changing. Review it.',
+    description:
+      'Another agent edits code here, no commits; returns task_handle (mode async default) or waits (sync), plus files seen changing. Review it.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -52,7 +52,6 @@ export function getCanonicalDelegateToolDefinition() {
         scope: { type: 'array', items: { type: 'string' }, description: 'Paths it may edit.' },
         checks: { type: 'array', items: { type: 'string' }, description: 'Commands.' },
         loop: { type: 'boolean', description: 'Server checks, review.' },
-        mode: { type: 'string', enum: ['async', 'sync'] },
         request_id: { type: 'string' },
         root_handle: { type: 'string' },
         parent_task: { type: 'string' },
@@ -60,6 +59,7 @@ export function getCanonicalDelegateToolDefinition() {
         // Said in full on consult; the budget of the tool definitions counts every copy.
         backend: { ...EXECUTION_PARAMETERS.backend, description: 'As in consult.' },
         reasoning_effort: { ...EXECUTION_PARAMETERS.reasoning_effort, description: 'As in consult.' },
+        mode: { ...EXECUTION_PARAMETERS.mode, description: 'async (default) or sync; see consult.' },
       },
       required: ['task'],
     },
@@ -153,58 +153,7 @@ function loopSupervisor(task: string, checks: readonly string[], workspaceCwd: s
   };
 }
 
-/** The command that blocks until a task finishes, built from this server's own process. */
-export function waitCommand(taskHandle: string): { argv: string[]; env: Record<string, string> } {
-  return {
-    argv: [process.execPath, getRuntimePath(), 'wait', '--data-dir', getDataDir(), '--notes-dir', endNotesPath(), taskHandle],
-    // VS Code's Electron runs a script only with this set.
-    env: process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {},
-  };
-}
-
-/** Clients observed to start a new agent turn when a background command exits (`DELEGATE-001a`). */
-const BACKGROUND_WAKE_CLIENTS = /^claude-code/i;
-
-function delegationStarted(task: DelegationTask, clientName?: string) {
-  const { argv, env } = waitCommand(task.taskHandle);
-  const wakeup = BACKGROUND_WAKE_CLIENTS.test(clientName ?? '') ? 'background_wait' : 'none';
-  const finished = isTaskFinished(task.state);
-  const lines = [
-    finished ? 'Delegation already finished.' : 'Delegation started.',
-    `task_handle: ${task.taskHandle}`,
-    ...(task.rootHandle ? [`root_handle: ${task.rootHandle}`] : []),
-    `session_handle: ${task.sessionHandle}`,
-    `state: ${task.state}`,
-    `wakeup: ${wakeup}`,
-    `wait_argv: ${JSON.stringify(argv)}`,
-    ...(Object.keys(env).length ? [`wait_env: ${JSON.stringify(env)}`] : []),
-    '',
-    finished
-      ? 'Read the result with the session tool, action task.'
-      : wakeup === 'background_wait'
-        ? 'Start wait_argv now as a background command: you are woken when it exits. Do not edit this work tree while the worker runs.'
-        : 'Read the result later with the session tool, action task, or run wait_argv. Do not edit this work tree while the worker runs.',
-    ...(finished || !task.rootHandle
-      ? []
-      : [
-          'For more workers under the same limits pass root_handle; cancel with root_handle stops them all. A worker finishing does not accept the work: that stays yours.',
-        ]),
-  ];
-  return {
-    content: [{ type: 'text' as const, text: lines.join('\n') }],
-    structuredContent: {
-      schemaVersion: 1,
-      taskHandle: task.taskHandle,
-      ...(task.rootHandle ? { rootHandle: task.rootHandle } : {}),
-      ...(task.parentTask ? { parentTask: task.parentTask } : {}),
-      sessionHandle: task.sessionHandle,
-      state: task.state,
-      wakeup,
-      waitArgv: argv,
-      waitEnv: env,
-    },
-  };
-}
+export { waitCommand };
 
 /**
  * Runs a delegated change.
@@ -251,20 +200,20 @@ export async function handleDelegate(
     parent_task: parentTask,
     ...request
   } = args;
+  const effectiveMode = resolveExecutionMode(mode, 'async');
+  const config = loadConfig();
+  const limits = resolveExecutionLimits(config);
+  const resolvedTimeoutMs =
+    request.timeout_ms !== undefined || !options.budget ? resolveTurnTimeout(effectiveMode, request.timeout_ms, limits) : undefined;
   const loop = loopArgument === true;
-  const format: DelegationStart['format'] = outcome => {
-    const formatted = formatExecutionResult(outcome);
-    return { text: formatted.content.map(part => part.text).join('\n'), isError: Boolean(formatted.isError) };
-  };
   // A check that cannot run is refused now, not after the worker's turn.
   if (loop) checks.forEach(parseCheckCommand);
   const approve = async (signal: AbortSignal | null) => {
-    if (loop) await approveChecks(checks, loadConfig().allowedChecks ?? [], options.askChecks, signal);
+    if (loop) await approveChecks(checks, config.allowedChecks ?? [], options.askChecks, signal);
   };
   const supervise = loop ? loopSupervisor(task, checks, workspaceCwd, options.clock) : undefined;
   const prompt = delegatePrompt(task, effectiveScope, checks, loop);
-  if (mode !== undefined && mode !== 'async' && mode !== 'sync') throw new ToolError('INPUT_LIMIT', 'mode must be async or sync.');
-  if (mode !== 'sync') {
+  if (effectiveMode === 'async') {
     const started = await startDelegation({
       prompt,
       publicInput,
@@ -274,18 +223,20 @@ export async function handleDelegate(
       root: {
         ...(rootHandle ? { handle: rootHandle } : {}),
         ...(parentTask ? { parentTask } : {}),
-        limits: loadConfig().rootLimits,
+        limits: config.rootLimits,
       },
+      limits,
       args: request,
       cwd: workspaceCwd,
       scope: effectiveScope,
       requestId: typeof requestId === 'string' && requestId ? requestId : undefined,
       requestSignal: abortSignal,
-      format,
+      callerBudget: options.budget,
+      format: formatTaskOutcome,
       options: { requireEnvelope: false, askConsent: options.askConsent, warnings: options.warnings, clock: options.clock },
     });
     if ('outcome' in started) return formatExecutionResult(started.outcome);
-    return delegationStarted(started.task, options.clientName);
+    return formatTaskStarted(started.task, { role: 'delegate', clientName: options.clientName });
   }
   // A synchronous call has no task, so nothing could stop or count it under a root.
   if (rootHandle || parentTask) throw new ToolError('INPUT_LIMIT', 'root_handle and parent_task need mode async.');
@@ -293,7 +244,8 @@ export async function handleDelegate(
     throw new ToolError('INPUT_LIMIT', 'This session belongs to a root; continue it with mode async.');
   }
   const { askChecks: _askChecks, clientName: _clientName, ...taskOptions } = options;
-  const outcome = await executeDelegation(prompt, publicInput, request, workspaceCwd, effectiveScope, abortSignal, onProgress, {
+  const syncRequest = resolvedTimeoutMs !== undefined ? { ...request, timeout_ms: resolvedTimeoutMs } : request;
+  const outcome = await executeDelegation(prompt, publicInput, syncRequest, workspaceCwd, effectiveScope, abortSignal, onProgress, {
     requireEnvelope: false,
     ...taskOptions,
     supervise,

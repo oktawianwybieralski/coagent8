@@ -110,6 +110,29 @@ export interface TaskExecutionResult {
   changes?: WorkspaceChanges;
   /** What the server-owned loop observed (`DELEGATE-001f2`). */
   loop?: LoopReport;
+  /** Effective turn budget and which bound selected it for an asynchronous task. */
+  budgetBound?: TaskBudgetBound;
+}
+
+/** Which limit bounded an asynchronous task's effective turn budget (`#246`). */
+export type TimeoutBound = 'async_default' | 'timeout_ms' | 'root_remaining' | 'root_grace';
+
+/** Effective turn budget in milliseconds and the bound that applied. */
+export interface TaskBudgetBound {
+  readonly ms: number;
+  readonly bound: TimeoutBound;
+}
+
+/** Configurable turn timeout limits in milliseconds (`#246`). */
+export interface ExecutionLimits {
+  /** Default total call budget for synchronous calls (`consult`, `review`, `delegate` with `mode: "sync"`). */
+  syncDefaultMs: number;
+  /** Maximum accepted `timeout_ms` for synchronous calls. */
+  syncMaxMs: number;
+  /** Default total call budget for asynchronous tasks (`mode: "async"`). */
+  asyncDefaultMs: number;
+  /** Maximum accepted `timeout_ms` for asynchronous tasks. */
+  asyncMaxMs: number;
 }
 
 /** What the server observed of one check. */
@@ -307,9 +330,36 @@ export const DEFAULT_TEARDOWN_GRACE_MS = 3_000;
 export const MIN_EXECUTION_TIMEOUT_MS = 100;
 
 /**
- * Maximum allowable execution timeout in milliseconds (30 minutes).
+ * Maximum allowable execution timeout in milliseconds for synchronous calls (30 minutes).
  */
 export const MAX_EXECUTION_TIMEOUT_MS = 1_800_000;
+
+/**
+ * Default execution timeout in milliseconds for asynchronous tasks (60 minutes).
+ */
+export const DEFAULT_ASYNC_TIMEOUT_MS = 3_600_000;
+
+/**
+ * Maximum allowable execution timeout in milliseconds for asynchronous tasks (4 hours).
+ */
+export const MAX_ASYNC_TIMEOUT_MS = 14_400_000;
+
+/** Default turn timeout limits when the user's configuration sets none. */
+export const DEFAULT_EXECUTION_LIMITS: Readonly<ExecutionLimits> = Object.freeze({
+  syncDefaultMs: DEFAULT_EXECUTION_TIMEOUT_MS,
+  syncMaxMs: MAX_EXECUTION_TIMEOUT_MS,
+  asyncDefaultMs: DEFAULT_ASYNC_TIMEOUT_MS,
+  asyncMaxMs: MAX_ASYNC_TIMEOUT_MS,
+});
+
+/** Minimum and maximum values accepted in `config.limits`. */
+export const EXECUTION_LIMIT_BOUNDS: Readonly<Record<keyof ExecutionLimits, { readonly min: number; readonly max: number }>> =
+  Object.freeze({
+    syncDefaultMs: Object.freeze({ min: MIN_EXECUTION_TIMEOUT_MS, max: 3_600_000 }),
+    syncMaxMs: Object.freeze({ min: MIN_EXECUTION_TIMEOUT_MS, max: 3_600_000 }),
+    asyncDefaultMs: Object.freeze({ min: MIN_EXECUTION_TIMEOUT_MS, max: 86_400_000 }),
+    asyncMaxMs: Object.freeze({ min: MIN_EXECUTION_TIMEOUT_MS, max: 86_400_000 }),
+  });
 
 /**
  * Status indicating whether an execution budget is actively running or stopped.

@@ -41,6 +41,8 @@ export interface RootTask {
   taskHandle: string;
   /** The worker's session; present once the turn is about to start. */
   sessionHandle?: string;
+  /** Additional worker sessions opened by this task (e.g. multi-part review parts and synthesis). */
+  sessionHandles?: string[];
   /** The task's writer record, where a worker that outlives the server shows. */
   writer?: { file: string; token: string };
   pid: number;
@@ -303,30 +305,42 @@ export function rootRunningMs(root: RootRecord, now = rootNow(root)): number {
 }
 
 /**
+ * Builds the `ROOT_LIMIT` error for a root whose running time (and optional grace) is exhausted.
+ * @param record - Root record whose limits were reached.
+ * @param usedMs - Running time counted against the root in milliseconds.
+ * @param continuation - Whether the refused task continues a session of this root.
+ */
+export function rootTimeLimitError(record: Pick<RootRecord, 'rootHandle' | 'limits'>, usedMs: number, continuation = false): ToolError {
+  const grace = rootGraceMinutes(record as RootRecord);
+  const counted = 'counted while its tasks run, not between calls';
+  const raise = `For more, raise rootLimits.maxMinutes (up to ${ROOT_LIMIT_BOUNDS.maxMinutes}) or rootLimits.graceMinutes in ${getConfigFile()}; it applies to new roots.`;
+  // Past the grace too, a continuation would be refused as well, so the advice to continue is left out.
+  if (continuation || grace === 0 || usedMs >= (record.limits.maxMinutes + grace) * 60_000) {
+    return new ToolError(
+      'ROOT_LIMIT',
+      `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes of running time${grace ? ` and the ${grace} more minutes a continued session gets` : ''} (${counted})${grace ? '' : '; rootLimits.graceMinutes is 0, so a continued session gets no more minutes'}. ${raise} Or start a new task without root_handle and session_handle, restating the work.`,
+    );
+  }
+  return new ToolError(
+    'ROOT_LIMIT',
+    `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes of running time (${counted}). To finish a task, continue its session with session_handle: a continued session gets ${grace} more minutes. ${raise} Or start a new root without root_handle.`,
+  );
+}
+
+/**
  * Refuses a root that is cancelled or out of running time.
  * @param now - Now on the root's timeline.
  * @param continuation - The task continues a session of this root, which may use the grace minutes.
  * @returns The milliseconds of running time left to it.
  */
-function assertUsable(record: RootRecord, now: number, continuation = false): number {
+function assertUsable(record: RootRecord, now: number, continuation = false): { remainingMs: number; baseRemainingMs: number } {
   if (record.state === 'cancelled') throw new ToolError('ABORTED', `Root ${record.rootHandle} was cancelled.`);
   const grace = rootGraceMinutes(record);
   const usedMs = rootRunningMs(record, now);
-  const remainingMs = (record.limits.maxMinutes + (continuation ? grace : 0)) * 60_000 - usedMs;
-  if (remainingMs > 0) return remainingMs;
-  const counted = 'counted while its tasks run, not between calls';
-  const raise = `For more, raise rootLimits.maxMinutes (up to ${ROOT_LIMIT_BOUNDS.maxMinutes}) or rootLimits.graceMinutes in ${getConfigFile()}; it applies to new roots.`;
-  // Past the grace too, a continuation would be refused as well, so the advice to continue is left out.
-  if (continuation || grace === 0 || usedMs >= (record.limits.maxMinutes + grace) * 60_000) {
-    throw new ToolError(
-      'ROOT_LIMIT',
-      `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes of running time${grace ? ` and the ${grace} more minutes a continued session gets` : ''} (${counted})${grace ? '' : '; rootLimits.graceMinutes is 0, so a continued session gets no more minutes'}. ${raise} Or start a new task without root_handle and session_handle, restating the work.`,
-    );
-  }
-  throw new ToolError(
-    'ROOT_LIMIT',
-    `Root ${record.rootHandle} used its ${record.limits.maxMinutes} minutes of running time (${counted}). To finish a task, continue its session with session_handle: a continued session gets ${grace} more minutes. ${raise} Or start a new root without root_handle.`,
-  );
+  const baseRemainingMs = record.limits.maxMinutes * 60_000 - usedMs;
+  const remainingMs = baseRemainingMs + (continuation ? grace : 0) * 60_000;
+  if (remainingMs > 0) return { remainingMs, baseRemainingMs };
+  throw rootTimeLimitError(record, usedMs, continuation);
 }
 
 function assertFreeSlot(record: RootRecord): void {
@@ -352,14 +366,40 @@ function charge(record: RootRecord): void {
  * is reserved, `INPUT_LIMIT` for a parent outside the root or another than a continued session has,
  * `SESSION_INVALID` without such a root.
  */
+/** Whether a root task already owns a worker session (initial, later review part, or synthesis). */
+function taskHasSession(task: RootTask, sessionHandle: string): boolean {
+  return task.sessionHandle === sessionHandle || Boolean(task.sessionHandles?.includes(sessionHandle));
+}
+
+/**
+ * Reserves one task of a root, atomically with every limit it is subject to.
+ * @param handle - Target root handle.
+ * @param request - The task, its parent, the worker session it continues, and an optional monotonic clock.
+ * @returns The task's depth, its parent, named or inherited, its deadline, remaining times, continuation flag,
+ * and `accountedAtMs` captured monotonically at the accounting point inside the lock (before the awaited write).
+ * @throws `ROOT_LIMIT` at a limit, `ABORTED` for a cancelled root, `SESSION_BUSY` while the same task
+ * is reserved, `INPUT_LIMIT` for a parent outside the root or another than a continued session has,
+ * `SESSION_INVALID` without such a root.
+ */
 export function reserveRootTask(
   handle: string,
-  request: { taskHandle: string; parentTask?: string; continues?: string },
-): Promise<{ depth: number; parentTask?: string; deadlineMs: number }> {
+  request: { taskHandle: string; parentTask?: string; continues?: string; clock?: () => number },
+): Promise<{
+  depth: number;
+  parentTask?: string;
+  deadlineMs: number;
+  remainingMs: number;
+  baseRemainingMs: number;
+  continuation: boolean;
+  accountedAtMs: number;
+}> {
   return updateRoot(handle, (record, now) => {
     // A continuation is classified once, here, and its entry keeps the class for its later rounds.
-    const earlier = request.continues ? record.tasks.findLast(task => task.sessionHandle === request.continues) : undefined;
-    const remainingMs = assertUsable(record, now, Boolean(earlier));
+    const earlier = request.continues ? record.tasks.findLast(task => taskHasSession(task, request.continues!)) : undefined;
+    const continuation = Boolean(earlier);
+    const { remainingMs, baseRemainingMs } = assertUsable(record, now, continuation);
+    // Capture monotonic time at the accounting point inside the lock so lock wait is excluded and persistence is included.
+    const accountedAtMs = (request.clock ?? (() => performance.now()))();
     if (record.tasks.some(task => task.taskHandle === request.taskHandle && isRootTaskActive(task))) {
       throw new ToolError('SESSION_BUSY', `Task ${request.taskHandle} is already starting in this root.`);
     }
@@ -395,7 +435,15 @@ export function reserveRootTask(
       startedAt: new Date(now).toISOString(),
     });
     // What is left is a length, so the deadline is on this process's clock, which its caller compares with.
-    return { depth, ...(parentTask ? { parentTask } : {}), deadlineMs: Date.now() + remainingMs };
+    return {
+      depth,
+      ...(parentTask ? { parentTask } : {}),
+      deadlineMs: Date.now() + remainingMs,
+      remainingMs,
+      baseRemainingMs,
+      continuation,
+      accountedAtMs,
+    };
   });
 }
 
@@ -420,15 +468,19 @@ export function bindRootTask(
 }
 
 /**
- * Charges one more backend turn of a running task, such as a fix round or a review attempt; a
- * continued session's turn may use the grace minutes.
+ * Charges one more backend turn of a running task, such as a fix round, review part, or synthesis;
+ * records any extra session handles opened by the task so continuations keep the root, and lets
+ * a continued session's turn use the grace minutes.
  * @throws `ROOT_LIMIT` at a limit, `ABORTED` for a cancelled root.
  */
-export function reserveRootCall(handle: string, taskHandle?: string): Promise<void> {
+export function reserveRootCall(handle: string, taskHandle?: string, sessionHandle?: string): Promise<void> {
   return updateRoot(handle, (record, now) => {
     const task = taskHandle ? record.tasks.findLast(entry => entry.taskHandle === taskHandle) : undefined;
     assertUsable(record, now, Boolean(task?.continuation));
     charge(record);
+    if (sessionHandle && task && !taskHasSession(task, sessionHandle)) {
+      task.sessionHandles = [...(task.sessionHandles ?? []), sessionHandle];
+    }
   });
 }
 
@@ -521,7 +573,7 @@ function eachRoot(options: { skipDamaged?: boolean } = {}): RootRecord[] {
 
 /** The root that holds a worker session, so a continuation stays under its budget. */
 export function findRootOfSession(sessionHandle: string): RootRecord | null {
-  return eachRoot().find(root => root.tasks.some(task => task.sessionHandle === sessionHandle)) ?? null;
+  return eachRoot().find(root => root.tasks.some(task => taskHasSession(task, sessionHandle))) ?? null;
 }
 
 /** The root that holds a task. */
@@ -532,9 +584,11 @@ export function findRootOfTask(taskHandle: string): RootRecord | null {
 /**
  * Removes roots past their retention that no running task uses.
  * @param now - Reference time in epoch milliseconds.
+ * @param keep - Root handle to spare, such as one the caller is about to reserve.
  */
-export function pruneRoots(now = Date.now()): void {
+export function pruneRoots(now = Date.now(), keep?: string): void {
   for (const root of eachRoot()) {
+    if (root.rootHandle === keep) continue;
     if (now - Date.parse(root.createdAt) >= ROOT_RETENTION_MS && !root.tasks.some(isRootTaskActive)) {
       fs.rmSync(rootFile(root.rootHandle), { force: true });
     }

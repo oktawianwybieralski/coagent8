@@ -600,3 +600,416 @@ test('delegate refuses the removed coordinate argument and names its replacement
   }
   assert.ok(!('coordinate' in getCanonicalDelegateToolDefinition().inputSchema.properties));
 });
+
+test('turn limits: async defaults to 60m and caps at 4h, sync keeps 15m/30m, root remaining/grace bounds apply and report (#246)', async () => {
+  const { adapterRegistry } = require('../../../src/backends/registry.ts');
+  const { stopActiveDelegations } = require('../../../src/execution/delegation.ts');
+  const { readTask } = require('../../../src/sessions/tasks.ts');
+  const { createRoot, readRoot } = require('../../../src/sessions/roots.ts');
+  const { atomicWrite } = require('../../../src/storage/lock.ts');
+  const { createServer } = require('../../../src/mcp/server.ts');
+  const { readResult } = require('../../helpers/result.cjs');
+  const { setTimeout: delay } = require('node:timers/promises');
+
+  const originalCodex = adapterRegistry.codex;
+  const recordedTimeouts = [];
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'fixture',
+    probe: async () => ({ id: 'codex', installed: true, executionSupported: true, config: { defaultModel: MODEL } }),
+    execute: async (_prompt, options) => {
+      recordedTimeouts.push(options.timeoutMs);
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'Done.',
+        nativeSessionId: `thread-${recordedTimeouts.length}`,
+        model: MODEL,
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
+
+  const waitTask = async taskHandle => {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const task = readTask(taskHandle);
+      if (task && task.state !== 'running') return task;
+      assert.ok(Date.now() < deadline, 'async task finished in time');
+      await delay(25);
+    }
+  };
+
+  try {
+    const { repo } = fixtureRepo();
+    await saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+    });
+
+    // 1. Async default is 60 minutes (3,600,000 ms), bounded by async_default.
+    const startedDefault = await startDelegate({ task: 'Default async', backend: 'codex', model: MODEL }, repo, null, null, approve);
+    assert.equal(startedDefault.structuredContent.timeoutMs, 3_600_000);
+    assert.equal(startedDefault.structuredContent.timeoutBound, 'async_default');
+    assert.match(startedDefault.content[0].text, /budget: 3600000 ms \(async default\)/);
+    const doneDefault = await waitTask(startedDefault.structuredContent.taskHandle);
+    assert.match(doneDefault.result.text, /Budget: 3600000 ms \(async default\)/);
+    const adapterDefault = recordedTimeouts.at(-1);
+    assert.ok(adapterDefault > 3_500_000 && adapterDefault <= 3_600_000, `expected ~60m, got ${adapterDefault}`);
+
+    // 2. Async accepts timeout_ms up to 14,400,000 ms (4 hours) and refuses larger values naming the limit.
+    const startedCap = await startDelegate(
+      { task: 'Max async', backend: 'codex', model: MODEL, timeout_ms: 14_400_000 },
+      repo,
+      null,
+      null,
+      approve,
+    );
+    assert.ok(
+      startedCap.structuredContent.timeoutMs > 14_300_000 && startedCap.structuredContent.timeoutMs <= 14_400_000,
+      `expected ~4h, got ${startedCap.structuredContent.timeoutMs}`,
+    );
+    assert.ok(['timeout_ms', 'root_remaining'].includes(startedCap.structuredContent.timeoutBound));
+    const doneCap = await waitTask(startedCap.structuredContent.taskHandle);
+    assert.match(doneCap.result.text, /Budget: \d+ ms \((timeout_ms|root remaining time)\)/);
+    const adapterCap = recordedTimeouts.at(-1);
+    assert.ok(adapterCap > 14_300_000 && adapterCap <= 14_400_000, `expected ~4h, got ${adapterCap}`);
+
+    await assert.rejects(
+      startDelegate({ task: 'Too long async', backend: 'codex', model: MODEL, timeout_ms: 14_400_001 }, repo, null, null, approve),
+      err => err.code === 'INPUT_LIMIT' && err.message.includes('14400000'),
+    );
+
+    // MCP server rejects > 14,400,000 for async and > 1,800,000 for sync naming the limit.
+    const call = createServer()._requestHandlers.get('tools/call');
+    const mcpTooLongAsync = readResult(
+      await call(
+        {
+          method: 'tools/call',
+          params: { name: 'delegate', arguments: { task: 'Over cap', workspace_path: repo, timeout_ms: 14_400_001 } },
+        },
+        { signal: new AbortController().signal },
+      ),
+    );
+    assert.equal(mcpTooLongAsync.error?.code, 'INPUT_LIMIT');
+    assert.match(mcpTooLongAsync.error.message, /14400000/);
+
+    // 3. Sync keeps 15m default and 30m cap.
+    const syncDefault = await handleDelegate({ task: 'Sync default', backend: 'codex', model: MODEL }, repo, null, null, approve);
+    assert.equal(syncDefault.isError, false);
+    const adapterSyncDefault = recordedTimeouts.at(-1);
+    assert.ok(adapterSyncDefault > 850_000 && adapterSyncDefault <= 900_000, `expected ~15m, got ${adapterSyncDefault}`);
+
+    const syncMax = await handleDelegate(
+      { task: 'Sync max', backend: 'codex', model: MODEL, timeout_ms: 1_800_000 },
+      repo,
+      null,
+      null,
+      approve,
+    );
+    assert.equal(syncMax.isError, false);
+    const adapterSyncMax = recordedTimeouts.at(-1);
+    assert.ok(adapterSyncMax > 1_750_000 && adapterSyncMax <= 1_800_000, `expected ~30m, got ${adapterSyncMax}`);
+
+    await assert.rejects(
+      handleDelegate({ task: 'Too long sync', backend: 'codex', model: MODEL, timeout_ms: 1_800_001 }, repo, null, null, approve),
+      err => err.code === 'INPUT_LIMIT' && err.message.includes('1800000'),
+    );
+
+    // 4. Root remaining running time bounds async turn, and continuation grace bounds a continued session.
+    const root = await createRoot({ maxMinutes: 10, graceMinutes: 5 });
+    const rootFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${root.rootHandle}.json`);
+    const at = minutesAgo => new Date(Date.now() - minutesAgo * 60_000).toISOString();
+    // Seed 6 minutes of running time -> 4 minutes remaining before maxMinutes (10m).
+    const firstInRoot = await startDelegate(
+      { task: 'Seed root', backend: 'codex', model: MODEL, root_handle: root.rootHandle },
+      repo,
+      null,
+      null,
+      approve,
+    );
+    const firstTask = await waitTask(firstInRoot.structuredContent.taskHandle);
+    const seeded = readRoot(root.rootHandle);
+    seeded.tasks[0].startedAt = at(20);
+    seeded.tasks[0].endedAt = at(14); // 6m used -> 4m (240_000 ms) left
+    await atomicWrite(rootFile, JSON.stringify(seeded));
+
+    const rootBounded = await startDelegate(
+      { task: 'Root bounded', backend: 'codex', model: MODEL, root_handle: root.rootHandle },
+      repo,
+      null,
+      null,
+      approve,
+    );
+    assert.equal(rootBounded.structuredContent.timeoutBound, 'root_remaining');
+    assert.ok(rootBounded.structuredContent.timeoutMs <= 240_000 && rootBounded.structuredContent.timeoutMs > 200_000);
+    assert.match(rootBounded.content[0].text, /root remaining time/);
+    const doneRootBounded = await waitTask(rootBounded.structuredContent.taskHandle);
+    assert.match(doneRootBounded.result.text, /Budget: \d+ ms \(root remaining time\)/);
+
+    // Advance root used time to 11m (past 10m maxMinutes, 4m left in 5m grace) and continue the first session.
+    const pastLimit = readRoot(root.rootHandle);
+    pastLimit.tasks[1].startedAt = at(12);
+    pastLimit.tasks[1].endedAt = at(7); // 6m + 5m = 11m used -> 4m grace left
+    await atomicWrite(rootFile, JSON.stringify(pastLimit));
+
+    const graceBounded = await startDelegate(
+      { task: 'Continue in grace', backend: 'codex', model: MODEL, session_handle: firstTask.sessionHandle },
+      repo,
+      null,
+      null,
+      approve,
+    );
+    assert.equal(graceBounded.structuredContent.timeoutBound, 'root_grace');
+    assert.ok(graceBounded.structuredContent.timeoutMs <= 240_000 && graceBounded.structuredContent.timeoutMs > 200_000);
+    assert.match(graceBounded.content[0].text, /root remaining time \(continuation grace\)/);
+    const doneGraceBounded = await waitTask(graceBounded.structuredContent.taskHandle);
+    assert.match(doneGraceBounded.result.text, /Budget: \d+ ms \(root remaining time \(continuation grace\)\)/);
+
+    // 5. Configured limits in config.json override defaults and caps.
+    await saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+      limits: { syncDefaultMs: 300_000, syncMaxMs: 600_000, asyncDefaultMs: 1_200_000, asyncMaxMs: 7_200_000 },
+    });
+    const customAsync = await startDelegate({ task: 'Custom async default', backend: 'codex', model: MODEL }, repo, null, null, approve);
+    assert.equal(customAsync.structuredContent.timeoutMs, 1_200_000);
+    await waitTask(customAsync.structuredContent.taskHandle);
+    await assert.rejects(
+      startDelegate({ task: 'Over custom async', backend: 'codex', model: MODEL, timeout_ms: 7_200_001 }, repo, null, null, approve),
+      err => err.code === 'INPUT_LIMIT' && err.message.includes('7200000'),
+    );
+    await handleDelegate({ task: 'Custom sync default', backend: 'codex', model: MODEL }, repo, null, null, approve);
+    const adapterCustomSync = recordedTimeouts.at(-1);
+    assert.ok(adapterCustomSync > 250_000 && adapterCustomSync <= 300_000, `expected ~5m, got ${adapterCustomSync}`);
+    await assert.rejects(
+      handleDelegate({ task: 'Over custom sync', backend: 'codex', model: MODEL, timeout_ms: 600_001 }, repo, null, null, approve),
+      err => err.code === 'INPUT_LIMIT' && err.message.includes('600000'),
+    );
+  } finally {
+    await stopActiveDelegations();
+    adapterRegistry.codex = originalCodex;
+  }
+});
+
+test('deducts post-reservation elapsed time from root remaining duration and refuses with ROOT_LIMIT when exhausted (#246)', async () => {
+  const { adapterRegistry } = require('../../../src/backends/registry.ts');
+  const { stopActiveDelegations } = require('../../../src/execution/delegation.ts');
+  const { readTask } = require('../../../src/sessions/tasks.ts');
+  const { createRoot, readRoot } = require('../../../src/sessions/roots.ts');
+  const { atomicWrite } = require('../../../src/storage/lock.ts');
+  const { setTimeout: delay } = require('node:timers/promises');
+
+  const originalCodex = adapterRegistry.codex;
+  const recordedTimeouts = [];
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'fixture',
+    probe: async () => ({ id: 'codex', installed: true, executionSupported: true, config: { defaultModel: MODEL } }),
+    execute: async (_prompt, options) => {
+      recordedTimeouts.push(options.timeoutMs);
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'Done.',
+        nativeSessionId: `post-res-${recordedTimeouts.length}`,
+        model: MODEL,
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
+
+  const waitTask = async taskHandle => {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const task = readTask(taskHandle);
+      if (task && task.state !== 'running') return task;
+      assert.ok(Date.now() < deadline, 'async task finished in time');
+      await delay(25);
+    }
+  };
+
+  try {
+    const { repo } = fixtureRepo();
+    await saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+    });
+
+    const root = await createRoot({ maxMinutes: 10, graceMinutes: 5 });
+    const rootFile = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${root.rootHandle}.json`);
+    const seed = await startDelegate(
+      { task: 'Seed', backend: 'codex', model: MODEL, root_handle: root.rootHandle },
+      repo,
+      null,
+      null,
+      approve,
+    );
+    const seedDone = await waitTask(seed.structuredContent.taskHandle);
+
+    // 1. Seed 8m used (2m = 120_000 ms left), request timeout_ms 100_000 ms, advance injected clock 30_000 ms after reservation.
+    const atMsAgo = ms => new Date(Date.now() - ms).toISOString();
+    const seeded = readRoot(root.rootHandle);
+    seeded.tasks[0].startedAt = atMsAgo(20 * 60_000);
+    seeded.tasks[0].endedAt = atMsAgo(12 * 60_000); // 8m used -> 120_000 ms left
+    await atomicWrite(rootFile, JSON.stringify(seeded));
+
+    let now = 1_000;
+    let clockCalls = 0;
+    const advanceAfterReservation = ms => () => {
+      clockCalls++;
+      if (clockCalls === 2) now += ms;
+      return now;
+    };
+
+    const deducted = await startDelegate(
+      { task: 'Deducted root budget', backend: 'codex', model: MODEL, root_handle: root.rootHandle, timeout_ms: 100_000 },
+      repo,
+      null,
+      null,
+      { ...approve, clock: advanceAfterReservation(30_000) },
+    );
+    assert.equal(deducted.structuredContent.timeoutBound, 'root_remaining', 'deduction flips tighter bound to root_remaining');
+    assert.ok(
+      deducted.structuredContent.timeoutMs <= 90_000 && deducted.structuredContent.timeoutMs > 85_000,
+      `expected <= 90000 ms after 30000 ms deduction, got ${deducted.structuredContent.timeoutMs}`,
+    );
+    assert.ok(recordedTimeouts.at(-1) <= 90_000);
+    await waitTask(deducted.structuredContent.taskHandle);
+
+    // 2. Continuation starting just inside maxMinutes (10_000 ms base left + 5m grace) flips into root_grace after 20_000 ms elapses.
+    const nearGrace = readRoot(root.rootHandle);
+    nearGrace.tasks[0].startedAt = atMsAgo(20 * 60_000);
+    nearGrace.tasks[0].endedAt = atMsAgo(19 * 60_000); // 1m
+    nearGrace.tasks[1].startedAt = atMsAgo(15 * 60_000);
+    nearGrace.tasks[1].endedAt = atMsAgo(6 * 60_000 + 10_000); // 8m 50s -> total 9m 50s (10_000 ms base left, 310_000 ms with grace)
+    await atomicWrite(rootFile, JSON.stringify(nearGrace));
+
+    clockCalls = 0;
+    const graceDeducted = await startDelegate(
+      { task: 'Deducted grace', backend: 'codex', model: MODEL, session_handle: seedDone.sessionHandle },
+      repo,
+      null,
+      null,
+      { ...approve, clock: advanceAfterReservation(20_000) },
+    );
+    assert.equal(graceDeducted.structuredContent.timeoutBound, 'root_grace');
+    assert.ok(
+      graceDeducted.structuredContent.timeoutMs <= 290_000 && graceDeducted.structuredContent.timeoutMs > 280_000,
+      `expected <= 290000 ms after 20000 ms deduction, got ${graceDeducted.structuredContent.timeoutMs}`,
+    );
+    await waitTask(graceDeducted.structuredContent.taskHandle);
+
+    // 3. When elapsed time since reservation exhausts the root's remaining time, refuse with ROOT_LIMIT and refund the call.
+    const almostEmpty = readRoot(root.rootHandle);
+    almostEmpty.tasks[0].startedAt = atMsAgo(30 * 60_000);
+    almostEmpty.tasks[0].endedAt = atMsAgo(20 * 60_000 + 30_000); // 9m 30s
+    almostEmpty.tasks[1].startedAt = atMsAgo(25 * 60_000);
+    almostEmpty.tasks[1].endedAt = atMsAgo(25 * 60_000); // 0m
+    almostEmpty.tasks[2].startedAt = atMsAgo(24 * 60_000);
+    almostEmpty.tasks[2].endedAt = atMsAgo(24 * 60_000); // 0m -> 30_000 ms left before maxMinutes
+    await atomicWrite(rootFile, JSON.stringify(almostEmpty));
+
+    const callsBeforeRefusal = readRoot(root.rootHandle).calls;
+    const executedBeforeRefusal = recordedTimeouts.length;
+    clockCalls = 0;
+    await assert.rejects(
+      startDelegate(
+        { task: 'Exhausted after reservation', backend: 'codex', model: MODEL, root_handle: root.rootHandle },
+        repo,
+        null,
+        null,
+        { ...approve, clock: advanceAfterReservation(35_000) },
+      ),
+      err => err.code === 'ROOT_LIMIT',
+    );
+    assert.equal(recordedTimeouts.length, executedBeforeRefusal, 'no model turn may start when root time is exhausted');
+    assert.equal(readRoot(root.rootHandle).calls, callsBeforeRefusal, 'refused start must refund its root call');
+
+    // 4. Delay injected during reserveRootTask's atomic persistence write is included in the deduction.
+    const fsp = require('node:fs/promises');
+    const realRename = fsp.rename;
+    const forWriteDelay = readRoot(root.rootHandle);
+    forWriteDelay.refundedMs = 0;
+    forWriteDelay.tasks[0].startedAt = atMsAgo(20 * 60_000);
+    forWriteDelay.tasks[0].endedAt = atMsAgo(12 * 60_000); // 8m used -> 120_000 ms left
+    await atomicWrite(rootFile, JSON.stringify(forWriteDelay));
+
+    let writeNow = 1_000;
+    let writeDelayCount = 0;
+    fsp.rename = async (src, dest) => {
+      if (dest === rootFile && writeDelayCount === 0) {
+        writeDelayCount++;
+        writeNow += 30_000;
+      }
+      return realRename.call(fsp, src, dest);
+    };
+    try {
+      const writeDeducted = await startDelegate(
+        { task: 'Reservation write delay', backend: 'codex', model: MODEL, root_handle: root.rootHandle, timeout_ms: 100_000 },
+        repo,
+        null,
+        null,
+        { ...approve, clock: () => writeNow },
+      );
+      assert.equal(writeDelayCount, 1, 'atomic write during reserveRootTask must have been intercepted');
+      assert.equal(writeDeducted.structuredContent.timeoutBound, 'root_remaining');
+      assert.ok(
+        writeDeducted.structuredContent.timeoutMs <= 90_000 && writeDeducted.structuredContent.timeoutMs > 85_000,
+        `expected <= 90000 ms after 30000 ms write delay, got ${writeDeducted.structuredContent.timeoutMs}`,
+      );
+      assert.ok(recordedTimeouts.at(-1) <= 90_000);
+      await waitTask(writeDeducted.structuredContent.taskHandle);
+    } finally {
+      fsp.rename = realRename;
+    }
+
+    // 5. Delay while waiting for the root file lock before accounting is NOT deducted or charged as ROOT_LIMIT.
+    const { withFileLock } = require('../../../src/storage/lock.ts');
+    const forLockDelay = readRoot(root.rootHandle);
+    forLockDelay.refundedMs = 0;
+    forLockDelay.tasks[0].startedAt = atMsAgo(20 * 60_000);
+    forLockDelay.tasks[0].endedAt = atMsAgo(12 * 60_000); // 8m used -> 120_000 ms left
+    for (const extra of forLockDelay.tasks.slice(1)) {
+      extra.startedAt = atMsAgo(25 * 60_000);
+      extra.endedAt = atMsAgo(25 * 60_000);
+    }
+    await atomicWrite(rootFile, JSON.stringify(forLockDelay));
+
+    let lockNow = 1_000;
+    let releaseLock;
+    let lockEnteredResolve;
+    const lockEntered = new Promise(resolve => {
+      lockEnteredResolve = resolve;
+    });
+    const holdLock = withFileLock(rootFile, async () => {
+      lockEnteredResolve();
+      await new Promise(resolve => {
+        releaseLock = resolve;
+      });
+    });
+    await lockEntered;
+
+    const pendingStart = startDelegate(
+      { task: 'Lock contention before accounting', backend: 'codex', model: MODEL, root_handle: root.rootHandle, timeout_ms: 100_000 },
+      repo,
+      null,
+      null,
+      { ...approve, clock: () => lockNow },
+    );
+    await delay(50);
+    // Advance clock by 150_000 ms (more than the 120_000 ms left in the root) while waiting on the lock.
+    lockNow += 150_000;
+    releaseLock();
+    await holdLock;
+    const lockContended = await pendingStart;
+    assert.equal(lockContended.structuredContent.timeoutBound, 'timeout_ms', 'lock wait must not count against root budget');
+    assert.equal(lockContended.structuredContent.timeoutMs, 100_000, 'lock wait must not reduce timeoutMs');
+    await waitTask(lockContended.structuredContent.taskHandle);
+  } finally {
+    await stopActiveDelegations();
+    adapterRegistry.codex = originalCodex;
+  }
+});

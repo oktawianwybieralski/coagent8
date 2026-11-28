@@ -83,6 +83,41 @@
         }
       }
     },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Turn timeout defaults and caps in milliseconds for synchronous and asynchronous calls.",
+      "properties": {
+        "syncDefaultMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000,
+          "default": 900000,
+          "description": "Default call budget in milliseconds for synchronous calls (consult, review, sync delegate)."
+        },
+        "syncMaxMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000,
+          "default": 1800000,
+          "description": "Maximum timeout_ms accepted for synchronous calls (must be at least syncDefaultMs)."
+        },
+        "asyncDefaultMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 86400000,
+          "default": 3600000,
+          "description": "Default call budget in milliseconds for asynchronous tasks (mode async)."
+        },
+        "asyncMaxMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 86400000,
+          "default": 14400000,
+          "description": "Maximum timeout_ms accepted for asynchronous tasks (must be at least asyncDefaultMs)."
+        }
+      }
+    },
     "routing": {
       "type": "object",
       "additionalProperties": false,

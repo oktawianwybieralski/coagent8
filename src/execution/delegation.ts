@@ -18,9 +18,19 @@
  */
 import crypto from 'node:crypto';
 import { errorCodeOf, ToolError, type TaskExecutionResult, type WorkspaceChanges } from '../contracts/index.js';
-import { DEFAULT_EXECUTION_TIMEOUT_MS, type RootLimits } from '../contracts/execution.js';
+import {
+  MAX_ASYNC_TIMEOUT_MS,
+  type BackendReadContext,
+  type ExecutionBudget,
+  type ExecutionLimits,
+  type RootLimits,
+  type TaskRole,
+  type TimeoutBound,
+} from '../contracts/execution.js';
+import { loadConfig, resolveExecutionLimits, resolveTurnTimeout } from '../config.js';
 import { redactDiagnostic } from '../security/index.js';
-import { ownProcessIdentity } from '../sessions/activity.js';
+import { isRecordedProcessAlive, ownProcessIdentity } from '../sessions/activity.js';
+import { cancelSession } from '../sessions/session.js';
 import { acquireWriterLease } from '../sessions/writer.js';
 import { createExecutionBudget } from './runtime/budget.js';
 import { jobHelperPath } from './job-helper.js';
@@ -47,6 +57,8 @@ import {
   refundRootTask,
   removeUnusedRoot,
   reserveRootCall,
+  rootGraceMinutes,
+  rootTimeLimitError,
   touchRootTask,
   reserveRootTask,
   ROOT_SEEN_TICKS,
@@ -59,7 +71,8 @@ import {
   resolveWriteClaim,
   type WorkspaceSnapshot,
 } from '../workspace/changes.js';
-import type { ExecutionRequest, TaskOptions } from './controller.js';
+import { canonicalPath } from '../workspace/identity.js';
+import { setTaskCanceller, type ExecutionRequest, type TaskOptions } from './controller.js';
 import { runTask } from './task.js';
 
 /** Why a loop stops or cannot pass when a worker's process tree was not confirmed ended. */
@@ -256,15 +269,18 @@ export async function executeDelegation(
 /** Operations of asynchronous delegations in this server, awaited at shutdown. */
 const activeDelegations = new Map<Promise<unknown>, { controller: AbortController; rootHandle: string }>();
 
+type ActiveDelegationEntry = {
+  controller: AbortController;
+  settled: Promise<boolean>;
+  workspace: string;
+};
+
 /**
- * Stops every asynchronous delegation of this server, at once also one still waiting for consent.
- * @returns Settles when each has stored its evidence and released its writer.
- */
-/**
- * The running delegation of each worker session, so a cancel can wait for its final state (#136).
+ * The running task of each worker session, so a cancel can abort the task and wait for its final state (#136).
  * Settles with whether that state was stored.
  */
-const delegationBySession = new Map<string, Promise<boolean>>();
+const delegationBySession = new Map<string, ActiveDelegationEntry>();
+const delegationByTask = new Map<string, ActiveDelegationEntry>();
 
 /** How long a cancel waits for the delegation to store its final state. */
 const CANCEL_SETTLE_MS = 15 * 1000;
@@ -272,25 +288,80 @@ const CANCEL_SETTLE_MS = 15 * 1000;
 /** How a cancelled delegation ended, as `awaitDelegation` reports it. */
 export type DelegationSettlement = 'stored' | 'unstored' | 'pending' | 'none';
 
+async function waitDelegationEntry(settled: Promise<boolean>, waitMs = CANCEL_SETTLE_MS): Promise<DelegationSettlement> {
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<'pending'>(resolve => {
+    timer = setTimeout(() => resolve('pending'), waitMs);
+  });
+  try {
+    return await Promise.race([settled.then(stored => (stored ? ('stored' as const) : ('unstored' as const))), timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+setTaskCanceller(async (sessionHandle: string) => {
+  const entry = delegationBySession.get(sessionHandle);
+  if (!entry) return 'none';
+  entry.controller.abort();
+  const outcome = await waitDelegationEntry(entry.settled);
+  return outcome === 'pending' ? 'timed_out' : 'settled';
+});
+
 /**
  * Finds the delegation of a session, to wait for after a cancel. Call it before cancelling: one
  * that ends during the cancel still reports its outcome.
  * @returns A wait that starts its bound when called, so a slow cancel does not shorten it.
  */
 export function captureDelegation(sessionHandle: string): (waitMs?: number) => Promise<DelegationSettlement> {
-  const settled = delegationBySession.get(sessionHandle);
+  const entry = delegationBySession.get(sessionHandle);
   return async (waitMs = CANCEL_SETTLE_MS) => {
-    if (!settled) return 'none';
-    let timer: NodeJS.Timeout | undefined;
-    const timedOut = new Promise<'pending'>(resolve => {
-      timer = setTimeout(() => resolve('pending'), waitMs);
-    });
-    try {
-      return await Promise.race([settled.then(stored => (stored ? ('stored' as const) : ('unstored' as const))), timedOut]);
-    } finally {
-      clearTimeout(timer);
-    }
+    if (!entry) return 'none';
+    return waitDelegationEntry(entry.settled, waitMs);
   };
+}
+
+/**
+ * Cancels an active background task (`delegate`, `review`, or `consult`) by its `taskHandle`,
+ * aborting its entire controller and waiting for its final state to be stored.
+ * @param taskHandle - Task handle to cancel.
+ * @param workspace - Optional workspace path; rejects mismatches against the recorded task workspace.
+ * @returns Cancellation status and human-readable summary.
+ * @throws `INPUT_LIMIT` for a malformed handle, or an error when the workspace mismatches or another live server owns the task.
+ */
+export async function cancelTaskHandle(taskHandle: string, workspace?: string): Promise<{ cancelled: boolean; message: string }> {
+  if (!/^task_[a-f0-9]{32}$/.test(taskHandle)) {
+    throw new ToolError('INPUT_LIMIT', `Invalid task handle: '${redactDiagnostic(taskHandle, 80)}'.`);
+  }
+  const active = delegationByTask.get(taskHandle);
+  const recorded = readTask(taskHandle);
+  const taskWorkspace = active?.workspace ?? recorded?.workspace;
+  if (workspace && taskWorkspace && canonicalPath(taskWorkspace) !== canonicalPath(workspace)) {
+    throw new Error('Task workspace mismatch.');
+  }
+  if (active) {
+    active.controller.abort();
+    const settled = await waitDelegationEntry(active.settled);
+    if (settled === 'pending') {
+      return { cancelled: true, message: `Task '${taskHandle}' cancellation requested; final state is not stored yet.` };
+    }
+    if (settled === 'unstored') {
+      return {
+        cancelled: true,
+        message: `Task '${taskHandle}' ended, but its final state could not be stored: check the work tree with git status.`,
+      };
+    }
+    return { cancelled: true, message: `Task '${taskHandle}' execution cancelled and final state stored.` };
+  }
+  if (!recorded) return { cancelled: false, message: `Task '${taskHandle}' not found.` };
+  if (recorded.state !== 'running') {
+    return { cancelled: false, message: `Task '${taskHandle}' already ended (${recorded.state}); nothing to cancel.` };
+  }
+  if (recorded.serverPid !== process.pid && isRecordedProcessAlive(recorded.serverPid, recorded.serverIdentity)) {
+    throw new Error(`Cannot cancel task '${taskHandle}': actively running in another CoAgent8 server process (PID ${recorded.serverPid}).`);
+  }
+  if (recorded.sessionHandle) return cancelSession(recorded.sessionHandle, workspace);
+  return { cancelled: false, message: `Task '${taskHandle}' has no active local controller; nothing to cancel.` };
 }
 
 export function stopActiveDelegations(): Promise<unknown> {
@@ -351,7 +422,7 @@ export async function cancelRootTasks(rootHandle: string, waitMs = CANCEL_SETTLE
  * @throws `SESSION_INVALID` for a root or parent this data directory does not have, `INPUT_LIMIT`
  * when they name different roots.
  */
-function requestedRoot(start: DelegationStart): string | null {
+function requestedRoot(start: Pick<BackgroundTaskStart, 'root' | 'args'>): string | null {
   const named = start.root?.handle;
   if (named && !readRoot(named)) throw new ToolError('SESSION_INVALID', `No root ${named.slice(0, 80)} in this data directory.`);
   const parent = start.root?.parentTask;
@@ -365,7 +436,7 @@ function requestedRoot(start: DelegationStart): string | null {
 }
 
 /** Longest turn of a later round of the loop, fix or review. */
-const LOOP_TURN_MS = 30 * 60 * 1000;
+const LOOP_TURN_MS = MAX_ASYNC_TIMEOUT_MS;
 
 /** What a supervisor gets to work with. */
 export interface Supervision {
@@ -392,6 +463,44 @@ export type Supervise = (first: TaskExecutionResult, turn: Supervision) => Promi
 /** A started task, or how a call ended before a turn started. */
 export type TaskCompletion = { task: DelegationTask } | { outcome: TaskExecutionResult };
 
+/** Runtime environment passed by {@link startBackgroundTask} to the underlying role runner. */
+export interface BackgroundTaskRunEnv {
+  signal: AbortSignal;
+  budget: ExecutionBudget;
+  context: BackendReadContext;
+  onTurnStart: NonNullable<TaskOptions['onTurnStart']>;
+  beforeRound: () => Promise<void>;
+  onWriter: (writer: { file: string; token: string }) => void;
+  onTreeUnconfirmed: () => void;
+  beforeRelease: (outcome: TaskExecutionResult) => Promise<void>;
+}
+
+/** A request for one asynchronous task (`delegate`, `review`, or `consult`). */
+export interface BackgroundTaskStart {
+  role: TaskRole;
+  publicInput: string;
+  args: ExecutionRequest;
+  cwd: string;
+  scope: readonly string[];
+  /** Request-specific payload (e.g. prompt) hashed with `request_id` to detect mismatched reuse. */
+  fingerprintInput?: unknown;
+  /** The caller's id for this start; a repeat returns the existing task. */
+  requestId?: string;
+  /** Aborts the start until the turn runs; afterwards the request no longer owns the task. */
+  requestSignal?: AbortSignal | null;
+  /** Caller's pre-launch budget from server setup, so elapsed setup time is deducted cleanly. */
+  callerBudget?: ExecutionBudget;
+  /** The root to join and the parent to name; without either a new root starts with `limits`. */
+  root?: { handle?: string; parentTask?: string; limits?: Partial<RootLimits> };
+  /** Configured turn timeout limits; defaults to `resolveExecutionLimits(loadConfig())`. */
+  limits?: Partial<ExecutionLimits>;
+  /** Formats the outcome the way the tool returns it. */
+  format: (outcome: TaskExecutionResult) => { text: string; isError: boolean };
+  options: Pick<TaskOptions, 'askConsent' | 'requireEnvelope' | 'warnings' | 'clock'>;
+  /** Executes the role's operation under the task's budget, signal, and hooks. */
+  run: (env: BackgroundTaskRunEnv) => Promise<TaskExecutionResult>;
+}
+
 /** A request for one asynchronous delegation. */
 export interface DelegationStart {
   prompt: string;
@@ -403,6 +512,8 @@ export interface DelegationStart {
   requestId?: string;
   /** Aborts the start until the turn runs; afterwards the request no longer owns the worker. */
   requestSignal?: AbortSignal | null;
+  /** Caller's pre-launch budget from server setup, so elapsed setup time is deducted cleanly. */
+  callerBudget?: ExecutionBudget;
   /** Asks what must be settled before a new task starts, after a repeated request id was ruled out. */
   approve?: (signal: AbortSignal | null) => Promise<void>;
   supervise?: Supervise;
@@ -410,33 +521,39 @@ export interface DelegationStart {
   exclusive?: boolean;
   /** The root to join and the parent to name; without either a new root starts with `limits`. */
   root?: { handle?: string; parentTask?: string; limits?: Partial<RootLimits> };
+  /** Configured turn timeout limits; defaults to `resolveExecutionLimits(loadConfig())`. */
+  limits?: Partial<ExecutionLimits>;
   /** Formats the outcome the way the tool returns it. */
   format: (outcome: TaskExecutionResult) => { text: string; isError: boolean };
   options: Pick<TaskOptions, 'askConsent' | 'requireEnvelope' | 'warnings' | 'clock'>;
 }
 
 /** Identifies what a request id stands for, so a reused id cannot silently return another task. */
-function requestFingerprint(start: DelegationStart): string {
-  const { args, prompt, scope, root } = start;
+function requestFingerprint(start: Pick<BackgroundTaskStart, 'role' | 'fingerprintInput' | 'scope' | 'args' | 'root'>): string {
+  const { role, fingerprintInput, args, scope, root } = start;
   return crypto
     .createHash('sha256')
-    .update(JSON.stringify({ prompt, scope, args, root: root?.handle, parent: root?.parentTask }))
+    .update(JSON.stringify({ role, prompt: fingerprintInput, scope, args, root: root?.handle, parent: root?.parentTask }))
     .digest('hex');
 }
 
 /** Terminal task state of an outcome. */
 function finalState(outcome: TaskExecutionResult): DelegationTask['state'] {
   const status = outcome.result.status;
-  return status === 'completed' || status === 'cancelled' || status === 'timed_out' ? status : 'failed';
+  if (status === 'completed' || status === 'cancelled' || status === 'timed_out') return status;
+  const code = outcome.result.error?.code;
+  if (code === 'ABORTED') return 'cancelled';
+  if (code === 'TIMEOUT') return 'timed_out';
+  return 'failed';
 }
 
 /**
- * Starts a delegation that outlives the call.
- * @param start - The request.
- * @returns The task, or the outcome when the call ended before a turn started.
- * @throws Refusals before the turn starts, such as a busy writer or a denied model.
+ * Starts an asynchronous background task (`delegate`, `review`, or `consult`) that outlives the call.
+ * @param start - Task specification and runner callback.
+ * @returns The running/finished task record, or the outcome when the call ended before a turn started.
+ * @throws Refusals before the turn starts, such as `INPUT_LIMIT`, `ROOT_LIMIT`, `SESSION_BUSY`, or `POLICY_DENIED`.
  */
-export async function startDelegation(start: DelegationStart): Promise<TaskCompletion> {
+export async function startBackgroundTask(start: BackgroundTaskStart): Promise<TaskCompletion> {
   const key = start.requestId ? `${start.cwd}\n${start.requestId}` : undefined;
   const taskHandle = createTaskHandle(key);
   const fingerprint = key ? requestFingerprint(start) : undefined;
@@ -454,15 +571,79 @@ export async function startDelegation(start: DelegationStart): Promise<TaskCompl
     // The first start may have recorded its task between the look above and this claim.
     const recorded = existingTask();
     if (recorded) return { task: recorded };
-    return await launchDelegation(start, taskHandle, fingerprint);
+    return await launchTask(start, taskHandle, fingerprint);
   } finally {
     await releaseRequest();
   }
 }
 
-/** Reserves the task in its root and runs it; see {@link startDelegation}. */
-async function launchDelegation(start: DelegationStart, taskHandle: string, fingerprint: string | undefined): Promise<TaskCompletion> {
+/**
+ * Starts a delegation that outlives the call.
+ * @param start - The request.
+ * @returns The task, or the outcome when the call ended before a turn started.
+ * @throws Refusals before the turn starts, such as a busy writer or a denied model.
+ */
+export async function startDelegation(start: DelegationStart): Promise<TaskCompletion> {
+  return startBackgroundTask({
+    role: 'delegate',
+    publicInput: start.publicInput,
+    args: start.args,
+    cwd: start.cwd,
+    scope: start.scope,
+    fingerprintInput: start.prompt,
+    requestId: start.requestId,
+    requestSignal: start.requestSignal,
+    callerBudget: start.callerBudget,
+    root: start.root,
+    limits: start.limits,
+    format: start.format,
+    options: start.options,
+    run: env =>
+      executeDelegation(start.prompt, start.publicInput, start.args, start.cwd, start.scope, env.signal, null, {
+        ...start.options,
+        supervise: start.supervise,
+        exclusive: start.exclusive,
+        ...(start.approve ? { approveStart: start.approve } : {}),
+        onWriter: env.onWriter,
+        onTreeUnconfirmed: env.onTreeUnconfirmed,
+        beforeRound: env.beforeRound,
+        budget: env.budget,
+        context: env.context,
+        onTurnStart: env.onTurnStart,
+        beforeRelease: env.beforeRelease,
+      }),
+  });
+}
+
+/** Reserves the task in its root and runs it; see {@link startBackgroundTask}. */
+async function launchTask(start: BackgroundTaskStart, taskHandle: string, fingerprint: string | undefined): Promise<TaskCompletion> {
+  const limits = start.limits ?? resolveExecutionLimits(loadConfig());
+  const requestedTimeoutMs = resolveTurnTimeout('async', start.args.timeout_ms, limits);
+  const hasExplicitTimeout = typeof start.args.timeout_ms === 'number' && Number.isFinite(start.args.timeout_ms);
+  const callerBudget = start.callerBudget;
+  if (callerBudget?.isCallerAborted()) {
+    const reason = callerBudget.abortReason();
+    throw reason instanceof Error ? reason : new ToolError('ABORTED', 'Request cancelled before the task started.');
+  }
+  if (
+    callerBudget &&
+    (callerBudget.isTimedOut() ||
+      callerBudget.isExecutionExpired() ||
+      callerBudget.remainingExecutionMs() <= 0 ||
+      callerBudget.remainingTotalMs() <= 0)
+  ) {
+    throw new ToolError('TIMEOUT', `Execution deadline exceeded (${requestedTimeoutMs} ms).`);
+  }
+
   const joined = requestedRoot(start);
+  try {
+    pruneTasks();
+    pruneRoots(undefined, joined ?? undefined);
+  } catch (err) {
+    // Old records are housekeeping; a new task does not depend on removing them.
+    process.stderr.write(`CoAgent8: old tasks were not removed: ${redactDiagnostic((err as Error).message, 512)}\n`);
+  }
+  const clock = start.options.clock ?? (() => performance.now());
   const rootHandle = joined ?? (await createRoot(start.root?.limits)).rootHandle;
   const giveUpNewRoot = async () => {
     if (!joined) await removeUnusedRoot(rootHandle);
@@ -473,14 +654,15 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
       taskHandle,
       ...(start.root?.parentTask ? { parentTask: start.root.parentTask } : {}),
       ...(typeof start.args.session_handle === 'string' ? { continues: start.args.session_handle } : {}),
+      ...(start.options.clock ? { clock: start.options.clock } : {}),
     });
   } catch (err) {
     await giveUpNewRoot();
     throw err;
   }
-  // Measured here, monotonically, so a clock set back while the task runs cannot shorten its time in the root.
-  const reservedAt = performance.now();
-  const elapsedMs = () => Math.max(0, performance.now() - reservedAt);
+  // Measured from the accounting point inside the locked reservation (excludes lock wait, includes persistence).
+  const reservedAt = reservation.accountedAtMs;
+  const elapsedMs = () => Math.max(0, clock() - reservedAt);
   /** Returns the charge of a start that never reached a turn; a failure here must not hide its reason. */
   const refund = async () => {
     try {
@@ -490,30 +672,66 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
       process.stderr.write(`CoAgent8: root ${rootHandle} was not updated: ${redactDiagnostic((err as Error).message, 512)}\n`);
     }
   };
-  try {
-    pruneTasks();
-    pruneRoots();
-  } catch (err) {
-    // Old records are housekeeping; a new delegation does not depend on removing them.
-    process.stderr.write(`CoAgent8: old tasks were not removed: ${redactDiagnostic((err as Error).message, 512)}
-`);
-  }
 
   const controller = new AbortController();
   const abortStart = () => controller.abort();
+  const onCallerBudgetAbort = () => {
+    if (callerBudget?.isCallerAborted()) controller.abort();
+  };
+  const detachCallerAbort = () => {
+    start.requestSignal?.removeEventListener('abort', abortStart);
+    callerBudget?.executionSignal.removeEventListener('abort', onCallerBudgetAbort);
+  };
   start.requestSignal?.addEventListener('abort', abortStart, { once: true });
-  if (start.requestSignal?.aborted) controller.abort();
+  callerBudget?.executionSignal.addEventListener('abort', onCallerBudgetAbort, { once: true });
+  if (start.requestSignal?.aborted || callerBudget?.isCallerAborted()) controller.abort();
+
+  if (callerBudget?.isCallerAborted()) {
+    await refund();
+    detachCallerAbort();
+    const reason = callerBudget.abortReason();
+    throw reason instanceof Error ? reason : new ToolError('ABORTED', 'Request cancelled before the task started.');
+  }
+  const callerRemainingMs = callerBudget ? Math.min(requestedTimeoutMs, callerBudget.remainingTotalMs()) : requestedTimeoutMs;
+  if (
+    callerBudget &&
+    (callerBudget.isTimedOut() || callerBudget.isExecutionExpired() || callerBudget.remainingExecutionMs() <= 0 || callerRemainingMs <= 0)
+  ) {
+    await refund();
+    detachCallerAbort();
+    throw new ToolError('TIMEOUT', `Execution deadline exceeded (${requestedTimeoutMs} ms).`);
+  }
+
+  // The root's running time is shared: deduct time elapsed since reservation before creating the budget.
+  const sinceReservedMs = Math.floor(elapsedMs());
+  const rootRemainingMs = Math.floor(reservation.remainingMs) - sinceReservedMs;
+  const rootBaseRemainingMs = Math.floor(reservation.baseRemainingMs) - sinceReservedMs;
+  if (rootRemainingMs <= 0) {
+    const root = readRoot(rootHandle);
+    await refund();
+    detachCallerAbort();
+    throw root
+      ? rootTimeLimitError(
+          root,
+          root.limits.maxMinutes * 60_000 + (reservation.continuation ? rootGraceMinutes(root) * 60_000 : 0),
+          reservation.continuation,
+        )
+      : new ToolError('ROOT_LIMIT', `Root ${rootHandle} has no remaining running time.`);
+  }
+  const effectiveBudgetMs = Math.min(callerRemainingMs, rootRemainingMs);
+  let timeoutBound: TimeoutBound;
+  if (rootRemainingMs < callerRemainingMs) {
+    timeoutBound = reservation.continuation && rootBaseRemainingMs < callerRemainingMs ? 'root_grace' : 'root_remaining';
+  } else {
+    timeoutBound = hasExplicitTimeout ? 'timeout_ms' : 'async_default';
+  }
+  const budgetBound = { ms: effectiveBudgetMs, bound: timeoutBound } as const;
 
   // Owned by the task from the first Git read on, so cancellation and timeout_ms bound all of it.
-  const timeoutMs = start.args.timeout_ms;
   const budget = createExecutionBudget({
-    // The root's running time is shared: no task runs past what is left of it, whatever it asked for.
-    totalBudgetMs: Math.min(
-      typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_EXECUTION_TIMEOUT_MS,
-      Math.max(1, reservation.deadlineMs - Date.now()),
-    ),
+    totalBudgetMs: effectiveBudgetMs,
     parentSignal: controller.signal,
-    clock: start.options.clock,
+    clock,
   });
   const context = { abortSignal: budget.executionSignal, budget, timeoutMs: budget.remainingExecutionMs() };
 
@@ -535,7 +753,7 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
   /** Never rejects: a waiter must learn the end, and nobody awaits this but the shutdown. */
   /** Whether the final state was stored; a reader cannot learn the end when it was not. */
   let finalStored = false;
-  const finish = async (update: Pick<DelegationTask, 'state' | 'result'>) => {
+  const finish = async (update: Pick<DelegationTask, 'state' | 'result' | 'sessionHandle' | 'review'>) => {
     if (!task) return;
     task = { ...task, ...update, finishedAt: new Date().toISOString() };
     finalStored = await writeFinalTask(task);
@@ -585,12 +803,30 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
     if (watchFailures >= ROOT_WATCH_FAILURES) controller.abort();
   }, ROOT_WATCH_MS);
   watch.unref();
+
+  const registeredSessions = new Set<string>();
+  let resolveOutcomeStored!: (stored: boolean) => void;
+  const outcomeStored = new Promise<boolean>(resolve => {
+    resolveOutcomeStored = resolve;
+  });
+  const taskEntry: ActiveDelegationEntry = { controller, settled: outcomeStored, workspace: start.cwd };
+
   const onTurnStart: NonNullable<TaskOptions['onTurnStart']> = async turn => {
+    if (task) {
+      // A multi-part review or synthesis turn charges its call in the root and tracks its session.
+      await reserveRootCall(rootHandle, taskHandle, turn.sessionHandle);
+      if (!registeredSessions.has(turn.sessionHandle)) {
+        registeredSessions.add(turn.sessionHandle);
+        delegationBySession.set(turn.sessionHandle, taskEntry);
+      }
+      return;
+    }
     const callerSession = process.env.CLAUDE_CODE_SESSION_ID;
     const initial: DelegationTask = {
       schemaVersion: 1,
       taskHandle,
       state: 'running',
+      role: start.role,
       workspace: start.cwd,
       sessionHandle: turn.sessionHandle,
       backend: turn.backend,
@@ -604,65 +840,85 @@ async function launchDelegation(start: DelegationStart, taskHandle: string, fing
       ...(reservation.parentTask ? { parentTask: reservation.parentTask } : {}),
       depth: reservation.depth,
       ...(start.scope.length ? { scope: start.scope } : {}),
+      timeoutMs: effectiveBudgetMs,
+      timeoutBound,
     };
     // The last check before the turn: a root cancelled until now prevents it.
     await bindRootTask(rootHandle, taskHandle, turn.sessionHandle, writer);
     // A record that cannot be written fails the turn before it starts: nothing could be waited for.
     await writeTask(initial);
     task = initial;
-    start.requestSignal?.removeEventListener('abort', abortStart);
+    if (!registeredSessions.has(turn.sessionHandle)) {
+      registeredSessions.add(turn.sessionHandle);
+      delegationBySession.set(turn.sessionHandle, taskEntry);
+    }
+    delegationByTask.set(taskHandle, taskEntry);
+    detachCallerAbort();
     announce();
   };
   const beforeRound = () => reserveRootCall(rootHandle, taskHandle);
-  const operation = executeDelegation(start.prompt, start.publicInput, start.args, start.cwd, start.scope, controller.signal, null, {
-    ...start.options,
-    supervise: start.supervise,
-    exclusive: start.exclusive,
-    ...(start.approve ? { approveStart: start.approve } : {}),
+  const operation = start.run({
+    signal: controller.signal,
+    budget,
+    context,
+    onTurnStart,
+    beforeRound,
     onWriter: held => {
       writer = held;
     },
     onTreeUnconfirmed: () => {
       workerMayRun = true;
     },
-    beforeRound,
-    budget,
-    context,
-    onTurnStart,
     // The evidence is stored while the writer is held; the state turns final after the release, so
     // a woken caller can start the next delegation at once.
-    beforeRelease: outcome => storeResult(start.format(outcome)),
+    beforeRelease: outcome => storeResult(start.format({ ...outcome, budgetBound })),
   });
   const settled: Promise<{ outcome: TaskExecutionResult } | { error: unknown }> = operation.then(
     async outcome => {
+      const boundedOutcome: TaskExecutionResult = { ...outcome, budgetBound };
       // Formatted again: a failed release adds its warning after the first copy was stored.
       // Its place in the root goes first, like the writer: a woken caller can start the next task at once.
       await closeInRoot();
-      await finish({ state: finalState(outcome), result: start.format(outcome) });
-      return { outcome };
+      await finish({
+        state: finalState(boundedOutcome),
+        result: start.format(boundedOutcome),
+        sessionHandle: boundedOutcome.sessionHandle ?? task?.sessionHandle ?? '',
+        ...(boundedOutcome.review ? { review: boundedOutcome.review } : {}),
+      });
+      return { outcome: boundedOutcome };
     },
     async (err: unknown) => {
       const message = redactDiagnostic((err as Error).message, 1024);
+      const roleLabel = start.role === 'review' ? 'review' : start.role === 'consult' ? 'consult' : 'delegation';
+      const code = errorCodeOf(err);
+      const state: DelegationTask['state'] = code === 'ABORTED' ? 'cancelled' : code === 'TIMEOUT' ? 'timed_out' : 'failed';
       await closeInRoot();
-      await finish({ state: 'failed', result: { text: `The delegation failed: ${message}`, isError: true } });
+      await finish({
+        state,
+        result: { text: `The ${roleLabel} failed: ${message}`, isError: true },
+        sessionHandle: task?.sessionHandle ?? '',
+      });
       return { error: err };
     },
   );
   activeDelegations.set(settled, { controller, rootHandle });
-  const outcomeStored = settled.then(() => finalStored);
-  void running.then(() => {
-    if (task) delegationBySession.set(task.sessionHandle, outcomeStored);
-  });
+  void settled.then(
+    () => resolveOutcomeStored(finalStored),
+    () => resolveOutcomeStored(finalStored),
+  );
   void settled.then(() => {
     activeDelegations.delete(settled);
+    if (delegationByTask.get(taskHandle) === taskEntry) delegationByTask.delete(taskHandle);
     clearInterval(watch);
-    // Only its own entry: a newer delegation in the same session may have registered meanwhile.
-    if (task && delegationBySession.get(task.sessionHandle) === outcomeStored) delegationBySession.delete(task.sessionHandle);
+    // Only its own entry: a newer task in the same session may have registered meanwhile.
+    for (const sessionHandle of registeredSessions) {
+      if (delegationBySession.get(sessionHandle) === taskEntry) delegationBySession.delete(sessionHandle);
+    }
     budget.dispose();
   });
 
   await Promise.race([running, settled]);
-  start.requestSignal?.removeEventListener('abort', abortStart);
+  detachCallerAbort();
   if (task) return { task };
   const ended = await settled;
   if ('error' in ended) throw ended.error;

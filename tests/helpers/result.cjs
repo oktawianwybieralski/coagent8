@@ -87,6 +87,7 @@ function readResult(result) {
       parsed.reason = match[2] || null;
     } else if (line === 'Notice: Output reached buffer limit.') parsed.truncated = true;
     else if ((match = /^Price: (.+)$/.exec(line))) parsed.price = match[1];
+    else if ((match = /^Budget: (.+)$/.exec(line))) parsed.budget = match[1];
     else if ((match = /^Usage: (.+)$/.exec(line))) parsed.usage = match[1];
     else if ((match = /^Warning: (.*)$/.exec(line))) parsed.warnings.push(match[1]);
     else if ((match = /^Report this issue: (https:\/\/\S+) \(the issue tool fills in the form\)$/.exec(line))) parsed.issueUrl = match[1];

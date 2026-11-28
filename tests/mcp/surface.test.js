@@ -302,11 +302,19 @@ test('CONTEXT-001 budgets: server instructions and model-visible tool definition
     'task_type',
     'workspace_path',
     'session_handle',
+    'mode',
     'timeout_ms',
   ]) {
     assert.ok(consultProperties[name].description, `consult.${name} is described`);
   }
   assert.match(consultProperties.timeout_ms.description, /monotonic/i, 'timeout_ms defines monotonic call budget');
+  assert.match(consultProperties.timeout_ms.description, /15m\/30m.*60m\/4h/, 'timeout_ms states sync and async bounds');
+  for (const toolName of ['consult', 'review', 'delegate']) {
+    const tool = tools.find(t => t.name === toolName);
+    assert.deepEqual(tool.inputSchema.properties.mode.enum, ['async', 'sync'], `${toolName} has mode enum`);
+    assert.ok(tool.inputSchema.properties.mode.description, `${toolName}.mode has description`);
+    assert.match(tool.description, /async/i, `${toolName} description mentions async`);
+  }
   // PROPOSALS-001d: arguments travel as escaped JSON, so the caller names files instead of pasting them.
   assert.match(consultProperties.proposal.description, /name files instead of pasting them/);
   assert.match(consultProperties.context_files.description, /only the paths are sent/);

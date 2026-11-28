@@ -260,8 +260,13 @@ consent (`"hostExecution": "accepted"` in the configuration, or the form).
   protocol, then stop only the process CoAgent8 started (Windows: its handle;
   POSIX: its process group). Nothing is selected by process ID or name.
 - Output is bounded: 512 KiB per backend stream, 1 MiB per answer.
-- `timeout_ms` from 100 ms to 30 minutes (default 15 minutes) covers Git,
-  preparation, approval, the turn and teardown, with progress notifications.
+- `timeout_ms` (minimum 100 ms) covers Git, preparation, approval, the turn and
+  teardown, with progress notifications. Synchronous calls (`consult`, `review`,
+  and `delegate` with `mode: "sync"`) default to 15 minutes and are capped at
+  30 minutes; asynchronous tasks (`delegate` by default, and `review`/`consult`
+  with `mode: "async"`) default to 60 minutes and are capped at 4 hours
+  (`14,400,000` ms), also bounded by the root's remaining running time (and
+  continuation grace). Configurable in `config.json` under `limits`.
 - Answers and archives are redacted for credential formats; diagnostics also
   hide keyword values and home-directory paths. Errors carry a typed code such
   as `CLI_NOT_FOUND`, `AUTH_REQUIRED`, `MODEL_UNAVAILABLE`, `RATE_LIMITED`,
@@ -271,8 +276,8 @@ consent (`"hostExecution": "accepted"` in the configuration, or the form).
 
 | Tool | Purpose |
 | --- | --- |
-| `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis |
-| `review` | An independent review of Git changes with a verdict CoAgent8 derives; large changes in parts, and `checks` CoAgent8 runs first (both 0.8.0) |
+| `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis; synchronous by default, or `mode: "async"` for a task handle |
+| `review` | An independent review of Git changes with a verdict CoAgent8 derives; large changes in parts, and `checks` CoAgent8 runs first (both 0.8.0); synchronous by default, or `mode: "async"` for a task handle whose result includes the verdict |
 | `delegate` (0.8.0) | Another agent makes a code change in the workspace, asked to keep to the `scope` paths (changes outside them are reported, not prevented) and to run `checks`; with `loop: true` CoAgent8 runs the checks and an independent review and returns failures to the agent. The call returns once the agent runs, with a task handle and a `wait` command; `mode: "sync"` waits instead; the result adds the files CoAgent8 saw change in Git, with warnings for changes outside the scope, to files that already had uncommitted changes, and commits. Agents in a work tree must have disjoint `scope`s: an overlapping start is refused, and no `scope` or `loop: true` takes the whole work tree. `root_handle` puts agents under one budget; it never commits |
 | `doctor` | Models, efforts, output prices, defaults and approval per backend; `scope: "health"` checks installation, versions, sign-in and quota; `detail: "full"` returns data |
 | `session` | List the workspace's sessions (`mine: true` for your own), page a session's history (`cursor` and `limit`) or its messages only, read a delegation's task, or close a session |

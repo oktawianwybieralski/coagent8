@@ -13,11 +13,13 @@
  */
 
 import type {
+  TaskBudgetBound,
   TaskExecutionResult,
   ExecutionMeta,
   TerminalExecutionResult,
   ListPrice,
   LoopReport,
+  TimeoutBound,
   WorkspaceChanges,
 } from '../contracts/execution.js';
 import type { TokenUsage } from '../contracts/conversation.js';
@@ -143,6 +145,14 @@ export function formatObservedChanges(changes: WorkspaceChanges): string {
   return lines.join('\n');
 }
 
+/** Human-readable labels for which limit bounded an asynchronous task's turn budget. */
+export const TIMEOUT_BOUND_LABELS: Readonly<Record<TimeoutBound, string>> = Object.freeze({
+  async_default: 'async default',
+  timeout_ms: 'timeout_ms',
+  root_remaining: 'root remaining time',
+  root_grace: 'root remaining time (continuation grace)',
+});
+
 export interface FormatExecutionOptions {
   requireEnvelope?: boolean;
   warnings?: string[];
@@ -250,6 +260,7 @@ export function formatExecutionResult(
   let preEvaluatedReview: StateEnvelopeEvaluation | undefined;
   let observedChanges: WorkspaceChanges | undefined;
   let loopReport: LoopReport | undefined;
+  let budgetBound: TaskBudgetBound | undefined;
   let fallbackText = '';
   let formatOpts = options;
 
@@ -265,6 +276,7 @@ export function formatExecutionResult(
     preEvaluatedReview = outcome.review;
     observedChanges = outcome.changes;
     loopReport = outcome.loop;
+    budgetBound = outcome.budgetBound;
     fallbackText = typeof resOrDefaultText === 'string' ? resOrDefaultText : '';
   } else {
     provider = outcomeOrProvider as string | null;
@@ -344,6 +356,9 @@ export function formatExecutionResult(
     // A failed run states its reason in the error line already.
     // The reason may quote the reviewer's own Blocked line.
     footerLines.push(`Verdict: ${verdict}${reason && !error ? ` (${redactCredentialFormats(reason)})` : ''}`);
+  }
+  if (budgetBound) {
+    footerLines.push(`Budget: ${budgetBound.ms} ms (${TIMEOUT_BOUND_LABELS[budgetBound.bound]})`);
   }
   if (res.denials && res.denials.length > 0) {
     for (const denial of res.denials) {

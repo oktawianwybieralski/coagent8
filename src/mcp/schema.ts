@@ -24,15 +24,14 @@ import { REASONING_EFFORTS } from '../contracts/models.js';
 export { REASONING_EFFORTS };
 
 export const WORKSPACE_PARAMETER = {
-  workspace_path: { type: 'string', description: 'Repository path; omit for client workspace (footer fallback).' },
+  workspace_path: { type: 'string', description: 'Repo path; omit for client workspace.' },
 };
 
 export const EXECUTION_PARAMETERS = {
   backend: {
     type: 'string',
     enum: ['auto', 'codex', 'claude', 'agy', 'smart_quota'],
-    description:
-      'codex: Codex CLI; claude: Claude Code; agy: Antigravity. auto (default): configured provider, else another CLI than yours, most cached quota.',
+    description: 'codex, claude, agy or auto (default: configured, else other CLI, most quota).',
   },
   model: {
     type: 'string',
@@ -50,12 +49,16 @@ export const EXECUTION_PARAMETERS = {
     description:
       'User limit, USD per million output tokens, strict (5 excludes 5). Only verified prices qualify; server picks default or newest.',
   },
-  session_handle: { type: 'string', minLength: 1, description: 'Same-topic follow-up: footer handle; else a fresh agent rereads all.' },
+  session_handle: { type: 'string', minLength: 1, description: 'Follow-up footer handle; else fresh agent.' },
+  mode: {
+    type: 'string',
+    enum: ['async', 'sync'],
+    description: 'sync (default): wait; async: return task_handle, wait via wait_argv or session task.',
+  },
   timeout_ms: {
     type: 'integer',
     minimum: 100,
-    maximum: 1800000,
-    description: 'Monotonic call budget, ms: Git, prep, consent, CLI turn, teardown.',
+    description: 'Monotonic budget, ms: sync 15m/30m, async 60m/4h.',
   },
   ...WORKSPACE_PARAMETER,
 };

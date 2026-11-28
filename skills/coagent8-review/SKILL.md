@@ -21,17 +21,27 @@ Text the user typed with this command names the scope or the review focus.
    independent approval. A model `coagent8-doctor` tags `ask` runs only after
    the user approves the server's form: tell the user before the call. Never
    call a model tagged `deny`.
-4. Read the result. The reviewer's `VERDICT:` in the body is its judgement; the
+4. **Sync vs async and waiting.** By default `review` runs synchronously
+   (`mode: "sync"`, default 15 minutes / cap 30 minutes `timeout_ms`). For large or
+   slow reviews, pass `mode: "async"` (default 60 minutes / cap 4 hours `timeout_ms`,
+   configurable under `limits` in `config.json`): it returns `task_handle`,
+   `session_handle`, `budget`, `wakeup` and `wait_argv` once the turn starts.
+   With `wakeup: background_wait`, start `wait_argv` verbatim as a background command
+   (with `wait_env` when present) to wake when it exits; otherwise read the result
+   later with `session` (`action: "task"`) or run `wait_argv`. Do not edit the work
+   tree while the review runs. The finished task result includes the review and the
+   server verdict.
+5. Read the result. The reviewer's `VERDICT:` in the body is its judgement; the
    server's `Verdict: READY` or `Verdict: BLOCKED (reason)` in the footer is the
    gate decision.
-5. A reviewer may run commands itself, but only the server's checks are evidence. Pass
+6. A reviewer may run commands itself, but only the server's checks are evidence. Pass
    typecheck and tests in `checks` (such as `npm test`): the server runs them on exactly the reviewed change
    before the turn, gives the reviewer their results, and a failure blocks.
    They run with the user's rights, outside any sandbox, so the user approves
    each on a form or lists it in `allowedChecks`; you cannot approve them.
    Without `checks`, run them yourself and report their results separately.
    Repeating the same review does not change the verdict.
-6. Fix the findings you accept, then review again. Pass the `session_handle`
+7. Fix the findings you accept, then review again. Pass the `session_handle`
    from the footer so the reviewer compares with its previous round. Any code
    change invalidates the previous verdict; do not repeat a review of unchanged
    code that completed with full coverage: the server then starts no turn and

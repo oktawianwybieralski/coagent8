@@ -26,14 +26,18 @@ the user's authority; the delegated agent never does.
 5. **Model.** Leave `backend`, `model` and `reasoning_effort` unset unless the
    user named one or a price limit. The approval rules of `coagent8-consult`
    apply unchanged: the server asks the user for expensive or unpriced models.
-6. **While it runs.** The call returns `task_handle`, `session_handle` and
-   `wait_argv` as soon as the agent runs, and it goes on after the call. With
-   `wakeup: background_wait`, start `wait_argv` verbatim as a background command
-   (with `wait_env` when present): you are woken when it exits, and its output is
-   the result. With `wakeup: none`, read it later with the `session` tool, action
-   `task`. Do not edit this work tree meanwhile. `cancel` with the `session_handle`
-   stops the agent; stopping the wait does not. Pass `mode: "sync"` only when you
-   would wait anyway.
+6. **Sync vs async and waiting.** Async (`mode: "async"`) is the default: the call
+   returns `task_handle`, `session_handle`, `budget` and `wait_argv` as soon as the
+   agent runs, and it goes on after the call. By default an async turn has a
+   60-minute budget up to 4 hours (`14,400,000` ms), bounded by the root's remaining
+   running time (and continuation grace); `mode: "sync"` waits for the result and
+   keeps the 15-minute default / 30-minute cap (both configurable under `limits` in
+   `config.json`). With `wakeup: background_wait`, start `wait_argv` verbatim as a
+   background command (with `wait_env` when present): you are woken when it exits,
+   and its output is the result. With `wakeup: none`, read it later with the
+   `session` tool, action `task`, or run `wait_argv`. Do not edit this work tree
+   meanwhile. `cancel` with the `session_handle` stops the agent; stopping the wait
+   does not. Pass `mode: "sync"` only when you would wait anyway.
 7. **Read the result.** The agent's report comes first, then the block
    "Observed by CoAgent8", which the server read from Git before and after the
    turn. Trust the block over the report. Treat every warning as a finding:

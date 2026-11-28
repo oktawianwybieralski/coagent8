@@ -1,6 +1,6 @@
 import type { ToolArguments, ToolProgress } from '../arguments.js';
 import { closeSession, assertSessionWorkspace, cancelSession, listSessions } from '../../sessions/session.js';
-import { cancelRootTasks, captureDelegation } from '../../execution/delegation.js';
+import { cancelRootTasks, cancelTaskHandle, captureDelegation } from '../../execution/delegation.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { WORKSPACE_PARAMETER } from '../schema.js';
 import { deleteHistory, getTurnMapping, sessionHistory } from '../../sessions/history/index.js';
@@ -14,7 +14,7 @@ import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {
   name: CANONICAL_TOOL_NAMES.SESSION,
-  description: 'List, page history, close sessions; read a delegate task.',
+  description: 'List, page history, close sessions; read a task or root.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -39,6 +39,7 @@ export const cancelToolDefinition = {
     type: 'object',
     properties: {
       session_handle: { type: 'string' },
+      task_handle: { type: 'string' },
       root_handle: { type: 'string' },
       ...WORKSPACE_PARAMETER,
     },
@@ -167,13 +168,42 @@ async function cancelRootHandle(rootHandle: string) {
 }
 
 /**
- * Cancels the active turn of a session owned by this CoAgent8 server process (`activePid`),
- * or reclaims a stale turn lease from a dead server process.
+ * Cancels the active turn of a session or running background task owned by this CoAgent8 server
+ * process (`activePid`), cancels a root, or reclaims a stale turn lease from a dead server process.
  */
-export async function handleCancelSession(args: { session_handle?: string; root_handle?: string; workspace_path?: string }) {
+export async function handleCancelSession(args: {
+  session_handle?: string;
+  task_handle?: string;
+  root_handle?: string;
+  workspace_path?: string;
+}) {
+  const handles = [args?.session_handle, args?.task_handle, args?.root_handle].filter(Boolean);
+  if (handles.length > 1) {
+    throw new ToolError(
+      'INPUT_LIMIT',
+      args?.root_handle && args?.session_handle && !args?.task_handle
+        ? 'Validation Error: pass session_handle or root_handle, not both.'
+        : 'Validation Error: pass session_handle, task_handle or root_handle, not more than one.',
+    );
+  }
   if (args?.root_handle) {
-    if (args.session_handle) throw new ToolError('INPUT_LIMIT', 'Validation Error: pass session_handle or root_handle, not both.');
     return cancelRootHandle(args.root_handle);
+  }
+  if (args?.task_handle !== undefined) {
+    if (typeof args.task_handle !== 'string' || !args.task_handle) {
+      throw new ToolError('INPUT_LIMIT', 'Validation Error: task_handle must be a non-empty string.');
+    }
+    const workspace = args.workspace_path ? resolveWorkspacePath(args.workspace_path) : undefined;
+    const result = await cancelTaskHandle(args.task_handle, workspace);
+    return {
+      content: [{ type: 'text' as const, text: `> CoAgent8: ${result.message}` }],
+      structuredContent: {
+        schemaVersion: 1,
+        taskHandle: args.task_handle,
+        cancelled: result.cancelled,
+        message: result.message,
+      },
+    };
   }
   if (!args?.session_handle || typeof args.session_handle !== 'string') {
     throw new ToolError('INPUT_LIMIT', 'Validation Error: session_handle is required and must be a string.');

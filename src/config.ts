@@ -11,7 +11,13 @@ import { isValidModelIdentifier, namesModelOrVariant } from './contracts/models.
 import { MODEL_RULES, type GovernanceSettings, type ModelRules } from './contracts/governance.js';
 import { applyEditorSetting, readEditorSettings, type EditorSettingKey } from './config-overrides.js';
 import { COAGENT_SKILL_NAME, type SkillSelection } from './contracts/skills.js';
-import { ROOT_LIMIT_BOUNDS, type RootLimits } from './contracts/execution.js';
+import {
+  DEFAULT_EXECUTION_LIMITS,
+  EXECUTION_LIMIT_BOUNDS,
+  ROOT_LIMIT_BOUNDS,
+  type ExecutionLimits,
+  type RootLimits,
+} from './contracts/execution.js';
 
 /** Compatibility alias: config defaults may select a strategy, sessions may not. */
 export type BackendId = ProviderId | 'smart_quota';
@@ -55,6 +61,8 @@ export interface CoAgent8Config {
   allowedChecks?: string[];
   /** What the delegated tasks of one root may use together; a calling agent cannot raise it. */
   rootLimits?: Partial<RootLimits>;
+  /** Turn timeout defaults and caps in milliseconds for synchronous and asynchronous calls. */
+  limits?: Partial<ExecutionLimits>;
   routing: RoutingConfig;
   /** Per-backend settings; doctor records a default model here when it finds none. */
   backends: Partial<Record<ProviderId, BackendSettings>>;
@@ -219,6 +227,35 @@ export function validateConfig(value: unknown): CoAgent8Config {
     }
   }
 
+  const limits = config.limits;
+  let validatedLimits: Partial<ExecutionLimits> | undefined;
+  if (limits !== undefined) {
+    if (!limits || typeof limits !== 'object' || Array.isArray(limits)) {
+      throw new Error('Configuration Error: Invalid limits: expected an object.');
+    }
+    const entries = Object.entries(limits);
+    for (const [key, value] of entries) {
+      const bounds = Object.hasOwn(EXECUTION_LIMIT_BOUNDS, key) ? EXECUTION_LIMIT_BOUNDS[key as keyof ExecutionLimits] : undefined;
+      if (bounds === undefined || !Number.isSafeInteger(value) || (value as number) < bounds.min || (value as number) > bounds.max) {
+        throw new Error(
+          `Configuration Error: Invalid limits.${key.slice(0, 40)}: expected a whole number${bounds ? ` from ${bounds.min} to ${bounds.max}` : ''}.`,
+        );
+      }
+    }
+    validatedLimits = Object.fromEntries(entries) as Partial<ExecutionLimits>;
+    const effective = { ...DEFAULT_EXECUTION_LIMITS, ...validatedLimits };
+    if (effective.syncDefaultMs > effective.syncMaxMs) {
+      throw new Error(
+        `Configuration Error: Invalid limits: syncDefaultMs (${effective.syncDefaultMs}) cannot exceed syncMaxMs (${effective.syncMaxMs}).`,
+      );
+    }
+    if (effective.asyncDefaultMs > effective.asyncMaxMs) {
+      throw new Error(
+        `Configuration Error: Invalid limits: asyncDefaultMs (${effective.asyncDefaultMs}) cannot exceed asyncMaxMs (${effective.asyncMaxMs}).`,
+      );
+    }
+  }
+
   const routing = config.routing;
   let strategy = DEFAULT_CONFIG.routing.strategy;
   let allowedBackends = [...DEFAULT_CONFIG.routing.allowedBackends];
@@ -347,6 +384,7 @@ export function validateConfig(value: unknown): CoAgent8Config {
     ...(hostExecution === undefined ? {} : { hostExecution }),
     ...(allowedChecks === undefined ? {} : { allowedChecks: allowedChecks as string[] }),
     ...(rootLimits === undefined ? {} : { rootLimits: rootLimits as Partial<RootLimits> }),
+    ...(validatedLimits === undefined ? {} : { limits: validatedLimits }),
     routing: {
       strategy,
       allowedBackends,
@@ -465,6 +503,7 @@ function computeChangeIdentity(config: CoAgent8Config, provenance: ConfigProvena
     hostExecution: config.hostExecution,
     allowedChecks: config.allowedChecks,
     rootLimits: config.rootLimits,
+    limits: config.limits,
     routing: config.routing,
     backends: config.backends,
     governance: config.governance,
@@ -913,4 +952,34 @@ export async function setDefaultBackend(backend: unknown): Promise<CoAgent8Confi
     throw new ToolError('INPUT_LIMIT', `Validation Error: backend must be one of: ${VALID_BACKENDS.join(', ')}. Received: '${backend}'`);
   }
   return saveConfig({ defaultBackend: backend.toLowerCase() as BackendId });
+}
+
+/**
+ * Returns the effective turn timeout limits, merging `config.limits` onto the built-in defaults.
+ * @param config - Loaded configuration (defaults to {@link loadConfig}).
+ */
+export function resolveExecutionLimits(config: Pick<CoAgent8Config, 'limits'> = loadConfig()): ExecutionLimits {
+  return { ...DEFAULT_EXECUTION_LIMITS, ...config.limits };
+}
+
+/**
+ * Resolves and bounds `timeout_ms` for the given execution mode.
+ * @param mode - `'sync'` or `'async'`.
+ * @param timeoutMs - Caller-supplied `timeout_ms` value, or `undefined` for the mode default.
+ * @param limits - Configured limit overrides; defaults to {@link DEFAULT_EXECUTION_LIMITS}.
+ * @returns Effective turn timeout in milliseconds.
+ * @throws `ToolError` (`INPUT_LIMIT`) when `timeoutMs` exceeds the configured cap for `mode`.
+ */
+export function resolveTurnTimeout(mode: 'sync' | 'async', timeoutMs: unknown, limits?: Partial<ExecutionLimits>): number {
+  const effective = { ...DEFAULT_EXECUTION_LIMITS, ...limits };
+  const defaultMs = mode === 'async' ? effective.asyncDefaultMs : effective.syncDefaultMs;
+  const maxMs = mode === 'async' ? effective.asyncMaxMs : effective.syncMaxMs;
+  if (timeoutMs === undefined) return defaultMs;
+  if (typeof timeoutMs === 'number' && Number.isFinite(timeoutMs)) {
+    if (timeoutMs > maxMs) {
+      throw new ToolError('INPUT_LIMIT', `timeout_ms (${timeoutMs} ms) exceeds the ${mode} limit of ${maxMs} ms.`);
+    }
+    return timeoutMs;
+  }
+  return defaultMs;
 }
