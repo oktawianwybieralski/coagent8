@@ -1084,7 +1084,7 @@ function pointerStageKey(pointer: RuntimePointer): string {
 
 /**
  * Serializes runtime update transactions under `runtime-update` before any `runtime-lock` acquisition.
- * Lock order: `setup` (optional caller lock) -> `runtime-update` -> `runtime-lock`.
+ * Lock order: `setup` (optional caller lock) -\> `runtime-update` -\> `runtime-lock`.
  */
 function withRuntimeUpdateLock<T>(root: string, fn: () => Promise<T>): Promise<T> {
   return withFileLock(runtimeUpdateLockResource(root), fn, RUNTIME_UPDATE_LOCK_TIMEOUT_MS);
