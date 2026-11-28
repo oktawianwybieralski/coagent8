@@ -264,3 +264,42 @@ test('a synthesis with COVERAGE PARTIAL still fails the gate when every part was
     adapterRegistry.agy = original;
   }
 });
+
+test('a part that does not quote its diff end mark stays BLOCKED and keeps the split review BLOCKED (#247)', async () => {
+  const original = adapterRegistry.agy;
+  const prompts = [];
+  try {
+    await setup();
+    const repo = bigRepo();
+    adapterRegistry.agy = {
+      id: 'agy',
+      name: 'fixture',
+      probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+      execute: async prompt => {
+        prompts.push(prompt);
+        const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)?.[1] ?? 'snapshot';
+        const file = /from the file (.+?) \(\d+ lines/.exec(prompt)?.[1];
+        const mark = file ? /\[END OF DIFF (\w+)\]/.exec(fs.readFileSync(file, 'utf8'))[1] : null;
+        // Part 1 omits the mark; part 2 quotes its mark; synthesis sees part 1 BLOCKED.
+        const reviewed = prompts.length === 1 ? 'Reviewed: skipped reading the file.' : `Reviewed: read part (${mark ?? 'synthesis'}).`;
+        return {
+          status: 'completed',
+          isError: false,
+          output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\n${reviewed}\nCHECKS: typecheck=PASS; tests=PASS`,
+          nativeSessionId: `11111111-2222-3333-4444-55555555555${prompts.length % 10}`,
+          model: 'fixture-model',
+          truncated: false,
+          continuationAvailable: true,
+        };
+      },
+    };
+    const result = readResult(await handleReview('review', {}, repo, null, null));
+    assert.equal(prompts.length, 3);
+    assert.equal(result.verdict, 'BLOCKED');
+    assert.match(result.reason, /part 1 did not end READY/);
+    assert.match(prompts[2], /Part 1 \(BLOCKED, coverage COMPLETE\):/);
+    assert.match(prompts[2], /Part 2 \(READY, coverage COMPLETE\):/);
+  } finally {
+    adapterRegistry.agy = original;
+  }
+});

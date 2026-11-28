@@ -252,7 +252,6 @@ export async function executeReview(
       `This change is too large to review: ${scopeInfo.diff.length} diff characters would take ${parts.length} review parts, and at most ${MAX_REVIEW_PARTS} run. No model turn started. Review a narrower scope: a range of fewer commits, or the files of one area.`,
     );
   }
-  const prompt = promptFor(scopeInfo.diff || '[No changes in this scope]', snapshot, []);
 
   const teardownReadContext: BackendReadContext = {
     ...options.context,
@@ -283,33 +282,39 @@ export async function executeReview(
     const withNote = (outcome: TaskExecutionResult): TaskExecutionResult =>
       workTreeNote ? { ...outcome, warnings: [...(outcome.warnings ?? []), workTreeNote] } : outcome;
     const executionCwd = workTree ? { executionCwd: workTree.cwd } : {};
-    // A large diff is read by the reviewer in the snapshot, not inlined (#214); a small one stays inline.
-    const byReference = Boolean(workTree) && scopeInfo.diff.length > INLINE_DIFF_CHARS;
-    // A fresh directory per review, created only when needed and removed after it.
+    const inSnapshot = Boolean(workTree);
+    // A fresh directory per review outside the reviewed tree, removed after it (#214, #247).
     let referenceDir: string | undefined;
-    const diffDir = () => (referenceDir ??= fs.mkdtempSync(path.join(snapshotRoot(), 'diff-')));
-    // The end mark of each diff file, by part index (-1 for a single turn).
-    const tokens = new Map<number, string>();
-    const referenceFor = (name: string, text: string, paths: readonly string[], index: number) => {
-      const written = writeReviewDiff(diffDir(), name, text);
-      tokens.set(index, written.token);
-      return diffReference(written.file, text, paths);
+    const diffDir = () => {
+      if (!referenceDir) {
+        fs.mkdirSync(snapshotRoot(), { recursive: true });
+        referenceDir = fs.mkdtempSync(path.join(snapshotRoot(), 'diff-'));
+      }
+      return referenceDir;
+    };
+    const writeDiffReference = (name: string, text: string, paths: readonly string[]) => {
+      try {
+        const written = writeReviewDiff(diffDir(), name, text);
+        return {
+          diffText: diffReference(written.file, text, paths, inSnapshot),
+          readToken: written.token,
+        };
+      } catch (err) {
+        const reason = redactDiagnostic(err instanceof Error ? err.message : String(err), 256);
+        throw new ToolError('PROCESS_ERROR', `Could not write the review diff file: ${reason}. No model turn started.`, { cause: err });
+      }
     };
     try {
       if (parts.length > 1) {
         return withNote(
           await reviewInParts({
             parts,
-            textFor: (part, index) =>
-              byReference && workTree
-                ? referenceFor(
-                    `part-${index + 1}.diff`,
-                    part.text,
-                    part.paths.filter(entry => !entry.startsWith('(')),
-                    index,
-                  )
-                : part.text,
-            readToken: index => tokens.get(index),
+            partDiff: (part, index) =>
+              writeDiffReference(
+                `part-${index + 1}.diff`,
+                part.text,
+                part.paths.filter(entry => !entry.startsWith('(')),
+              ),
             checkLines,
             promptFor,
             snapshot,
@@ -336,11 +341,13 @@ export async function executeReview(
           }),
         );
       }
+      const { diffText, readToken } = writeDiffReference(
+        'review.diff',
+        scopeInfo.diff || '[No changes in this scope]',
+        scopeInfo.changedPaths,
+      );
       const outcome = await runTask('review', {
-        prompt:
-          byReference && workTree
-            ? promptFor(referenceFor('review.diff', scopeInfo.diff, scopeInfo.changedPaths, -1), snapshot, [])
-            : prompt,
+        prompt: promptFor(diffText, snapshot, []),
         publicInput: 'Review ' + scopeInfo.label + '\n' + instructions,
         args: { ...args, backend: args.backend },
         cwd: workspaceCwd,
@@ -351,7 +358,7 @@ export async function executeReview(
           askConsent: options.askConsent,
           onTurnStart: options.onTurnStart,
           beforeExtraTurn: options.beforeExtraTurn,
-          reviewContext: byReference ? { ...context, readToken: tokens.get(-1) } : context,
+          reviewContext: { ...context, readToken },
           // A repeat with checks runs again: a verdict reached with other check results must not return.
           ...(serverChecks?.length ? {} : { reviewIdentity: { snapshot, scope: scopeInfo.label } }),
           onTiming: options.onTiming,
@@ -378,9 +385,6 @@ export async function executeReview(
   }
 }
 
-/** Diffs up to this size are inlined; larger ones are read by the reviewer in the snapshot (#214). */
-export const INLINE_DIFF_CHARS = 40_000;
-
 /**
  * Writes diff text where the reviewer reads it: exactly what the server collected, so scope,
  * exclusions, staged and unstaged changes, renames and part boundaries are as reviewed, followed by
@@ -396,11 +400,14 @@ export function writeReviewDiff(dir: string, name: string, text: string): { file
   return { file, token };
 }
 
-/** What a prompt shows instead of an inlined diff: where to read it, how to show it was read, and the files it touches. */
-export function diffReference(file: string, text: string, paths: readonly string[]): string {
+/** What a prompt shows for the diff: where to read it, how to show it was read, and the files it touches. */
+export function diffReference(file: string, text: string, paths: readonly string[], inSnapshot = true): string {
   const lines = text.split('\n').length + 1;
+  const cwdNote = inSnapshot
+    ? 'your working directory is a copy of the reviewed state'
+    : 'your working directory is the workspace holding the reviewed state';
   return [
-    `[The diff is not inlined. Read all of it from the file ${file} (${lines} lines; read it in pieces if it is long, with a shell command if your file tools cannot reach it). It is exactly the change under review; your working directory is a copy of the reviewed state.]`,
+    `[The diff is not inlined. Read all of it from the file ${file} (${lines} lines; read it in pieces if it is long, with a shell command if your file tools cannot reach it). It is exactly the change under review; ${cwdNote}.]`,
     '[Its last line is [END OF DIFF <mark>]. Quote that mark in your Reviewed line: without it your review counts as not read.]',
     `[Changed files, ${paths.length}:]`,
     ...paths.map(entry => `- ${entry}`),
@@ -410,10 +417,8 @@ export function diffReference(file: string, text: string, paths: readonly string
 /** Everything a review in parts needs from the call. */
 interface PartsReview {
   parts: ReviewPart[];
-  /** What a part's prompt shows of its diff: the text, or how to read it. */
-  textFor: (part: ReviewPart, index: number) => string;
-  /** The end mark of a part's diff file when it reads its diff by reference. */
-  readToken: (index: number) => string | undefined;
+  /** Writes a part's diff file and returns its prompt reference and required end mark. */
+  partDiff: (part: ReviewPart, index: number) => { diffText: string; readToken: string };
   /** What the server's checks showed, for the synthesis as for each part. */
   checkLines: readonly string[];
   promptFor: (diffText: string, snapshotText: string, scopeNote: readonly string[]) => string;
@@ -488,7 +493,8 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
   }
   for (const [index, part] of parts.entries()) {
     const partSnapshot = `${snapshot}/part-${index + 1}-of-${parts.length}`;
-    const prompt = review.promptFor(review.textFor(part, index), partSnapshot, [
+    const { diffText, readToken } = review.partDiff(part, index);
+    const prompt = review.promptFor(diffText, partSnapshot, [
       `This change is too large for one turn, so it is reviewed in ${parts.length} parts; you have part ${index + 1}. COVERAGE refers to this part. Every part is listed here; read files of other parts only to check a call site:`,
       manifest,
     ]);
@@ -511,7 +517,7 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
           ...review.context,
           expectedSnapshot: partSnapshot,
           requiredFiles: part.paths,
-          ...(review.readToken(index) ? { readToken: review.readToken(index) } : {}),
+          readToken,
         },
       },
     });

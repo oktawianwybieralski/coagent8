@@ -42,10 +42,12 @@ function stubReviewer(checksLine) {
     execute: async prompt => {
       prompts.push(prompt);
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)?.[1] ?? 'snapshot';
+      const file = /from the file (.+?) \(\d+ lines/.exec(prompt)?.[1];
+      const mark = file ? /\[END OF DIFF (\w+)\]/.exec(fs.readFileSync(file, 'utf8'))?.[1] : null;
       return {
         status: 'completed',
         isError: false,
-        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nReviewed: a.ts.\nCHECKS: ${checksLine}`,
+        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nReviewed: a.ts${mark ? ` (${mark})` : ''}.\nCHECKS: ${checksLine}`,
         nativeSessionId: '11111111-2222-3333-4444-555555555555',
         model: 'fixture-model',
         truncated: false,

@@ -192,6 +192,8 @@ test('handleReview instruments git_collection alongside execution controller pha
     execute: async prompt => {
       const snapshotMatch = prompt.match(/^SNAPSHOT:\s+(.+)$/m);
       const snapshot = snapshotMatch ? snapshotMatch[1] : 'unknown';
+      const file = /from the file (.+?) \(\d+ lines/.exec(prompt)?.[1];
+      const mark = file ? /\[END OF DIFF (\w+)\]/.exec(fs.readFileSync(file, 'utf8'))?.[1] : null;
       return {
         status: 'completed',
         isError: false,
@@ -204,7 +206,7 @@ test('handleReview instruments git_collection alongside execution controller pha
           `SNAPSHOT: ${snapshot}`,
           'COVERAGE: COMPLETE',
           'VERDICT: READY',
-          'Reviewed: checked uncommitted changes in a.ts',
+          `Reviewed: checked uncommitted changes in a.ts${mark ? ` (${mark})` : ''}`,
           '[P3] a.ts:1',
           'Problem: Minor styling.',
           'CHECKS: typecheck=PASS; tests=PASS',

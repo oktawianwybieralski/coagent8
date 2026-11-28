@@ -318,11 +318,15 @@ test('baseline: review workflow collects git diff, evaluates state envelope, and
   fs.writeFileSync(path.join(repoDir, 'code.ts'), 'export const val = 2;\n');
 
   let reviewPrompt = '';
+  let reviewDiffText = '';
   const { adapter, counters } = createInstrumentedFixture('codex', codexModels, {
     onExecute: async (prompt, opts, c) => {
       reviewPrompt = prompt;
       const snapshotMatch = prompt.match(/^SNAPSHOT:\s+(.+)$/m);
       const snapshot = snapshotMatch ? snapshotMatch[1] : 'unknown';
+      const refFile = /from the file (.+?) \(\d+ lines/.exec(prompt)?.[1];
+      reviewDiffText = refFile ? fs.readFileSync(refFile, 'utf8') : '';
+      const mark = /\[END OF DIFF (\w+)\]/.exec(reviewDiffText)?.[1] ?? '';
       return {
         status: 'completed',
         isError: false,
@@ -331,7 +335,7 @@ test('baseline: review workflow collects git diff, evaluates state envelope, and
           `SNAPSHOT: ${snapshot}`,
           'COVERAGE: COMPLETE',
           'VERDICT: READY',
-          'Reviewed: inspected uncommitted diff in code.ts',
+          `Reviewed: inspected uncommitted diff in code.ts (${mark})`,
           '[P3] code.ts:1',
           'Problem: Value updated cleanly.',
           'CHECKS: typecheck=PASS; tests=PASS',
@@ -360,7 +364,8 @@ test('baseline: review workflow collects git diff, evaluates state envelope, and
   const deltas = counterDeltas(counters, before);
 
   assert.equal(deltas.adapterLaunches, 1);
-  assert.ok(reviewPrompt.includes('+export const val = 2;'), 'review prompt must contain git diff');
+  assert.ok(!reviewPrompt.includes('+export const val = 2;'), 'review prompt must not inline git diff');
+  assert.ok(reviewDiffText.includes('+export const val = 2;'), 'referenced diff file must contain git diff');
   const parsed = readResult(reviewResult);
   assert.equal(parsed.verdict, 'READY', 'state envelope verdict must evaluate to READY');
 
