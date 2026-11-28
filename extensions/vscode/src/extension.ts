@@ -448,6 +448,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
           adopt,
           folders: folders(),
           restore,
+          onCleanupWarning: warning => report({ profileCleanupWarning: warning }),
         });
         noteWorkspaceDuplicate();
       } catch (error) {
@@ -727,7 +728,9 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
             fs.writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
             fs.renameSync(tmp, statePath);
           } finally {
-            fs.rmSync(tmp, { force: true });
+            try {
+              fs.rmSync(tmp, { force: true });
+            } catch {}
           }
           claimed = true;
         }),
@@ -762,6 +765,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
               );
               if (isDeactivating) return;
               if (res.action === 'enabled') {
+                if (res.cleanupWarning) report({ pathCleanupWarning: res.cleanupWarning });
                 await startTracked(() => updateSetupState(storage, { pathPrompt: 'accepted' }));
                 if (!isDeactivating) void vscode.window.showInformationMessage(pathAddedMessage(res.environmentNotified));
               }
@@ -1055,6 +1059,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       );
       if (isDeactivating) return;
       if (res.action === 'enabled') {
+        if (res.cleanupWarning) report({ pathCleanupWarning: res.cleanupWarning });
         await startTracked(() => updateSetupState(storage, { pathPrompt: 'accepted' }));
         if (!isDeactivating) void vscode.window.showInformationMessage(pathAddedMessage(res.environmentNotified));
       } else {
@@ -2386,6 +2391,9 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
           if (res.action === 'kept-incumbent' || res.action === 'downgrade-blocked' || res.action === 'pinned-blocked') {
             report({ runtimeSelection: res });
           }
+          if (res.cleanupWarning) {
+            report({ runtimeCleanupWarning: res.cleanupWarning });
+          }
           return true;
         })().catch(error => {
           report({ runtimeInstallError: redactDiagnostic(error instanceof Error ? error.message : 'Runtime install failed.') });
@@ -2505,7 +2513,10 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
               cwd: os.homedir(),
             },
             activePathAdapter(),
-          );
+          ).then(res => {
+            if (res.cleanupWarning) report({ pathSyncCleanupWarning: res.cleanupWarning });
+            return res;
+          });
         })
         .catch(error => {
           report({ pathSyncError: redactDiagnostic(error instanceof Error ? error.message : 'PATH shim synchronization failed.') });

@@ -242,6 +242,8 @@ export interface PathEnableResult {
   shimPath: string;
   /** False when open windows were not told about a changed `PATH`; a sign-out applies it. */
   environmentNotified: boolean;
+  /** Non-fatal cleanup diagnostic when post-selection cleanup failed after runtime publish. */
+  cleanupWarning?: string;
 }
 
 export interface PathRemovalResult {
@@ -249,11 +251,15 @@ export interface PathRemovalResult {
   message?: string;
   /** False when the `PATH` entry was removed but open windows were not told. */
   environmentNotified?: boolean;
+  /** Non-fatal cleanup diagnostic when unreferenced runtime pruning failed after PATH removal. */
+  cleanupWarning?: string;
 }
 
 export interface PathSyncResult {
   action: 'updated' | 'preserved' | 'missing' | 'noop';
   message?: string;
+  /** Non-fatal cleanup diagnostic when post-sync cleanup failed after shim/record commit. */
+  cleanupWarning?: string;
 }
 
 function installRecordFile(home: string): string {
@@ -311,7 +317,9 @@ function writeRecordFile(home: string, record: Record<string, unknown>): void {
     fs.writeFileSync(tmp, JSON.stringify(record, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     fs.renameSync(tmp, file);
   } finally {
-    fs.rmSync(tmp, { force: true });
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {}
   }
 }
 
@@ -381,7 +389,9 @@ function atomicWriteShim(shimPath: string, content: string): void {
     fs.writeFileSync(tmp, content, { flag: 'wx', mode: 0o755 });
     fs.renameSync(tmp, shimPath);
   } finally {
-    fs.rmSync(tmp, { force: true });
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {}
   }
 }
 
@@ -542,7 +552,13 @@ export async function enablePathIntegration(
       addedToPath = true;
     }
 
-    return { action: 'enabled', addedToPath, shimPath, environmentNotified };
+    return {
+      action: 'enabled',
+      addedToPath,
+      shimPath,
+      environmentNotified,
+      ...(installed.cleanupWarning ? { cleanupWarning: installed.cleanupWarning } : {}),
+    };
   });
 }
 
@@ -592,13 +608,22 @@ export async function syncPathShim(
 
     const hasLegacyRecord = Object.hasOwn(records, 'path');
     const shimUpToDate = previousShimContent === newShimContent && record.runtime === runtimeTarget && record.shimHash === newShimHash;
-    if (shimUpToDate && !hasLegacyRecord) {
+    const cleanupWarnings: string[] = installed.cleanupWarning ? [installed.cleanupWarning] : [];
+    const pruneBestEffort = async () => {
       try {
         await cleanupUnreferencedRuntimes(coagentRootForHome(options.home), options.home, process.env, { keepStableNamespaces: true });
-      } catch {
+      } catch (error) {
         // Keep copies if another host config or lease is uncertain.
+        cleanupWarnings.push(redactDiagnostic(error instanceof Error ? error.message : 'Runtime cleanup failed.'));
       }
-      return { action: 'noop', message: installed.message };
+    };
+    if (shimUpToDate && !hasLegacyRecord) {
+      await pruneBestEffort();
+      return {
+        action: 'noop',
+        message: installed.message,
+        ...(cleanupWarnings.length ? { cleanupWarning: redactDiagnostic(cleanupWarnings.join('; '), 1024) } : {}),
+      };
     }
 
     if (!shimUpToDate) {
@@ -619,13 +644,13 @@ export async function syncPathShim(
       throw err;
     }
 
-    try {
-      await cleanupUnreferencedRuntimes(coagentRootForHome(options.home), options.home, process.env, { keepStableNamespaces: true });
-    } catch {
-      // Keep copies if another host config or lease is uncertain.
-    }
+    await pruneBestEffort();
 
-    return { action: shimUpToDate ? 'noop' : 'updated', message: installed.message };
+    return {
+      action: shimUpToDate ? 'noop' : 'updated',
+      message: installed.message,
+      ...(cleanupWarnings.length ? { cleanupWarning: redactDiagnostic(cleanupWarnings.join('; '), 1024) } : {}),
+    };
   });
 }
 
@@ -752,13 +777,16 @@ export async function removePathIntegration(
       delete records.pathV2;
       writeRecordFile(home, records);
       const root = path.join(home, '.coagent8');
+      let cleanupWarning: string | undefined;
       try {
         await cleanupUnreferencedRuntimes(root, home, process.env, {
           keepStableNamespaces: false,
           leaseTimeoutMs: Math.max(100, timeRemaining()),
         });
-      } catch {}
-      return { action: 'removed', environmentNotified };
+      } catch (error) {
+        cleanupWarning = redactDiagnostic(error instanceof Error ? error.message : 'Runtime cleanup failed.');
+      }
+      return { action: 'removed', environmentNotified, ...(cleanupWarning ? { cleanupWarning } : {}) };
     },
     Math.min(leaseTimeoutMs, Math.max(100, timeRemaining())),
   );

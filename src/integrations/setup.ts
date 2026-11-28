@@ -435,7 +435,9 @@ async function nativeCodexEdit(
     edited = await runCommand(cli.command, [...cli.argsPrefix, ...args], { cwd, env: { ...env, CODEX_HOME: staging }, timeoutMs: 15_000 });
     written = read(path.join(staging, 'config.toml'));
   } finally {
-    fs.rmSync(staging, { recursive: true, force: true });
+    try {
+      fs.rmSync(staging, { recursive: true, force: true });
+    } catch {}
   }
   if (edited.status !== 'completed' || written === null) throw new Error('Native Codex registration failed.');
   const after = target ? withCodexToolTimeout(written) : written;

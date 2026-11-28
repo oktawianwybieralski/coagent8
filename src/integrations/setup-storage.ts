@@ -148,7 +148,9 @@ export function writeChecked(file: string, before: string | null, after: string)
       }
     }
   } finally {
-    fs.rmSync(temp, { force: true });
+    try {
+      fs.rmSync(temp, { force: true });
+    } catch {}
   }
 }
 export function readSelection(file: string, snapshot?: string | null): Selection {

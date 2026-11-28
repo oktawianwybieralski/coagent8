@@ -156,7 +156,10 @@ function atomicWriteText(file: string, content: string | Buffer, mode: number): 
     fs.writeFileSync(temp, content, { flag: 'wx', mode });
     fs.renameSync(temp, file);
   } finally {
-    fs.rmSync(temp, { force: true });
+    // After rename succeeds, temp removal is best-effort; before rename, never mask the original error.
+    try {
+      fs.rmSync(temp, { force: true });
+    } catch {}
   }
 }
 
@@ -457,7 +460,7 @@ export function renderStableLauncher(): string {
     "    if (code === 'EEXIST' || code === 'EPERM' || code === 'EBUSY') return false;",
     '    throw err;',
     '  } finally {',
-    '    fs.rmSync(temp, { force: true });',
+    '    try { fs.rmSync(temp, { force: true }); } catch {}',
     '  }',
     '}',
     '',
@@ -483,7 +486,7 @@ export function renderStableLauncher(): string {
     '    }',
     '    return true;',
     '  } finally {',
-    '    fs.rmSync(reclaim, { force: true });',
+    '    try { fs.rmSync(reclaim, { force: true }); } catch {}',
     '  }',
     '}',
     '',
@@ -1753,16 +1756,20 @@ export async function cleanupUnreferencedRuntimes(
                 if (!referencedNamespaces.has(name)) {
                   fs.rmSync(dirPath, { recursive: true, force: true });
                 } else {
-                  fs.rmSync(path.join(dirPath, STAGED_POINTER_NAME), { force: true });
+                  try {
+                    fs.rmSync(path.join(dirPath, STAGED_POINTER_NAME), { force: true });
+                  } catch {}
                 }
               }
             }
-            if (fs.existsSync(leasesDir) && fs.readdirSync(leasesDir).length === 0) {
-              fs.rmdirSync(leasesDir);
-            }
-            if (fs.readdirSync(runtimes).length === 0) {
-              fs.rmdirSync(runtimes);
-            }
+            try {
+              if (fs.existsSync(leasesDir) && fs.readdirSync(leasesDir).length === 0) {
+                fs.rmdirSync(leasesDir);
+              }
+              if (fs.readdirSync(runtimes).length === 0) {
+                fs.rmdirSync(runtimes);
+              }
+            } catch {}
           }
           return { removed, kept };
         },

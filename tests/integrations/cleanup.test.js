@@ -494,3 +494,32 @@ test('uninstall cleanup bounds runtime cleanup with remaining leaseTimeoutMs whe
   releaseUpdate();
   await holder;
 });
+
+test('uninstall cleanup ignores trailing rmdirSync failure on empty root after removing setup state', async t => {
+  const p = profile(t);
+  const root = path.join(p.home, '.coagent8');
+  fs.mkdirSync(root, { recursive: true });
+  const preview = await cleanupClients({ ...p, origin: 'vscode-extension', uninstall: true });
+
+  const origRmdirSync = fs.rmdirSync;
+  t.mock.method(fs, 'rmdirSync', (target, opts) => {
+    if (path.resolve(String(target)) === path.resolve(root)) {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    }
+    return origRmdirSync(target, opts);
+  });
+
+  const applied = await cleanupClients({
+    ...p,
+    origin: 'vscode-extension',
+    uninstall: true,
+    apply: preview.token,
+  });
+  t.mock.restoreAll();
+
+  assert.equal(applied.stateError, undefined);
+  assert.equal(
+    applied.results.every(r => r.action === 'absent' || r.action === 'removed'),
+    true,
+  );
+});

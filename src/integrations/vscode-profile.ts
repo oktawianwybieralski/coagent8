@@ -199,7 +199,9 @@ function runtimeCopy(storagePath: string, bundle: string): string {
     fs.writeFileSync(temp, content, { flag: 'wx', mode: 0o600 });
     fs.renameSync(temp, target);
   } finally {
-    fs.rmSync(temp, { force: true });
+    try {
+      fs.rmSync(temp, { force: true });
+    } catch {}
   }
   // Only mark copies this code freshly creates; an existing unmarked copy may be running in a pre-lease server.
   if (!targetExisted) {
@@ -215,11 +217,21 @@ function runtimeCopy(storagePath: string, bundle: string): string {
  * started by earlier extension versions (which acquire no per-process lease files). Profile sync
  * never deletes pre-lease copies; VS Code removes globalStorage on full extension uninstall.
  */
-async function pruneRuntimes(storagePath: string, home: string, keep: string): Promise<void> {
+async function pruneRuntimes(
+  storagePath: string,
+  home: string,
+  keep: string,
+  options: { cleanupTimeoutMs?: number; onCleanupWarning?: (warning: string) => void } = {},
+): Promise<void> {
   const keepDigest = path.basename(path.dirname(keep));
-  await cleanupUnreferencedRuntimes(storagePath, home, process.env, {
-    extraReferencedDigests: /^[a-f0-9]{64}$/.test(keepDigest) ? [keepDigest] : [],
-  });
+  try {
+    await cleanupUnreferencedRuntimes(storagePath, home, process.env, {
+      extraReferencedDigests: /^[a-f0-9]{64}$/.test(keepDigest) ? [keepDigest] : [],
+      ...(options.cleanupTimeoutMs !== undefined ? { leaseTimeoutMs: options.cleanupTimeoutMs } : {}),
+    });
+  } catch (error) {
+    options.onCleanupWarning?.(redactDiagnostic(error instanceof Error ? error.message : 'Profile runtime cleanup failed.'));
+  }
 }
 
 /**
@@ -265,6 +277,10 @@ export interface VscodeSyncOptions {
   adopt?: boolean;
   folders?: string[];
   restore?: boolean;
+  /** Optional diagnostic callback invoked when post-registration runtime pruning fails. */
+  onCleanupWarning?: (warning: string) => void;
+  /** Optional lock wait bound (ms) for post-registration runtime pruning. */
+  cleanupTimeoutMs?: number;
 }
 async function syncOnce({
   storagePath,
@@ -276,6 +292,8 @@ async function syncOnce({
   adopt = false,
   folders = [],
   restore = false,
+  onCleanupWarning,
+  cleanupTimeoutMs,
 }: VscodeSyncOptions): Promise<VscodeRegistration> {
   const file = profileMcpFile(storagePath);
   const { text: recordText, record } = readRecord(home);
@@ -324,7 +342,7 @@ async function syncOnce({
     ) {
       writeRecord(home, recordText, { ...record, [file]: { entry: hash(JSON.stringify(current)), version, installation } });
     }
-    await pruneRuntimes(storagePath, home, runtime);
+    await pruneRuntimes(storagePath, home, runtime, { cleanupTimeoutMs, onCleanupWarning });
     return 'current';
   }
   const base = text ?? '{}\n';
@@ -348,7 +366,7 @@ async function syncOnce({
   });
   writeChecked(file, text, after);
   writeRecord(home, marked, { ...record, [file]: { entry: digest, version, installation } });
-  await pruneRuntimes(storagePath, home, runtime);
+  await pruneRuntimes(storagePath, home, runtime, { cleanupTimeoutMs, onCleanupWarning });
   return 'registered';
 }
 

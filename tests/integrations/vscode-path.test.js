@@ -887,3 +887,56 @@ test('syncPathShim keeps healthy retained incumbent and refuses to publish unver
   );
   assert.equal(readRuntimePointer(root, 'current'), null, 'unverified bundle is not published by syncPathShim');
 });
+
+test('syncPathShim reports cleanupWarning without failing when post-commit pruning throws', async t => {
+  const { readRuntimePointer, coagentRootForHome } = require('../../src/integrations/runtime-manager.ts');
+  const { hash } = require('../../src/integrations/setup-storage.ts');
+  const f = fixture(t);
+  const root = coagentRootForHome(f.home);
+  const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+  await enablePathIntegration(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: process.execPath, version: '0.7.0' },
+    adapter,
+  );
+
+  // Rewrite shim & pathV2 record as an older legacy path so syncPathShim must rewrite both before pruning.
+  const shimPath = readPathRecord(f.home).shimPath;
+  const legacyTarget = path.join(root, 'runtime', 'c'.repeat(64), 'index.cjs');
+  const legacyShim = `@echo off\r\n"${process.execPath}" "${legacyTarget}" %*\r\n`;
+  fs.writeFileSync(shimPath, legacyShim);
+  const installsFile = path.join(root, 'installs.json');
+  const installs = JSON.parse(fs.readFileSync(installsFile, 'utf8'));
+  installs.pathV2.shimDigest = hash(legacyShim);
+  installs.pathV2.runtime = legacyTarget;
+  fs.writeFileSync(installsFile, JSON.stringify(installs, null, 2));
+
+  // Create an unreferenced lease-capable runtime copy so cleanupUnreferencedRuntimes attempts to delete it.
+  const staleDigest = 'd'.repeat(64);
+  const staleDir = path.join(root, 'runtime', staleDigest);
+  fs.mkdirSync(staleDir, { recursive: true });
+  fs.writeFileSync(path.join(staleDir, 'index.cjs'), 'stale');
+  fs.writeFileSync(path.join(staleDir, '.lease-capable'), '1\n');
+
+  const v2Bundle = path.join(f.root, 'v2/dist/index.cjs');
+  fs.mkdirSync(path.dirname(v2Bundle), { recursive: true });
+  fs.writeFileSync(v2Bundle, validFixtureBundle('v2-cleanup-warn'));
+
+  const origRmSync = fs.rmSync;
+  t.mock.method(fs, 'rmSync', (target, opts) => {
+    if (String(target) === staleDir) {
+      throw Object.assign(new Error('Simulated runtime dir EIO'), { code: 'EIO' });
+    }
+    return origRmSync(target, opts);
+  });
+
+  const syncRes = await syncPathShim(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: v2Bundle, nodePath: process.execPath, version: '0.8.0' },
+    adapter,
+  );
+  t.mock.restoreAll();
+
+  assert.equal(syncRes.action, 'updated');
+  assert.match(syncRes.cleanupWarning ?? '', /Simulated runtime dir EIO/);
+  assert.equal(readPathRecord(f.home).version, '0.8.0', 'PATH record was updated before cleanup failed');
+  assert.equal(readRuntimePointer(root, 'current').version, '0.8.0', 'stable pointer was updated before cleanup failed');
+});

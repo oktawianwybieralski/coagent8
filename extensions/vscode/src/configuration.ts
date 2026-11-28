@@ -12,7 +12,9 @@ function replaceFile(file: string, content: string): void {
     fs.writeFileSync(temporary, content, { flag: 'wx', mode: 0o600 });
     fs.renameSync(temporary, file);
   } finally {
-    fs.rmSync(temporary, { force: true });
+    try {
+      fs.rmSync(temporary, { force: true });
+    } catch {}
   }
 }
 

@@ -527,3 +527,46 @@ test('reusing an existing unmarked runtime copy never marks it lease-capable and
   assert.equal(fs.existsSync(v2Dir), false, 'freshly created unreferenced copy is pruned');
   assert.equal(fs.existsSync(v1Target), true, 'reused unmarked copy remains protected');
 });
+
+test('syncVscodeRegistration keeps registration active and surfaces warning when post-commit pruning fails', async t => {
+  const { withFileLock } = require('../../src/storage/lock.ts');
+  const { runtimeUpdateLockResource } = require('../../src/integrations/runtime-manager.ts');
+  const p = profile(t);
+
+  let releaseUpdate;
+  let updateHeld;
+  const gate = new Promise(resolve => {
+    releaseUpdate = resolve;
+  });
+  const acquired = new Promise(resolve => {
+    updateHeld = resolve;
+  });
+  const holder = withFileLock(runtimeUpdateLockResource(p.storagePath), async () => {
+    updateHeld();
+    await gate;
+  });
+  await acquired;
+
+  try {
+    const warnings = [];
+    const first = await p.sync({
+      cleanupTimeoutMs: 100,
+      onCleanupWarning: warning => warnings.push(warning),
+    });
+    assert.equal(first, 'registered', 'initial registration succeeds despite pruning timeout');
+    assert.ok(p.entries()[VSCODE_SERVER_NAME], 'mcp.json entry is written');
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /Timed out waiting for local storage lock/);
+
+    const second = await p.sync({
+      cleanupTimeoutMs: 100,
+      onCleanupWarning: warning => warnings.push(warning),
+    });
+    assert.equal(second, 'current', 'unchanged sync succeeds despite pruning timeout');
+    assert.equal(warnings.length, 2);
+    assert.match(warnings[1], /Timed out waiting for local storage lock/);
+  } finally {
+    releaseUpdate();
+    await holder;
+  }
+});

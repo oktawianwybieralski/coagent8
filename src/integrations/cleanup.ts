@@ -273,6 +273,8 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
   if (options.apply === undefined) return perform();
   const applied = await withFileLock(path.join(root, 'setup'), perform, options.leaseTimeoutMs);
   // The lease lived in the directory until now; remove it only when nothing else remains.
-  if (options.uninstall && fs.existsSync(root) && !fs.readdirSync(root).length) fs.rmdirSync(root);
+  try {
+    if (options.uninstall && fs.existsSync(root) && !fs.readdirSync(root).length) fs.rmdirSync(root);
+  } catch {}
   return applied;
 }

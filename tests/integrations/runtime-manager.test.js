@@ -1132,3 +1132,61 @@ test('post-publication cleanup failures never fail selection and surface redacte
   assert.equal(readRuntimePointer(root, 'current')?.digest, res2.digest, 'new pointer is active after lease cleanup failure');
   assert.match(res2.cleanupWarning ?? '', /Failed to release runtime reservation lease: Simulated lease cleanup failure/);
 });
+
+test('atomicWriteText ignores temp-removal failure after rename, preserves pre-rename errors, and cleanup ignores trailing rmdir failure', async t => {
+  const { cleanupUnreferencedRuntimes, runtimeLeasesDir, runtimePointerPath } = require('../../src/integrations/runtime-manager.ts');
+  const home = makeHome(t);
+  const root = coagentRootForHome(home);
+  const pointerFile = runtimePointerPath(root, 'current');
+  const origRmSync = fs.rmSync;
+  const origRenameSync = fs.renameSync;
+  const origRmdirSync = fs.rmdirSync;
+
+  // 1. Temp removal throws after renameSync succeeds: install/publish resolves and pointer.json has new content.
+  const v1 = path.join(home, 'v1-atomic-rm.cjs');
+  fs.writeFileSync(v1, validMcpBundle('v1-atomic-rm'));
+  t.mock.method(fs, 'rmSync', (target, opts) => {
+    if (String(target).startsWith(`${pointerFile}.tmp.`)) {
+      throw new Error('Simulated post-rename temp removal failure');
+    }
+    return origRmSync(target, opts);
+  });
+  const res1 = await installAndSelectVerifiedRuntime({ home, runtimeSource: v1, version: '0.7.0', nodePath: process.execPath });
+  t.mock.restoreAll();
+  assert.equal(readRuntimePointer(root, 'current')?.digest, res1.digest);
+  assert.equal(readRuntimePointer(root, 'current')?.version, '0.7.0');
+
+  // 2. Rename fails and temp cleanup also fails: original rename error propagates unmasked.
+  const v2 = path.join(home, 'v2-atomic-pre.cjs');
+  fs.writeFileSync(v2, validMcpBundle('v2-atomic-pre'));
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (String(to) === pointerFile) {
+      throw new Error('Simulated pre-rename failure');
+    }
+    return origRenameSync(from, to);
+  });
+  t.mock.method(fs, 'rmSync', (target, opts) => {
+    if (String(target).startsWith(`${pointerFile}.tmp.`)) {
+      throw new Error('Simulated temp rm masking error');
+    }
+    return origRmSync(target, opts);
+  });
+  await assert.rejects(
+    () => installAndSelectVerifiedRuntime({ home, runtimeSource: v2, version: '0.8.0', nodePath: process.execPath }),
+    /Simulated pre-rename failure/,
+  );
+  t.mock.restoreAll();
+  assert.equal(readRuntimePointer(root, 'current')?.digest, res1.digest, 'incumbent pointer stayed unchanged');
+
+  // 3. cleanupUnreferencedRuntimes still resolves if trailing empty-dir rmdirSync throws EBUSY.
+  fs.mkdirSync(runtimeLeasesDir(root), { recursive: true });
+  t.mock.method(fs, 'rmdirSync', (target, opts) => {
+    if (String(target) === runtimeLeasesDir(root)) {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    }
+    return origRmdirSync(target, opts);
+  });
+  const cleanupRes = await cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: true });
+  t.mock.restoreAll();
+  assert.ok(cleanupRes.kept.includes(res1.digest));
+});
