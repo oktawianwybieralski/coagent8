@@ -9,6 +9,96 @@ request that made the change: `#PR: description (by @author)`. This project
 adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 Release procedure: [.agents/rules/12-release-workflow.md](.agents/rules/12-release-workflow.md).
 
+## v0.8.0 - (2026-11-28)
+
+- Acceptance:
+  - Bug fix:
+    - [#193](https://github.com/oktawianwybieralski/coagent8/pull/193): Install the tarball without npm init (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Antigravity (agy):
+  - Bug fix:
+    - [#241](https://github.com/oktawianwybieralski/coagent8/pull/241): Run agy turns with CoAgent8's own profile on Windows, so they offer none of the user's MCP servers and plugins (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Claude:
+  - Bug fix:
+    - [#249](https://github.com/oktawianwybieralski/coagent8/pull/249): Disable background tasks in turns and handle task-notification turns, so a turn returns its answer (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Config:
+  - New feature:
+    - [#104](https://github.com/oktawianwybieralski/coagent8/pull/104): Ask backends to answer the calling agent in English (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Delegate:
+  - New feature:
+    - [#201](https://github.com/oktawianwybieralski/coagent8/pull/201): Coordinate workers from a read-only agent (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#198](https://github.com/oktawianwybieralski/coagent8/pull/198): Run parallel workers under one root budget (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#126](https://github.com/oktawianwybieralski/coagent8/pull/126): Run checks, review and fix rounds in one call (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#105](https://github.com/oktawianwybieralski/coagent8/pull/105): Run delegate asynchronously and wake the caller (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#95](https://github.com/oktawianwybieralski/coagent8/pull/95): Delegate code changes to another agent (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+  - Bug fix:
+    - [#236](https://github.com/oktawianwybieralski/coagent8/pull/236): Count a root's running time instead of idle time, and keep test suites off the user's config (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#143](https://github.com/oktawianwybieralski/coagent8/pull/143): Review on another CLI than the client's (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#141](https://github.com/oktawianwybieralski/coagent8/pull/141): Report a check form the client did not show as the client's answer (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#125](https://github.com/oktawianwybieralski/coagent8/pull/125): Recognize a dead server, its worker and a reused PID (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#123](https://github.com/oktawianwybieralski/coagent8/pull/123): Bound the first Git read and refuse oversized Codex prompts (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+  - Refactoring:
+    - [#219](https://github.com/oktawianwybieralski/coagent8/pull/219): Remove the delegated coordinator (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Diagnostics:
+  - Bug fix:
+    - [#131](https://github.com/oktawianwybieralski/coagent8/pull/131): Report backend state and answers as they are (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Execution:
+  - New feature:
+    - [#218](https://github.com/oktawianwybieralski/coagent8/pull/218): Run every role on the host after the user's consent (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+  - Refactoring:
+    - [#216](https://github.com/oktawianwybieralski/coagent8/pull/216): Run every role through one task runner (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Governance:
+  - Bug fix:
+    - [#144](https://github.com/oktawianwybieralski/coagent8/pull/144): Report what the client answered, and let cancel return a final task (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Issue:
+  - Bug fix:
+    - [#229](https://github.com/oktawianwybieralski/coagent8/pull/229): Open the bug report form filled in, so reporting needs only Submit (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Output:
+  - Bug fix:
+    - [#96](https://github.com/oktawianwybieralski/coagent8/pull/96): Use keyboard characters in CoAgent8 output (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Release:
+  - Bug fix:
+    - [#260](https://github.com/oktawianwybieralski/coagent8/pull/260): Describe host execution, the review fallback and unobserved submodule changes (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#259](https://github.com/oktawianwybieralski/coagent8/pull/259): Keep issue reports local until the user opens them, and refuse a historical review without its snapshot (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Repo:
+  - Breaking change:
+    - [#197](https://github.com/oktawianwybieralski/coagent8/pull/197): Tidy the root directory (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Review:
+  - New feature:
+    - [#221](https://github.com/oktawianwybieralski/coagent8/pull/221): Read a large diff from a file instead of the prompt (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#220](https://github.com/oktawianwybieralski/coagent8/pull/220): Run the reviewer in a snapshot work tree of the reviewed state (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#146](https://github.com/oktawianwybieralski/coagent8/pull/146): Run approved checks on the reviewed change (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#145](https://github.com/oktawianwybieralski/coagent8/pull/145): Review changes too large for one turn in parts (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+  - Bug fix:
+    - [#255](https://github.com/oktawianwybieralski/coagent8/pull/255): Always give the reviewer the diff as a file, never inline in the prompt (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#244](https://github.com/oktawianwybieralski/coagent8/pull/244): Pass each part's coverage to the synthesis of a split review (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Security:
+  - Bug fix:
+    - [#101](https://github.com/oktawianwybieralski/coagent8/pull/101): Resolve the open CodeQL alerts (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#99](https://github.com/oktawianwybieralski/coagent8/pull/99): Keep PEM key redaction linear on repeated markers (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Sessions:
+  - Refactoring:
+    - [#217](https://github.com/oktawianwybieralski/coagent8/pull/217): Record the role of a session and run turns outside the workspace (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Setup:
+  - Bug fix:
+    - [#257](https://github.com/oktawianwybieralski/coagent8/pull/257): Register a stable runtime launcher, so an update needs one restart and no CLI chat update (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Skills:
+  - New feature:
+    - [#256](https://github.com/oktawianwybieralski/coagent8/pull/256): Ship a coordinator skill for coordinator, implementer and reviewer roles (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Tasks:
+  - New feature:
+    - [#253](https://github.com/oktawianwybieralski/coagent8/pull/253): Run delegate, review and consult as async tasks for up to 4 hours, 60 minutes by default (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Turns:
+  - Bug fix:
+    - [#252](https://github.com/oktawianwybieralski/coagent8/pull/252): Give every agent turn disposable CoAgent8 paths, so nothing run in a turn writes the user's config (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- VS Code:
+  - New feature:
+    - [#238](https://github.com/oktawianwybieralski/coagent8/pull/238): Set a backend's default model, with its effort, from Manage Model Approvals (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#237](https://github.com/oktawianwybieralski/coagent8/pull/237): Offer skill updates after an extension update, and update or reinstall every client's skills at once (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Windows:
+  - New feature:
+    - [#103](https://github.com/oktawianwybieralski/coagent8/pull/103): Ship the job helper and refuse delegate without it (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#102](https://github.com/oktawianwybieralski/coagent8/pull/102): End a cancelled run's whole process tree (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+
 ## v0.7.0 - (2026-10-20)
 
 - Acceptance:
