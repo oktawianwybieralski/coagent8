@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { applyEdits, modify } from 'jsonc-parser';
-import { withFileLock } from '../storage/lock.js';
+import { LockTimeoutError, withFileLock } from '../storage/lock.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { cleanupUnreferencedRuntimes, type RuntimeCleanupOptions } from './runtime-manager.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
@@ -118,8 +118,18 @@ export async function pruneUnreferencedRuntimes(
  * Removes unchanged setup state: runtime copies that are no longer referenced by any client,
  * backup files with the extension prefix and, when no registrations or skills remain, the state file.
  */
-async function removeUnreferencedSetup(root: string, home: string, env: NodeJS.ProcessEnv, stateFile: string): Promise<void> {
-  await cleanupUnreferencedRuntimes(root, home, env, { keepStableNamespaces: false, removePreLeaseCopies: true });
+async function removeUnreferencedSetup(
+  root: string,
+  home: string,
+  env: NodeJS.ProcessEnv,
+  stateFile: string,
+  leaseTimeoutMs?: number,
+): Promise<void> {
+  await cleanupUnreferencedRuntimes(root, home, env, {
+    keepStableNamespaces: false,
+    removePreLeaseCopies: true,
+    ...(leaseTimeoutMs !== undefined ? { leaseTimeoutMs } : {}),
+  });
   const backups = path.join(root, 'setup-backups');
   if (fs.existsSync(backups)) {
     for (const name of fs.readdirSync(backups)) {
@@ -152,6 +162,8 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
   const root = path.join(home, '.coagent8'),
     stateFile = path.join(root, 'setup.json');
   assertSkillRoot(root, home);
+  const deadline =
+    options.apply !== undefined && options.leaseTimeoutMs !== undefined ? Date.now() + Math.max(1, options.leaseTimeoutMs) : undefined;
   async function perform(): Promise<CleanupPreview> {
     if (options.apply !== undefined) recoverSkillTransaction(home);
     const stateBefore = read(stateFile),
@@ -241,7 +253,13 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
     }
     if (options.uninstall) {
       try {
-        await removeUnreferencedSetup(root, home, env, stateFile);
+        let remainingTimeoutMs: number | undefined;
+        if (deadline !== undefined) {
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) throw new LockTimeoutError();
+          remainingTimeoutMs = Math.max(1, remaining);
+        }
+        await removeUnreferencedSetup(root, home, env, stateFile, remainingTimeoutMs);
       } catch (error) {
         return {
           token,

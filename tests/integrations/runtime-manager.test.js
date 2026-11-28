@@ -1056,4 +1056,22 @@ test('staged launcher probe leaves pointer.json byte-identical on failure, rejec
   });
   assert.notEqual(badArg.status, 0);
   assert.match(badArg.stderr, /invalid staged pointer name/);
+
+  // 5. Failing staged pointer write cleans up reservation leases and propagates the error.
+  const v2 = path.join(home, 'v2.cjs');
+  fs.writeFileSync(v2, validMcpBundle('v2-staged-write-fail'));
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (String(to).endsWith('pointer.next.json')) {
+      throw new Error('Simulated staged write failure');
+    }
+    return origRename(from, to);
+  });
+  await assert.rejects(
+    () => installAndSelectVerifiedRuntime({ home, runtimeSource: v2, version: '0.8.0', nodePath: process.execPath }),
+    /Simulated staged write failure/,
+  );
+  t.mock.restoreAll();
+  const remainingLeases = fs.existsSync(runtimeLeasesDir(root)) ? fs.readdirSync(runtimeLeasesDir(root)) : [];
+  assert.deepEqual(remainingLeases, [], 'no reservation leases leaked when staged pointer write fails');
+  assert.deepEqual(fs.readFileSync(pointerFile), beforeBytes, 'pointer.json untouched on staged write failure');
 });

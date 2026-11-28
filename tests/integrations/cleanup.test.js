@@ -455,3 +455,42 @@ test('without its ownership record, an entry setup wrote is recognized by its sh
     assert.equal((await cleanupClients({ ...p, clients: ['agy'] })).results[0].action, 'preserved', JSON.stringify(edited));
   }
 });
+
+test('uninstall cleanup bounds runtime cleanup with remaining leaseTimeoutMs when runtime-update is held', async t => {
+  const { withFileLock } = require('../../src/storage/lock.ts');
+  const { runtimeUpdateLockResource } = require('../../src/integrations/runtime-manager.ts');
+  const p = profile(t);
+  const root = path.join(p.home, '.coagent8');
+  const preview = await cleanupClients({ ...p, origin: 'vscode-extension', uninstall: true });
+
+  let releaseUpdate;
+  let updateHeld;
+  const gate = new Promise(resolve => {
+    releaseUpdate = resolve;
+  });
+  const acquired = new Promise(resolve => {
+    updateHeld = resolve;
+  });
+  const holder = withFileLock(runtimeUpdateLockResource(root), async () => {
+    updateHeld();
+    await gate;
+  });
+  await acquired;
+  setTimeout(() => releaseUpdate(), 600);
+
+  const started = Date.now();
+  const applied = await cleanupClients({
+    ...p,
+    origin: 'vscode-extension',
+    uninstall: true,
+    apply: preview.token,
+    leaseTimeoutMs: 350,
+  });
+  const elapsed = Date.now() - started;
+
+  assert.ok(elapsed < 600, `expected uninstall cleanup to respect 350ms budget, took ${elapsed}ms`);
+  assert.match(applied.stateError, /Timed out waiting for local storage lock/);
+
+  releaseUpdate();
+  await holder;
+});

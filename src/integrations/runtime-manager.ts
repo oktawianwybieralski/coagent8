@@ -1036,29 +1036,29 @@ async function selectVerifiedRuntimeCopyLocked(
 
   let stagedPointerFile = '';
 
-  await withFileLock(
-    runtimeLockResource(root),
-    async () => {
-      copy = prepareCopyLocked();
-      namespace = resolveRuntimeNamespace(copy.version, options);
-      stagedPointerFile = path.join(path.dirname(runtimePointerPath(root, namespace)), STAGED_POINTER_NAME);
-      const existingPointer = readRuntimePointer(root, namespace);
-      const existingTarget = resolveStableTarget(root, namespace);
-
-      reserveDigestLocked(copy.digest);
-      reservePointerTargetsLocked(existingPointer, Boolean(existingTarget?.exists));
-
-      initialPlan = planRuntimePointerSelectionLocked(copy, options);
-      if (initialPlan.nextPointer) {
-        publishRuntimePointerLocked(stagedPointerFile, initialPlan.nextPointer);
-      } else {
-        fs.rmSync(stagedPointerFile, { force: true });
-      }
-    },
-    RUNTIME_LOCK_TIMEOUT_MS,
-  );
-
   try {
+    await withFileLock(
+      runtimeLockResource(root),
+      async () => {
+        copy = prepareCopyLocked();
+        namespace = resolveRuntimeNamespace(copy.version, options);
+        stagedPointerFile = path.join(path.dirname(runtimePointerPath(root, namespace)), STAGED_POINTER_NAME);
+        const existingPointer = readRuntimePointer(root, namespace);
+        const existingTarget = resolveStableTarget(root, namespace);
+
+        reserveDigestLocked(copy.digest);
+        reservePointerTargetsLocked(existingPointer, Boolean(existingTarget?.exists));
+
+        initialPlan = planRuntimePointerSelectionLocked(copy, options);
+        if (initialPlan.nextPointer) {
+          publishRuntimePointerLocked(stagedPointerFile, initialPlan.nextPointer);
+        } else {
+          fs.rmSync(stagedPointerFile, { force: true });
+        }
+      },
+      RUNTIME_LOCK_TIMEOUT_MS,
+    );
+
     const probeCandidate = () =>
       probeRuntime({ command: node.command, args: [...node.argsPrefix, copy.runtimePath, 'mcp'], env: options.probeEnv }, env, cwd);
     const probeLauncher = (launcherPath: string, staged: boolean) =>
