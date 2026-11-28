@@ -35,12 +35,23 @@ export function getAgyProfileDir(): string {
   return path.join(getDataDir(), 'agy-profile');
 }
 
+const RUNTIME_PATH_SYMBOL = Symbol.for('coagent8.runtimePath');
+
 /**
  * Resolves the active runtime script or bundle path executing CoAgent8.
+ *
+ * @remarks
+ * When launched in-process through the stable runtime launcher (`~/.coagent8/runtime/current/index.cjs`),
+ * `require.main.filename` points at the launcher; the launcher sets `Symbol.for('coagent8.runtimePath')`
+ * so child commands such as `wait` and diagnostics preserve the resolved immutable `<sha256>/index.cjs` path.
  *
  * @returns Absolute normalized path to the running entrypoint file.
  */
 export function getRuntimePath(): string {
+  const resolved = (globalThis as Record<symbol, unknown>)[RUNTIME_PATH_SYMBOL];
+  if (typeof resolved === 'string' && resolved.length > 0) {
+    return path.resolve(resolved);
+  }
   if (require.main?.filename) {
     return path.resolve(require.main.filename);
   }

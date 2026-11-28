@@ -6,13 +6,13 @@
  * @packageDocumentation
  */
 import fs from 'node:fs';
-import { removeRuntimeDirectory } from './runtime-files.js';
 import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { applyEdits, modify } from 'jsonc-parser';
-import { withFileLock } from '../storage/lock.js';
+import { LockTimeoutError, withFileLock } from '../storage/lock.js';
 import { redactDiagnostic } from '../security/redaction.js';
+import { cleanupUnreferencedRuntimes, type RuntimeCleanupOptions } from './runtime-manager.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 import {
   backupDirectory,
@@ -64,6 +64,8 @@ export interface CleanupPreview {
   token: string;
   results: CleanupStatus[];
   stateError?: string;
+  /** Non-fatal cleanup diagnostic when unreferenced runtime cleanup reported warnings. */
+  cleanupWarning?: string;
 }
 
 function removeEntry(client: SetupClient, before: string): string {
@@ -101,58 +103,36 @@ function removeEntry(client: SetupClient, before: string): string {
 }
 
 /**
- * Removes runtime copies that are no longer referenced by any client config or installs.json.
- * @throws When a host configuration or installs.json cannot be read; nothing is deleted then.
+ * Removes runtime copies that are no longer referenced by any client config, `installs.json`,
+ * PATH shim, stable pointer, or active per-process runtime lease under the shared runtime lock.
+ * @throws When a host configuration, pointer, or `installs.json` cannot be read; nothing is deleted then.
  */
-export function pruneUnreferencedRuntimes(root: string, home: string, env: NodeJS.ProcessEnv = process.env): void {
-  const runtimes = path.join(root, 'runtime');
-  const referenced = new Set<string>();
-  for (const client of SETUP_CLIENTS) {
-    const text = read(configPath(client, home, env));
-    if (text === null) continue;
-    for (const entry of Object.values(servers(client, document(client, text)))) {
-      for (const arg of Array.isArray((entry as { args?: unknown })?.args) ? (entry as { args: unknown[] }).args : []) {
-        if (typeof arg === 'string' && path.resolve(arg).startsWith(runtimes + path.sep))
-          referenced.add(path.relative(runtimes, path.resolve(arg)).split(path.sep)[0]!);
-      }
-    }
-  }
-  const installsPath = path.join(root, 'installs.json');
-  if (fs.existsSync(installsPath)) {
-    const raw = read(installsPath);
-    if (raw === null) throw new Error('Unreadable installs.json');
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      throw new Error('Malformed installs.json');
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Malformed installs.json');
-    // A PATH record whose runtime cannot be read may still guard a shim: prune nothing.
-    const pathRecord = (parsed as { path?: unknown }).path;
-    if (pathRecord !== undefined) {
-      const pRuntime = pathRecord && typeof pathRecord === 'object' ? (pathRecord as { runtime?: unknown }).runtime : undefined;
-      if (typeof pRuntime !== 'string' || !pRuntime) throw new Error('Malformed PATH record in installs.json');
-      const resolved = path.resolve(pRuntime);
-      if (resolved.startsWith(runtimes + path.sep)) {
-        referenced.add(path.relative(runtimes, resolved).split(path.sep)[0]!);
-      }
-    }
-  }
-  if (fs.existsSync(runtimes)) {
-    for (const name of fs.readdirSync(runtimes)) {
-      if (/^[a-f0-9]{64}$/.test(name) && !referenced.has(name)) removeRuntimeDirectory(path.join(runtimes, name));
-    }
-    if (!fs.readdirSync(runtimes).length) fs.rmdirSync(runtimes);
-  }
+export async function pruneUnreferencedRuntimes(
+  root: string,
+  home: string,
+  env: NodeJS.ProcessEnv = process.env,
+  options: RuntimeCleanupOptions = {},
+): Promise<{ removed: string[]; kept: string[]; warnings?: string[]; cleanupWarning?: string }> {
+  const result = await cleanupUnreferencedRuntimes(root, home, env, options);
+  return result.warnings?.length ? { ...result, cleanupWarning: redactDiagnostic(result.warnings.join('; '), 1024) } : result;
 }
 
 /**
  * Removes unchanged setup state: runtime copies that are no longer referenced by any client,
  * backup files with the extension prefix and, when no registrations or skills remain, the state file.
  */
-function removeUnreferencedSetup(root: string, home: string, env: NodeJS.ProcessEnv, stateFile: string): void {
-  pruneUnreferencedRuntimes(root, home, env);
+async function removeUnreferencedSetup(
+  root: string,
+  home: string,
+  env: NodeJS.ProcessEnv,
+  stateFile: string,
+  leaseTimeoutMs?: number,
+): Promise<string[]> {
+  const pruneResult = await cleanupUnreferencedRuntimes(root, home, env, {
+    keepStableNamespaces: false,
+    removePreLeaseCopies: true,
+    ...(leaseTimeoutMs !== undefined ? { leaseTimeoutMs } : {}),
+  });
   const backups = path.join(root, 'setup-backups');
   if (fs.existsSync(backups)) {
     for (const name of fs.readdirSync(backups)) {
@@ -168,6 +148,7 @@ function removeUnreferencedSetup(root: string, home: string, env: NodeJS.Process
     !Object.keys(saved.disabledSkills ?? {}).length
   )
     fs.rmSync(stateFile, { force: true });
+  return pruneResult.warnings ?? [];
 }
 
 /** Previews cleanup or applies a matching preview under the same lease as setup. */
@@ -185,6 +166,8 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
   const root = path.join(home, '.coagent8'),
     stateFile = path.join(root, 'setup.json');
   assertSkillRoot(root, home);
+  const deadline =
+    options.apply !== undefined && options.leaseTimeoutMs !== undefined ? Date.now() + Math.max(1, options.leaseTimeoutMs) : undefined;
   async function perform(): Promise<CleanupPreview> {
     if (options.apply !== undefined) recoverSkillTransaction(home);
     const stateBefore = read(stateFile),
@@ -272,9 +255,19 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
         };
       }
     }
+    let cleanupWarning: string | undefined;
     if (options.uninstall) {
       try {
-        removeUnreferencedSetup(root, home, env, stateFile);
+        let remainingTimeoutMs: number | undefined;
+        if (deadline !== undefined) {
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) throw new LockTimeoutError();
+          remainingTimeoutMs = Math.max(1, remaining);
+        }
+        const warnings = await removeUnreferencedSetup(root, home, env, stateFile, remainingTimeoutMs);
+        if (warnings.length) {
+          cleanupWarning = redactDiagnostic(warnings.join('; '), 1024);
+        }
       } catch (error) {
         return {
           token,
@@ -283,11 +276,13 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
         };
       }
     }
-    return { token, results };
+    return { token, results, ...(cleanupWarning ? { cleanupWarning } : {}) };
   }
   if (options.apply === undefined) return perform();
   const applied = await withFileLock(path.join(root, 'setup'), perform, options.leaseTimeoutMs);
   // The lease lived in the directory until now; remove it only when nothing else remains.
-  if (options.uninstall && fs.existsSync(root) && !fs.readdirSync(root).length) fs.rmdirSync(root);
+  try {
+    if (options.uninstall && fs.existsSync(root) && !fs.readdirSync(root).length) fs.rmdirSync(root);
+  } catch {}
   return applied;
 }

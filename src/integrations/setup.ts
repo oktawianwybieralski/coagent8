@@ -7,7 +7,6 @@
  * @packageDocumentation
  */
 import fs from 'node:fs';
-import { copyJobHelperBeside } from './runtime-files.js';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -32,6 +31,16 @@ import { object, withStdioRpc } from './rpc.js';
 import { errorCodeOf } from '../contracts/index.js';
 
 import { BRAND } from '../brand.js';
+import {
+  cleanupUnreferencedRuntimes,
+  installAndSelectVerifiedRuntime,
+  probeRuntime,
+  readRuntimePointer,
+  resolveRuntimeNamespace,
+  resolveStableTarget,
+  stableLauncherPath,
+} from './runtime-manager.js';
+import { compareSemver, type RuntimeNamespace } from './runtime-version.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 export { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 import {
@@ -48,6 +57,7 @@ import {
   entryOwnership,
   extractRuntimePath,
   extractRuntimeVersion,
+  classifyRuntimePath,
   newerVersion,
   CODEX_TOOL_TIMEOUT_SEC,
   setupConfigFile,
@@ -72,6 +82,8 @@ export interface SetupStatus extends CliReadiness {
   message: string;
   /** Skill packages synchronized after a working registration; absent without a catalog or registration. */
   skills?: SkillStatus[];
+  /** Non-fatal cleanup diagnostic when post-selection or post-setup runtime cleanup reported warnings. */
+  cleanupWarning?: string;
 }
 export interface SetupOptions {
   /** Explicit selections authorize setup; omitted selections reuse the saved list. */
@@ -103,6 +115,14 @@ export interface SetupOptions {
    * Used for downgrade prevention; omitted, extracted from runtime or defaults to BRAND.SERVER_VERSION.
    */
   version?: string;
+  /** Target runtime pointer namespace (`current` or `dev`). */
+  namespace?: RuntimeNamespace;
+  /** Explicitly permit a `-dev` version to update the `current` namespace. */
+  allowDevInCurrent?: boolean;
+  /** Explicitly pin the candidate as an intentional downgrade or rollback. */
+  pin?: boolean;
+  /** Clear an existing runtime pin before evaluating precedence. */
+  unpin?: boolean;
 }
 /** The runtime backend each setup client runs as. */
 export const SETUP_PROVIDERS: Record<SetupClient, ProviderId> = { codex: 'codex', claude: 'claude', agy: 'agy' };
@@ -334,35 +354,6 @@ function checkScopes(client: SetupClient, config: Record<string, unknown>, cwd: 
   }
 }
 
-/**
- * Initializes a registered runtime and reads its tool catalog without claiming native host discovery.
- * @remarks No tool is called: `doctor` probes every backend again and took 5-11 s on Windows,
- * once per registered client. A tool call is first exercised on actual use.
- */
-async function probeRuntime(entry: Registration, env: NodeJS.ProcessEnv, cwd: string): Promise<string[]> {
-  return withStdioRpc(
-    entry.command,
-    entry.args,
-    async rpc => {
-      const init = object(
-        await rpc.request('initialize', {
-          protocolVersion: '2025-11-25',
-          capabilities: {},
-          clientInfo: { name: 'coagent8-setup', version: '1' },
-        }),
-      );
-      if (object(init.serverInfo).name !== 'coagent8') throw new Error('Configured process is not CoAgent8.');
-      rpc.notify('notifications/initialized');
-      const tools = object(await rpc.request('tools/list', {})).tools;
-      if (!Array.isArray(tools)) throw new Error('Invalid tool catalog.');
-      const names = tools.map(tool => object(tool).name);
-      if (!names.every(name => typeof name === 'string') || !names.includes('doctor')) throw new Error('CoAgent8 doctor is unavailable.');
-      return names as string[];
-    },
-    { env: { ...env, ...entry.env }, cwd },
-  );
-}
-
 /** Verifies that Codex itself starts the registered server and discovers its tools, without a model turn. */
 async function probeCodex(cli: CliCommand, env: NodeJS.ProcessEnv, cwd: string): Promise<boolean> {
   return withStdioRpc(
@@ -446,7 +437,9 @@ async function nativeCodexEdit(
     edited = await runCommand(cli.command, [...cli.argsPrefix, ...args], { cwd, env: { ...env, CODEX_HOME: staging }, timeoutMs: 15_000 });
     written = read(path.join(staging, 'config.toml'));
   } finally {
-    fs.rmSync(staging, { recursive: true, force: true });
+    try {
+      fs.rmSync(staging, { recursive: true, force: true });
+    } catch {}
   }
   if (edited.status !== 'completed' || written === null) throw new Error('Native Codex registration failed.');
   const after = target ? withCodexToolTimeout(written) : written;
@@ -506,15 +499,15 @@ function localProfile(options: Pick<SetupOptions, 'home' | 'cwd' | 'env'>) {
   assertSkillRoot(root, home);
   return { home, cwd, env, root, stateFile: path.join(root, 'setup.json') };
 }
-/** The entry setup writes for this bundle, Node executable, configuration file and data directory. */
+/** The entry setup writes for the stable runtime launcher, Node executable, configuration file and data directory. */
 function candidateRegistration(
-  bundle: string,
   root: string,
+  namespace: RuntimeNamespace,
   options: Pick<SetupOptions, 'nodePath' | 'dataDirectory'>,
   env: NodeJS.ProcessEnv,
   cwd: string,
 ): Registration {
-  const runtime = path.join(root, 'runtime', hash(bundle), 'index.cjs');
+  const runtime = stableLauncherPath(root, namespace);
   const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
   const variables = {
     ...(env.coagent8_CONFIG ? { coagent8_CONFIG: env.coagent8_CONFIG } : {}),
@@ -531,13 +524,17 @@ export interface RegistrationStatus {
    * `manual`: any other CoAgent8 entry, which setup preserves.
    */
   state: 'absent' | 'owned' | 'manual' | 'blocked';
-  /** The entry is what setup writes now: same runtime bundle, Node executable and configuration file. */
+  /** The entry is what setup writes now: same stable launcher, active runtime, Node executable and configuration file. */
   current: boolean;
   message: string;
   /** Version of the registered runtime if extractable. */
   version?: string;
   /** Whether the registered runtime is strictly newer than the candidate version. */
   isNewer?: boolean;
+  /** Whether an owned non-newer entry still points to a legacy content-addressed `<sha256>` path. */
+  legacy?: boolean;
+  /** Whether the stable pointer kept an incumbent build with the same version and a different hash. */
+  incumbentConflict?: boolean;
 }
 /**
  * Reads the CoAgent8 registration of every client from its configuration file.
@@ -546,19 +543,27 @@ export interface RegistrationStatus {
  * @throws On a custom profile root or an unreadable setup state.
  */
 export function readRegistrations(
-  options: Pick<SetupOptions, 'runtimeSource' | 'nodePath' | 'dataDirectory' | 'home' | 'cwd' | 'env' | 'version'>,
+  options: Pick<
+    SetupOptions,
+    'runtimeSource' | 'nodePath' | 'dataDirectory' | 'home' | 'cwd' | 'env' | 'version' | 'namespace' | 'allowDevInCurrent'
+  >,
 ): RegistrationStatus[] {
   const { home, cwd, env, root, stateFile } = localProfile(options);
   const saved = readSelection(stateFile);
   const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
-  const candidate = candidateRegistration(readBoundedFileSync(options.runtimeSource, 8 * 1024 * 1024), root, options, env, cwd);
+  const candidateBytes = fs.readFileSync(options.runtimeSource);
+  const candidateDigest = hash(candidateBytes);
   const candidateVersion = options.version ?? extractRuntimeVersion(options.runtimeSource) ?? BRAND.SERVER_VERSION;
+  const namespace = resolveRuntimeNamespace(candidateVersion, options);
+  const candidate = candidateRegistration(root, namespace, options, env, cwd);
+  const pointer = readRuntimePointer(root, namespace);
+  const pointerTarget = resolveStableTarget(root, namespace);
   return SETUP_CLIENTS.map(client => {
     try {
       const text = read(configPath(client, home, env));
       const entry = text === null ? undefined : servers(client, document(client, text)).coagent8;
       if (entry === undefined) return { client, state: 'absent', current: false, message: 'No CoAgent8 entry.' };
-      const current = isDeepStrictEqual(registration(entry), candidate);
+      const entryMatches = isDeepStrictEqual(registration(entry), candidate);
       const isFingerprintMatch = saved.owned[client] === hash(JSON.stringify(entry));
       const entryObj = entry as { args?: unknown };
       const existingPrefix = isFingerprintMatch
@@ -567,9 +572,34 @@ export function readRegistrations(
           : (entryObj.args as string[])?.slice(0, -1)
         : node.argsPrefix;
       const registeredPath = extractRuntimePath(entry, root, existingPrefix);
-      const registeredVersion = registeredPath ? (extractRuntimeVersion(registeredPath) ?? undefined) : undefined;
+      const pathKind = registeredPath ? classifyRuntimePath(registeredPath) : null;
+      const isLegacy = pathKind === 'legacy';
+      let registeredVersion: string | undefined;
+      let targetHealthy = false;
+      if (pathKind === 'current' || pathKind === 'dev') {
+        const nsTarget = pathKind === namespace ? pointerTarget : resolveStableTarget(root, pathKind);
+        registeredVersion = nsTarget?.version;
+        targetHealthy = Boolean(nsTarget?.exists);
+      } else if (registeredPath) {
+        registeredVersion = extractRuntimeVersion(registeredPath) ?? undefined;
+        targetHealthy = fs.existsSync(registeredPath);
+      }
       const isNewer = registeredVersion ? newerVersion(registeredVersion, candidateVersion) : false;
-      if (!entryOwnership(client, entry, saved, root, options.nodePath, node.argsPrefix).owned) {
+      const incumbentConflict = Boolean(
+        (pathKind === 'current' || pathKind === 'dev') &&
+        pathKind === namespace &&
+        pointer &&
+        compareSemver(pointer.version, candidateVersion) === 0 &&
+        pointer.digest !== candidateDigest,
+      );
+      const pointerOutdated = Boolean(
+        (pathKind === 'current' || pathKind === 'dev') &&
+        pathKind === namespace &&
+        (!pointer || compareSemver(pointer.version, candidateVersion) === -1),
+      );
+      const current = entryMatches && targetHealthy && !isNewer && !incumbentConflict && !pointerOutdated;
+      const ownership = entryOwnership(client, entry, saved, root, options.nodePath, node.argsPrefix);
+      if (!ownership.owned) {
         return {
           client,
           state: 'manual',
@@ -587,9 +617,13 @@ export function readRegistrations(
           ? 'Registered by setup.'
           : isNewer
             ? `Registered by setup for a newer CoAgent8 version (${registeredVersion}); preserved.`
-            : 'Registered by setup for another CoAgent8 version, configuration file or data directory.',
+            : incumbentConflict && pointer
+              ? `Registered by setup; incumbent ${pointer.version} (${pointer.digest.slice(0, 12)}) kept instead of different build hash.`
+              : 'Registered by setup for another CoAgent8 version, configuration file or data directory.',
         ...(registeredVersion ? { version: registeredVersion } : {}),
         ...(isNewer ? { isNewer: true } : {}),
+        ...(isLegacy && !isNewer ? { legacy: true } : {}),
+        ...(incumbentConflict ? { incumbentConflict: true } : {}),
       };
     } catch (error) {
       return {
@@ -628,25 +662,33 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
     if (!selected.every(client => SETUP_CLIENTS.includes(client))) throw new Error('Unknown setup client.');
     let candidate: Registration | null = null;
     let catalog: SkillPackage[] | null = null;
+    let candidateVersion = options.version ?? extractRuntimeVersion(options.runtimeSource) ?? BRAND.SERVER_VERSION;
+    let pointerMessage: string | undefined;
+    const cleanupWarnings: string[] = [];
     if (!options.statusOnly) {
       // An invalid catalog is a package defect; it stops setup before any client changes.
       if (options.skillsSource) catalog = readSkillCatalog(options.skillsSource);
-      const bundle = readBoundedFileSync(options.runtimeSource, 8 * 1024 * 1024);
-      const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
-      candidate = candidateRegistration(bundle, root, options, env, cwd);
-      const runtime =
-        extractRuntimePath(candidate, root, node.argsPrefix) ??
-        (candidate.args.at(-1) === 'mcp' ? candidate.args.at(-2)! : candidate.args.at(-1)!);
-      fs.mkdirSync(path.dirname(runtime), { recursive: true, mode: 0o700 });
-      if (!fs.existsSync(runtime)) fs.writeFileSync(runtime, bundle, { flag: 'wx', mode: 0o600 });
-      copyJobHelperBeside(options.runtimeSource, path.dirname(runtime));
-      const versionFile = path.join(path.dirname(runtime), 'version.json');
-      if (!fs.existsSync(versionFile)) {
-        const versionToRecord = options.version ?? extractRuntimeVersion(options.runtimeSource) ?? BRAND.SERVER_VERSION;
-        fs.writeFileSync(versionFile, JSON.stringify({ version: versionToRecord }) + '\n', { flag: 'wx', mode: 0o600 });
+      const namespace = resolveRuntimeNamespace(candidateVersion, options);
+      candidate = candidateRegistration(root, namespace, options, env, cwd);
+      const selected = await installAndSelectVerifiedRuntime({
+        home,
+        runtimeSource: options.runtimeSource,
+        version: candidateVersion,
+        namespace,
+        allowDevInCurrent: options.allowDevInCurrent,
+        pin: options.pin,
+        unpin: options.unpin,
+        nodePath: options.nodePath,
+        env,
+        cwd,
+        probeEnv: candidate.env,
+      });
+      if (selected.action === 'kept-incumbent' || selected.action === 'downgrade-blocked' || selected.action === 'pinned-blocked') {
+        pointerMessage = selected.message;
       }
-      if (hash(readBoundedFileSync(runtime, 8 * 1024 * 1024)) !== hash(bundle)) throw new Error('Owned runtime hash mismatch.');
-      await probeRuntime(candidate, env, cwd);
+      if (selected.cleanupWarning) {
+        cleanupWarnings.push(redactDiagnostic(selected.cleanupWarning, 512));
+      }
     }
     const results: SetupStatus[] = (selected.length ? selected : SETUP_CLIENTS).map(client => ({
       client,
@@ -676,6 +718,23 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
     if (!options.statusOnly) {
       saved.clients = selected;
       writeChecked(stateFile, stateBefore, serializeSelection(saved));
+      try {
+        const pruneResult = await cleanupUnreferencedRuntimes(root, home, env, { keepStableNamespaces: true });
+        if (pruneResult.warnings?.length) {
+          for (const warning of pruneResult.warnings) {
+            cleanupWarnings.push(redactDiagnostic(warning, 512));
+          }
+        }
+      } catch (error) {
+        // Preserve all copies if another host config or runtime lease is uncertain.
+        cleanupWarnings.push(redactDiagnostic(error instanceof Error ? error.message : 'Runtime cleanup failed.', 512));
+      }
+      if (cleanupWarnings.length > 0) {
+        const cleanupWarning = redactDiagnostic(cleanupWarnings.join('; '), 1024);
+        for (const result of results) {
+          result.cleanupWarning = cleanupWarning;
+        }
+      }
     }
     return results;
     /** Installs the catalog for a client whose registration works; skills never change the registration outcome. */
@@ -744,21 +803,34 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
               : existing.args.slice(0, -1)
             : node.argsPrefix;
           const existingRuntime = extractRuntimePath(existing, root, existingPrefix);
-          const broken = owned && (!existingRuntime || !fs.existsSync(existingRuntime));
+          const existingKind = existingRuntime ? classifyRuntimePath(existingRuntime) : null;
+          let broken: boolean;
+          let existingVersion: string | null = null;
+          if (existingKind === 'current' || existingKind === 'dev') {
+            const nsTarget = resolveStableTarget(root, existingKind);
+            broken = owned && (!nsTarget || !nsTarget.exists);
+            existingVersion = nsTarget?.version ?? null;
+          } else {
+            broken = owned && (!existingRuntime || !fs.existsSync(existingRuntime));
+            existingVersion = existingRuntime ? extractRuntimeVersion(existingRuntime) : null;
+          }
           if (!broken) {
             result.tools = await probeRuntime(existing, env, cwd);
             result.runtimeCallable = true;
             result.hostCallable = await hostCallable(client, cli, env, cwd);
           }
-          result.message = 'Existing registration preserved. Start a new chat to refresh cached tools.';
-          if (isDeepStrictEqual(existing, candidate)) return;
+          const isNewer = existingVersion ? newerVersion(existingVersion, candidateVersion) : false;
+          result.message = pointerMessage ?? 'Existing registration preserved. Start a new chat to refresh cached tools.';
+          if (isDeepStrictEqual(existing, candidate) && !broken) {
+            if (isNewer) {
+              result.message = `Existing registration points to a newer CoAgent8 version (${existingVersion}); preserved.`;
+            }
+            return;
+          }
           if (!owned) {
             result.message = 'Manual or independently changed registration preserved; migration requires native-host acceptance.';
             return;
           }
-          const candidateVersion = options.version ?? extractRuntimeVersion(options.runtimeSource) ?? BRAND.SERVER_VERSION;
-          const existingVersion = existingRuntime ? extractRuntimeVersion(existingRuntime) : null;
-          const isNewer = existingVersion ? newerVersion(existingVersion, candidateVersion) : false;
           if (isNewer) {
             result.message = `Existing registration points to a newer CoAgent8 version (${existingVersion}); preserved.`;
             return;

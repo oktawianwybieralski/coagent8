@@ -65,6 +65,11 @@ import {
   type PathSystemAdapter,
   DefaultWindowsPathAdapter,
 } from '../../../src/integrations/vscode-path.js';
+import {
+  cleanupUnreferencedRuntimes,
+  coagentRootForHome,
+  installAndSelectVerifiedRuntime,
+} from '../../../src/integrations/runtime-manager.js';
 
 let customPathAdapter: PathSystemAdapter | undefined;
 
@@ -443,6 +448,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
           adopt,
           folders: folders(),
           restore,
+          onCleanupWarning: warning => report({ profileCleanupWarning: warning }),
         });
         noteWorkspaceDuplicate();
       } catch (error) {
@@ -722,7 +728,9 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
             fs.writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
             fs.renameSync(tmp, statePath);
           } finally {
-            fs.rmSync(tmp, { force: true });
+            try {
+              fs.rmSync(tmp, { force: true });
+            } catch {}
           }
           claimed = true;
         }),
@@ -741,6 +749,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
           if (pathChoice === 'Yes') {
             const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
             try {
+              if (!nodePath) throw new Error('Configure coagent8.nodePath with a Node.js 24+ executable.');
               const res = await enablePathIntegration(
                 {
                   home: os.homedir(),
@@ -748,11 +757,15 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
                   installation: path.dirname(context.extensionPath),
                   bundle: context.asAbsolutePath('dist/index.cjs'),
                   nodePath,
+                  version,
+                  env: setupEnvironment(),
+                  cwd: os.homedir(),
                 },
                 activePathAdapter(),
               );
               if (isDeactivating) return;
               if (res.action === 'enabled') {
+                if (res.cleanupWarning) report({ pathCleanupWarning: res.cleanupWarning });
                 await startTracked(() => updateSetupState(storage, { pathPrompt: 'accepted' }));
                 if (!isDeactivating) void vscode.window.showInformationMessage(pathAddedMessage(res.environmentNotified));
               }
@@ -1028,6 +1041,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
     const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
     try {
+      if (!nodePath) throw new Error('Configure coagent8.nodePath with a Node.js 24+ executable.');
       const res = await trackTask(
         enablePathIntegration(
           {
@@ -1036,12 +1050,16 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
             installation: path.dirname(context.extensionPath),
             bundle: context.asAbsolutePath('dist/index.cjs'),
             nodePath,
+            version,
+            env: setupEnvironment(),
+            cwd: os.homedir(),
           },
           activePathAdapter(),
         ),
       );
       if (isDeactivating) return;
       if (res.action === 'enabled') {
+        if (res.cleanupWarning) report({ pathCleanupWarning: res.cleanupWarning });
         await startTracked(() => updateSetupState(storage, { pathPrompt: 'accepted' }));
         if (!isDeactivating) void vscode.window.showInformationMessage(pathAddedMessage(res.environmentNotified));
       } else {
@@ -1308,6 +1326,10 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       if (!isDeactivating && choice === 'Show Details') showDetails(details);
     });
   }
+  const isSameSelection = (a: SkillManagementResult['selection'], b: SkillManagementResult['selection']) =>
+    JSON.stringify({ installed: [...a.installed].sort(), disabled: [...a.disabled].sort() }) ===
+    JSON.stringify({ installed: [...b.installed].sort(), disabled: [...b.disabled].sort() });
+  const isSkillPreviewChanged = (error: unknown) => error instanceof Error && /Skill preview changed/.test(error.message);
   /** Applies each client's current skill selection unchanged to refresh outdated non-conflict packages and catalog removals. */
   async function updateAllSkills(expectedSelections?: Partial<Record<SetupClient, SkillManagementResult['selection']>>): Promise<void> {
     const outcome: BulkSkillOutcome = { succeeded: [], preserved: [], failed: [], skipped: [] };
@@ -1316,10 +1338,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       try {
         const current = await startTracked(() => manageSkills(skillOptions));
         const expected = expectedSelections?.[client] ?? current.selection;
-        if (
-          JSON.stringify({ installed: [...expected.installed].sort(), disabled: [...expected.disabled].sort() }) !==
-          JSON.stringify({ installed: [...current.selection.installed].sort(), disabled: [...current.selection.disabled].sort() })
-        ) {
+        if (!isSameSelection(expected, current.selection)) {
           throw new Error('Skill selection changed; run it again.');
         }
         const outdatedCount = updateCountOf(current);
@@ -1329,13 +1348,32 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
           if (copies.length) outcome.preserved.push({ client, copies });
           continue;
         }
-        const preview = await startTracked(() =>
-          manageSkills({ ...skillOptions, selection: current.selection, expectedSelection: expected }),
-        );
-        const result = await startTracked(() =>
-          manageSkills({ ...skillOptions, selection: current.selection, expectedSelection: expected, apply: preview.token }),
-        );
-        outcome.succeeded.push({ client, count: outdatedCount, result });
+        const previewAndApply = async (selection: SkillManagementResult['selection']) => {
+          const preview = await startTracked(() => manageSkills({ ...skillOptions, selection, expectedSelection: expected }));
+          return startTracked(() => manageSkills({ ...skillOptions, selection, expectedSelection: expected, apply: preview.token }));
+        };
+        let appliedCount = outdatedCount;
+        let result: SkillManagementResult;
+        try {
+          result = await previewAndApply(current.selection);
+        } catch (applyError) {
+          if (!isSkillPreviewChanged(applyError)) throw applyError;
+          // Another VS Code window may have updated skills between preview and apply; re-inspect once before failing.
+          const fresh = await startTracked(() => manageSkills(skillOptions));
+          if (!isSameSelection(expected, fresh.selection)) {
+            throw new Error('Skill selection changed; run it again.');
+          }
+          const freshOutdated = updateCountOf(fresh);
+          if (!freshOutdated) {
+            outcome.skipped.push(fresh);
+            const copies = preservedCopiesOf(fresh);
+            if (copies.length) outcome.preserved.push({ client, copies });
+            continue;
+          }
+          appliedCount = freshOutdated;
+          result = await previewAndApply(fresh.selection);
+        }
+        outcome.succeeded.push({ client, count: appliedCount, result });
         const copies = preservedCopiesOf(result);
         if (copies.length) outcome.preserved.push({ client, copies });
       } catch (error) {
@@ -1365,11 +1403,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       try {
         const current = await startTracked(() => manageSkills(skillOptions));
         const expected = expectedSelections?.[client];
-        if (
-          expected &&
-          JSON.stringify({ installed: [...expected.installed].sort(), disabled: [...expected.disabled].sort() }) !==
-            JSON.stringify({ installed: [...current.selection.installed].sort(), disabled: [...current.selection.disabled].sort() })
-        ) {
+        if (expected && !isSameSelection(expected, current.selection)) {
           throw new Error('Skill selection changed; run it again.');
         }
         const overwriteNames = current.selection.installed.filter(name => !hasForeignRoot(current, name));
@@ -1410,22 +1444,21 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         return obs;
       });
       try {
-        const preview = await startTracked(() =>
-          manageSkills({
-            ...skillOptions,
-            selection: entry.status.selection,
-            expectedSelection: entry.status.selection,
-            overwrite,
-          }),
-        );
-        // Verify every targeted package's enabled and disabled roots match what the user confirmed.
-        const changedRoots = findChangedRoots(overwrite, preview.observations);
-        if (changedRoots.length) {
-          throw new Error(`Changed after confirmation: ${changedRoots.join(', ')}; run Reinstall all again.`);
-        }
-        let result: SkillManagementResult;
-        try {
-          result = await startTracked(() =>
+        const previewAndApplyReinstall = async () => {
+          const preview = await startTracked(() =>
+            manageSkills({
+              ...skillOptions,
+              selection: entry.status.selection,
+              expectedSelection: entry.status.selection,
+              overwrite,
+            }),
+          );
+          // Verify every targeted package's enabled and disabled roots match what the user confirmed.
+          const changedRoots = findChangedRoots(overwrite, preview.observations);
+          if (changedRoots.length) {
+            throw new Error(`Changed after confirmation: ${changedRoots.join(', ')}; run Reinstall all again.`);
+          }
+          return startTracked(() =>
             manageSkills({
               ...skillOptions,
               selection: entry.status.selection,
@@ -1434,16 +1467,34 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
               apply: preview.token,
             }),
           );
+        };
+        let result: SkillManagementResult;
+        try {
+          result = await previewAndApplyReinstall();
         } catch (applyError) {
-          // If a package changed between preview and apply, inspect fresh observations to name the changed roots.
-          if (applyError instanceof Error && /Skill preview changed/.test(applyError.message)) {
-            const fresh = await startTracked(() => manageSkills(skillOptions));
-            const changedBetween = findChangedRoots(overwrite, fresh.observations);
-            if (changedBetween.length) {
-              throw new Error(`Changed after confirmation: ${changedBetween.join(', ')}; run Reinstall all again.`);
-            }
+          if (!isSkillPreviewChanged(applyError)) throw applyError;
+          // Re-inspect once when another window changes state between preview and apply.
+          const fresh = await startTracked(() => manageSkills(skillOptions));
+          if (!isSameSelection(entry.status.selection, fresh.selection)) {
+            throw new Error('Skill selection changed; run it again.');
           }
-          throw applyError;
+          const changedBetween = findChangedRoots(overwrite, fresh.observations);
+          if (changedBetween.length) {
+            const allTargetsCurrent =
+              fresh.removable.length === 0 &&
+              entry.overwriteNames.every(name => {
+                const item = fresh.skills.find(skill => skill.name === name);
+                return Boolean(item && item.state === item.desired && !item.updateAvailable);
+              });
+            if (allTargetsCurrent) {
+              outcome.skipped.push(fresh);
+              const remainingCopies = preservedCopiesOf(fresh);
+              if (remainingCopies.length) outcome.preserved.push({ client: entry.client, copies: remainingCopies });
+              continue;
+            }
+            throw new Error(`Changed after confirmation: ${changedBetween.join(', ')}; run Reinstall all again.`);
+          }
+          result = await previewAndApplyReinstall();
         }
         outcome.succeeded.push({ client: entry.client, count: overwrite.length, result });
         const remainingCopies = preservedCopiesOf(result);
@@ -2323,35 +2374,69 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }),
   );
   trackTask(finishRemovals(true).catch(removalFailed));
+  const runtimeInstall: Promise<boolean> = vscode.env.remoteName
+    ? Promise.resolve(true)
+    : trackTask(
+        (async () => {
+          const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
+          if (!nodePath) throw new Error('Configure coagent8.nodePath with a Node.js 24+ executable.');
+          const res = await installAndSelectVerifiedRuntime({
+            home: os.homedir(),
+            runtimeSource: context.asAbsolutePath('dist/index.cjs'),
+            version,
+            nodePath,
+            env: setupEnvironment(),
+            cwd: os.homedir(),
+          });
+          if (res.action === 'kept-incumbent' || res.action === 'downgrade-blocked' || res.action === 'pinned-blocked') {
+            report({ runtimeSelection: res });
+          }
+          if (res.cleanupWarning) {
+            report({ runtimeCleanupWarning: res.cleanupWarning });
+          }
+          return true;
+        })().catch(error => {
+          report({ runtimeInstallError: redactDiagnostic(error instanceof Error ? error.message : 'Runtime install failed.') });
+          return false;
+        }),
+      );
   /**
-   * Offers to update the CLI chats once per bundled runtime when one still starts another
-   * runtime, as after an extension update. Reads the CLI configuration files only and starts no process.
+   * Migrates owned CLI chat registrations once from legacy `<sha256>` paths to the stable launcher.
+   * Subsequent updates switch the pointer only and show no Update CLI Chats or Restart Extensions prompt.
    */
-  async function offerRegistrationUpdate(): Promise<void> {
-    if (vscode.env.remoteName || isDeactivating || !readSetupState(storage).welcomed) return;
+  async function migrateLegacyRegistrations(): Promise<void> {
+    const runtimeReady = await runtimeInstall;
+    if (!runtimeReady || vscode.env.remoteName || isDeactivating || !readSetupState(storage).welcomed) return;
     const runtime = `${version}#${createHash('sha256')
       .update(fs.readFileSync(context.asAbsolutePath('dist/index.cjs')))
       .digest('hex')}`;
-    if (readSetupState(storage).updateOffered === runtime) return;
-    const outdated = readRegistrations(localOptions())
-      .filter(item => item.state === 'owned' && !item.current && !item.isNewer)
+    const offered = readSetupState(storage).updateOffered ?? {};
+    const legacy = readRegistrations(localOptions())
+      .filter(item => item.state === 'owned' && item.legacy && !item.isNewer && offered[item.client] !== runtime)
       .map(item => item.client);
-    if (!outdated.length || isDeactivating) return;
-    await startTracked(() => updateSetupState(storage, { updateOffered: runtime }));
-    if (isDeactivating) return;
-    const next = await vscode.window.showWarningMessage(
-      `CoAgent8 was updated, but the chats of ${labels(outdated)} still start the previous version. Update them now; open chats keep the old runtime until restarted.`,
-      'Update CLI Chats',
-    );
-    if (isDeactivating) return;
-    if (next === 'Update CLI Chats') await trackTask(connect(outdated));
+    if (!legacy.length || isDeactivating) return;
+    const migrated = await startTracked(() => setupClients({ ...localOptions(), clients: legacy }));
+    report({ migrated });
+    // Record completion only per successfully migrated client so failed or deferred clients retry on later activations.
+    const completed: Partial<Record<SetupClient, string>> = {};
+    for (const result of migrated) {
+      if (result.action === 'updated') completed[result.client] = runtime;
+    }
+    if (Object.keys(completed).length > 0 && !isDeactivating) {
+      await startTracked(() => updateSetupState(storage, { updateOffered: completed }));
+    }
+    if (migrated.some(result => result.action === 'updated') && !isDeactivating) {
+      void announce(migrated, [], { migrated }).catch(showLifecycleError);
+    }
   }
-  void offerRegistrationUpdate().catch(error => {
-    if (!isDeactivating)
-      void vscode.window.showErrorMessage(
-        `CoAgent8 update check: ${redactDiagnostic(error instanceof Error ? error.message : 'Update check failed.')}`,
-      );
-  });
+  const migrationTask = trackTask(
+    migrateLegacyRegistrations().catch(error => {
+      if (!isDeactivating)
+        void vscode.window.showErrorMessage(
+          `CoAgent8 migration: ${redactDiagnostic(error instanceof Error ? error.message : 'Registration migration failed.')}`,
+        );
+    }),
+  );
   /**
    * Offers to update outdated CoAgent8 skills once per catalog fingerprint when installed
    * packages have non-conflict updates. Reads local files only and starts no process.
@@ -2413,18 +2498,48 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
   });
   const pathSync = vscode.env.remoteName
     ? Promise.resolve()
-    : syncPathShim(
-        {
-          home: os.homedir(),
-          storage,
-          installation: path.dirname(context.extensionPath),
-          bundle: context.asAbsolutePath('dist/index.cjs'),
-          nodePath: vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim(),
-        },
-        activePathAdapter(),
-      ).catch(error => {
-        report({ pathSyncError: redactDiagnostic(error instanceof Error ? error.message : 'PATH shim synchronization failed.') });
-      });
+    : runtimeInstall
+        .then(runtimeReady => {
+          if (!runtimeReady) return;
+          return syncPathShim(
+            {
+              home: os.homedir(),
+              storage,
+              installation: path.dirname(context.extensionPath),
+              bundle: context.asAbsolutePath('dist/index.cjs'),
+              nodePath: vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim(),
+              version,
+              env: setupEnvironment(),
+              cwd: os.homedir(),
+            },
+            activePathAdapter(),
+          ).then(res => {
+            if (res.cleanupWarning) report({ pathSyncCleanupWarning: res.cleanupWarning });
+            return res;
+          });
+        })
+        .catch(error => {
+          report({ pathSyncError: redactDiagnostic(error instanceof Error ? error.message : 'PATH shim synchronization failed.') });
+        });
   trackTask(pathSync);
+  if (!vscode.env.remoteName) {
+    trackTask(
+      Promise.all([runtimeInstall, pathSync, migrationTask]).then(() => {
+        if (isDeactivating) return;
+        const homeDir = os.homedir();
+        return cleanupUnreferencedRuntimes(coagentRootForHome(homeDir), homeDir, setupEnvironment(), {
+          keepStableNamespaces: true,
+        })
+          .then(result => {
+            if (result.warnings?.length) {
+              report({ runtimeCleanupWarning: redactDiagnostic(result.warnings.join('; '), 1024) });
+            }
+          })
+          .catch(error => {
+            report({ runtimeCleanupError: redactDiagnostic(error instanceof Error ? error.message : 'Runtime cleanup failed.') });
+          });
+      }),
+    );
+  }
   return Promise.all([activated, pathSync]).then(() => undefined);
 }

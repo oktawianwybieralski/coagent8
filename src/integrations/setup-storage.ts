@@ -9,7 +9,9 @@ import { parse as parseToml } from 'smol-toml';
 import { parse, parseTree, type ParseError, type Node as JsonNode } from 'jsonc-parser';
 import { readBoundedFileSync } from '../storage/read.js';
 import { object } from './rpc.js';
+import { newerVersion } from './runtime-version.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
+export { newerVersion } from './runtime-version.js';
 export interface Registration {
   command: string;
   args: string[];
@@ -146,7 +148,9 @@ export function writeChecked(file: string, before: string | null, after: string)
       }
     }
   } finally {
-    fs.rmSync(temp, { force: true });
+    try {
+      fs.rmSync(temp, { force: true });
+    } catch {}
   }
 }
 export function readSelection(file: string, snapshot?: string | null): Selection {
@@ -274,24 +278,35 @@ function extensionStorage(directory: string | undefined): boolean {
   );
 }
 
-/** Whether semantic version `a` is strictly newer than `b` (numeric `X.Y.Z`, ignoring pre-release suffixes). */
-export function newerVersion(a: string | undefined, b: string | undefined): boolean {
-  if (a === undefined || b === undefined) return false;
-  const parseParts = (v: string) => v.replace(/-.*$/, '').split('.').map(Number);
-  const [x, y] = [parseParts(a), parseParts(b)];
-  for (let i = 0; i < Math.max(x.length, y.length); i++) {
-    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
-  }
-  return false;
-}
-
 /**
- * Reads or extracts the version of a CoAgent8 runtime bundle.
- * Checks for a sibling `version.json` file first; otherwise scans for `SERVER_VERSION` in the bundle.
+ * Reads or extracts the version of a CoAgent8 runtime bundle or stable launcher.
+ * For a stable launcher (`current/index.cjs` or `dev/index.cjs`), reads `pointer.json` first.
+ * Otherwise checks for a sibling `version.json` file or scans for `SERVER_VERSION` in the bundle.
  */
 export function extractRuntimeVersion(runtimePath: string): string | null {
   try {
     const dir = path.dirname(runtimePath);
+    const dirName = path.basename(dir);
+    if ((dirName === 'current' || dirName === 'dev') && path.basename(path.dirname(dir)) === 'runtime') {
+      const pointerFile = path.join(dir, 'pointer.json');
+      if (fs.existsSync(pointerFile)) {
+        const parsed = JSON.parse(readBoundedFileSync(pointerFile, 64 * 1024)) as {
+          schemaVersion?: unknown;
+          digest?: unknown;
+          version?: unknown;
+        };
+        if (
+          parsed?.schemaVersion === 1 &&
+          typeof parsed.digest === 'string' &&
+          /^[a-f0-9]{64}$/.test(parsed.digest) &&
+          typeof parsed.version === 'string' &&
+          parsed.version.length > 0
+        ) {
+          return parsed.version;
+        }
+      }
+      return null;
+    }
     const versionFile = path.join(dir, 'version.json');
     if (fs.existsSync(versionFile)) {
       const parsed = JSON.parse(readBoundedFileSync(versionFile, 64 * 1024));
@@ -308,6 +323,24 @@ export function extractRuntimeVersion(runtimePath: string): string | null {
     return null;
   }
   return null;
+}
+
+/** Classifies a validated CoAgent8 runtime path as legacy (`<sha256>`), stable (`current` or `dev`), or `null`. */
+export function classifyRuntimePath(runtimePath: string): 'legacy' | 'current' | 'dev' | null {
+  const normalized = path.resolve(runtimePath);
+  if (path.basename(normalized) !== 'index.cjs') return null;
+  const subDir = path.basename(path.dirname(normalized));
+  const runtimeDir = path.basename(path.dirname(path.dirname(normalized)));
+  if (runtimeDir !== 'runtime') return null;
+  if (/^[a-f0-9]{64}$/.test(subDir)) return 'legacy';
+  if (subDir === 'current' || subDir === 'dev') return subDir;
+  return null;
+}
+
+/** Whether a validated CoAgent8 runtime path uses a stable launcher (`current` or `dev`). */
+export function isStableRuntimePath(runtimePath: string): boolean {
+  const kind = classifyRuntimePath(runtimePath);
+  return kind === 'current' || kind === 'dev';
 }
 
 /** Whether a command resolves to Node (`process.execPath` or a candidate `nodePath`). */
@@ -383,7 +416,9 @@ export function extractRuntimePath(entry: unknown, root?: string, argsPrefix?: s
 
   const shaDir = path.dirname(normalizedCandidate);
   const sha = path.basename(shaDir);
-  if (!/^[a-f0-9]{64}$/.test(sha)) return null;
+  const isLegacySha = /^[a-f0-9]{64}$/.test(sha);
+  const isStableDir = sha === 'current' || sha === 'dev';
+  if (!isLegacySha && !isStableDir) return null;
 
   const runtimeDir = path.dirname(shaDir);
   if (path.basename(runtimeDir) !== 'runtime') return null;
@@ -410,8 +445,8 @@ export function extractRuntimePath(entry: unknown, root?: string, argsPrefix?: s
 
   if (root && isMatch(root)) {
     // Resolves inside the supplied runtime root (~/.coagent8)
-  } else if (isExtension && (!envDir || (extensionStorage(envDir) && isMatch(envDir)))) {
-    // Resolves inside verified extension globalStorage
+  } else if (isLegacySha && isExtension && (!envDir || (extensionStorage(envDir) && isMatch(envDir)))) {
+    // Resolves inside verified extension globalStorage (legacy content-addressed layout only)
   } else if (!root && !envDir && path.basename(storageRoot).toLowerCase() === '.coagent8') {
     // Default fallback when neither root nor envDir is provided
   } else {

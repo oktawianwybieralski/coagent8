@@ -432,10 +432,14 @@ test('existing legacy extension-owned profile entry migrates to modern mcp shape
   assert.equal(migrated.args.length, 2);
   assert.equal(migrated.args[1], 'mcp');
   assert.equal(fs.readFileSync(migrated.args[0], 'utf8'), 'bundle v1');
-  assert.equal(fs.existsSync(legacyTarget), false, 'legacy bundle copy is pruned');
+  assert.equal(fs.existsSync(legacyTarget), true, 'pre-lease copy without .lease-capable is never pruned during sync');
   const updatedRecord = JSON.parse(fs.readFileSync(recordFile, 'utf8'))[p.file];
   assert.equal(updatedRecord.version, '0.7.0');
   assert.equal(updatedRecord.entry, hash(JSON.stringify(migrated)));
+
+  // Subsequent syncs also keep the pre-lease copy intact (only full extension uninstall removes globalStorage).
+  assert.equal(await p.sync({ version: '0.7.0' }), 'current');
+  assert.equal(fs.existsSync(legacyTarget), true, 'pre-lease copy stays preserved across later syncs');
 });
 
 test('legacy extension-owned profile entry without record migrates to modern mcp shape via extensionShaped fallback', async t => {
@@ -453,7 +457,27 @@ test('legacy extension-owned profile entry without record migrates to modern mcp
   const migrated = p.entries()[VSCODE_SERVER_NAME];
   assert.deepEqual(migrated.args, [migrated.args[0], 'mcp']);
   assert.equal(fs.readFileSync(migrated.args[0], 'utf8'), 'bundle v1');
-  assert.equal(fs.existsSync(legacyTarget), false);
+  assert.equal(fs.existsSync(legacyTarget), true, 'pre-lease unrecorded copy is retained');
+});
+
+test('globalStorage cleanup preserves runtime copies still referenced by external CLI host registrations', async t => {
+  const { hash } = require('../../src/integrations/setup-storage.ts');
+  const p = profile(t);
+  const hostSha = hash('host referenced copy');
+  const hostDir = path.join(p.storagePath, 'runtime', hostSha);
+  const hostTarget = path.join(hostDir, 'index.cjs');
+  fs.mkdirSync(hostDir, { recursive: true });
+  fs.writeFileSync(hostTarget, 'host referenced copy');
+  fs.writeFileSync(path.join(hostDir, '.lease-capable'), '1\n');
+
+  fs.mkdirSync(p.home, { recursive: true });
+  fs.writeFileSync(
+    path.join(p.home, '.claude.json'),
+    JSON.stringify({ mcpServers: { coagent8: { command: 'node', args: [hostTarget, 'mcp'] } } }),
+  );
+
+  assert.equal(await p.sync({ version: '0.7.0' }), 'registered');
+  assert.equal(fs.existsSync(hostTarget), true, 'copy referenced by CLI host registration is preserved');
 });
 
 test('modern profile entry without record is recognized as current via extensionShaped fallback', async t => {
@@ -475,4 +499,99 @@ test('modern profile entry without record is recognized as current via extension
   assert.ok(fs.existsSync(recordFile));
   const record = JSON.parse(fs.readFileSync(recordFile, 'utf8'))[p.file];
   assert.equal(record.entry, hash(JSON.stringify(modernEntry)));
+});
+
+test('reusing an existing unmarked runtime copy never marks it lease-capable and preserves it across cleanup', async t => {
+  const { hash } = require('../../src/integrations/setup-storage.ts');
+  const p = profile(t);
+  const v1Content = 'bundle v1';
+  const v1Dir = path.join(p.storagePath, 'runtime', hash(v1Content));
+  const v1Target = path.join(v1Dir, 'index.cjs');
+  fs.mkdirSync(v1Dir, { recursive: true });
+  fs.writeFileSync(v1Target, v1Content);
+
+  // Syncing with the same bundle reuses the existing unmarked copy without adding .lease-capable.
+  assert.equal(await p.sync({ version: '0.7.0' }), 'registered');
+  assert.equal(fs.existsSync(path.join(v1Dir, '.lease-capable')), false, 'reused unmarked copy stays pre-lease');
+
+  // Updating to a newer bundle freshly creates v2 (marked lease-capable), while unmarked v1 is preserved by cleanup.
+  fs.writeFileSync(p.bundle, 'bundle v2');
+  assert.equal(await p.sync({ version: '0.8.0' }), 'registered');
+  const v2Dir = path.join(p.storagePath, 'runtime', hash('bundle v2'));
+  assert.equal(fs.existsSync(path.join(v2Dir, '.lease-capable')), true, 'freshly created copy gets .lease-capable');
+  assert.equal(fs.existsSync(v1Target), true, 'reused pre-lease copy is kept by cleanup');
+
+  // Updating again to v3 prunes the freshly created v2 copy while still preserving pre-lease v1.
+  fs.writeFileSync(p.bundle, 'bundle v3');
+  assert.equal(await p.sync({ version: '0.9.0' }), 'registered');
+  assert.equal(fs.existsSync(v2Dir), false, 'freshly created unreferenced copy is pruned');
+  assert.equal(fs.existsSync(v1Target), true, 'reused unmarked copy remains protected');
+});
+
+test('syncVscodeRegistration keeps registration active and surfaces warning when post-commit pruning fails', async t => {
+  const { withFileLock } = require('../../src/storage/lock.ts');
+  const { runtimeUpdateLockResource } = require('../../src/integrations/runtime-manager.ts');
+  const p = profile(t);
+
+  let releaseUpdate;
+  let updateHeld;
+  const gate = new Promise(resolve => {
+    releaseUpdate = resolve;
+  });
+  const acquired = new Promise(resolve => {
+    updateHeld = resolve;
+  });
+  const holder = withFileLock(runtimeUpdateLockResource(p.storagePath), async () => {
+    updateHeld();
+    await gate;
+  });
+  await acquired;
+
+  try {
+    const warnings = [];
+    const first = await p.sync({
+      cleanupTimeoutMs: 100,
+      onCleanupWarning: warning => warnings.push(warning),
+    });
+    assert.equal(first, 'registered', 'initial registration succeeds despite pruning timeout');
+    assert.ok(p.entries()[VSCODE_SERVER_NAME], 'mcp.json entry is written');
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /Timed out waiting for local storage lock/);
+
+    const second = await p.sync({
+      cleanupTimeoutMs: 100,
+      onCleanupWarning: warning => warnings.push(warning),
+    });
+    assert.equal(second, 'current', 'unchanged sync succeeds despite pruning timeout');
+    assert.equal(warnings.length, 2);
+    assert.match(warnings[1], /Timed out waiting for local storage lock/);
+  } finally {
+    releaseUpdate();
+    await holder;
+  }
+});
+
+test('syncVscodeRegistration surfaces returned warnings from cleanupUnreferencedRuntimes via onCleanupWarning', async t => {
+  const p = profile(t);
+  const lockedDigest = 'f'.repeat(64);
+  const lockedDir = path.join(p.storagePath, 'runtime', lockedDigest);
+  fs.mkdirSync(lockedDir, { recursive: true });
+  fs.writeFileSync(path.join(lockedDir, 'index.cjs'), 'locked');
+  fs.writeFileSync(path.join(lockedDir, '.lease-capable'), '1\n');
+
+  const origRmSync = fs.rmSync;
+  t.mock.method(fs, 'rmSync', (target, opts) => {
+    if (String(target) === lockedDir) {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    }
+    return origRmSync(target, opts);
+  });
+
+  const warnings = [];
+  const res = await p.sync({ onCleanupWarning: warning => warnings.push(warning) });
+  t.mock.restoreAll();
+
+  assert.equal(res, 'registered');
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], new RegExp(`Retained unreferenced runtime copy ${lockedDigest.slice(0, 12)}`));
 });

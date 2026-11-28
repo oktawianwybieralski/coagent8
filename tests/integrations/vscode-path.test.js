@@ -55,14 +55,27 @@ class MockPathAdapter {
   }
 }
 
-function fixture(t, { product = 'Code' } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-path-test-'));
+function validFixtureBundle(tag = 'v1') {
+  return [
+    `/* bundle ${tag} */`,
+    "const rl = require('node:readline').createInterface({ input: process.stdin });",
+    "rl.on('line', line => {",
+    '  if (!line.trim()) return;',
+    '  const msg = JSON.parse(line);',
+    "  if (msg.method === 'initialize') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { serverInfo: { name: 'coagent8' } } }) + '\\n');",
+    "  else if (msg.method === 'tools/list') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'doctor' }] } }) + '\\n');",
+    '});',
+  ].join('\n');
+}
+
+function fixture(t, { product = 'Code', prefix = 'coagent8-path-test-' } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const storage = path.join(root, product, 'User/globalStorage/okidev.coagent8-mcp');
   const installation = path.join(root, product === 'Code' ? '.vscode' : '.vscode-insiders', 'extensions');
   const bundle = path.join(root, 'extension/dist/index.cjs');
   fs.mkdirSync(path.dirname(bundle), { recursive: true });
-  fs.writeFileSync(bundle, '/* bundle v1 */');
+  fs.writeFileSync(bundle, validFixtureBundle('v1'));
   const home = path.join(root, 'home');
   fs.mkdirSync(home, { recursive: true });
   return { root, storage, installation, bundle, home };
@@ -277,41 +290,82 @@ test('uninstall removes only recorded, unchanged artifacts', async t => {
   }
 });
 
-test('extension update keeps the shim working', async t => {
+test('extension update keeps the shim working via stable path, migrates legacy shims, and repairs dangling shims', async t => {
   const f = fixture(t);
   const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+  const { readRuntimePointer } = require('../../src/integrations/runtime-manager.ts');
+  const root = path.join(f.home, '.coagent8');
+
   await enablePathIntegration(
-    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node', version: '0.7.0' },
     adapter,
   );
 
   const initialRecord = readPathRecord(f.home);
   const shimPath = initialRecord.shimPath;
   const initialContent = fs.readFileSync(shimPath, 'utf8');
+  assert.ok(initialRecord.runtime.endsWith(path.join('runtime', 'current', 'index.cjs')));
+  assert.equal(readRuntimePointer(root, 'current').version, '0.7.0');
 
-  // Update extension with new bundle
+  // Update extension with newer bundle -> shim stays at stable path (noop), pointer updates to 0.8.0
   const newBundle = path.join(f.root, 'extension-v2/dist/index.cjs');
   fs.mkdirSync(path.dirname(newBundle), { recursive: true });
-  fs.writeFileSync(newBundle, '/* bundle v2 - new code */');
+  fs.writeFileSync(newBundle, validFixtureBundle('v2 - new code'));
 
   const syncRes = await syncPathShim(
-    { home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: 'node' },
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: 'node', version: '0.8.0' },
     adapter,
   );
+  assert.equal(syncRes.action, 'noop');
+  assert.equal(fs.readFileSync(shimPath, 'utf8'), initialContent, 'stable shim path does not change on update');
+  assert.equal(readRuntimePointer(root, 'current').version, '0.8.0');
 
-  assert.equal(syncRes.action, 'updated');
-  const updatedContent = fs.readFileSync(shimPath, 'utf8');
-  assert.notEqual(updatedContent, initialContent, 'shim content updated with new runtime');
-  assert.match(updatedContent, /index\.cjs/);
+  // Downgrade guard: an older extension never switches pointer back to 0.7.0
+  const downgradeSync = await syncPathShim(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node', version: '0.7.0' },
+    adapter,
+  );
+  assert.equal(downgradeSync.action, 'noop');
+  assert.equal(readRuntimePointer(root, 'current').version, '0.8.0');
 
-  const updatedRecord = readPathRecord(f.home);
-  assert.notEqual(updatedRecord.shimHash, initialRecord.shimHash);
-  assert.notEqual(updatedRecord.runtime, initialRecord.runtime);
+  // Legacy dangling shim (pointing at deleted <sha256>/index.cjs) is repaired and migrated to stable path
+  const { hash } = require('../../src/integrations/setup-storage.ts');
+  const missingLegacy = path.join(root, 'runtime', 'd'.repeat(64), 'index.cjs');
+  const legacyShim = `@echo off\r\n"node" "${missingLegacy}" %*\r\n`;
+  fs.writeFileSync(shimPath, legacyShim);
+  const installs = JSON.parse(fs.readFileSync(path.join(root, 'installs.json'), 'utf8'));
+  const prevRecord = installs.pathV2 ?? installs.path;
+  installs.path = {
+    shimPath: prevRecord.shimPath,
+    pathEntry: prevRecord.pathEntry,
+    runtime: missingLegacy,
+    addedToPath: prevRecord.addedToPath,
+    shimHash: hash(legacyShim),
+    installations: prevRecord.installations,
+  };
+  delete installs.pathV2;
+  fs.writeFileSync(path.join(root, 'installs.json'), JSON.stringify(installs, null, 2));
+
+  const repaired = await syncPathShim(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: 'node', version: '0.8.0' },
+    adapter,
+  );
+  assert.equal(repaired.action, 'updated');
+  assert.equal(fs.readFileSync(shimPath, 'utf8'), initialContent, 'repaired shim points at stable launcher');
+  assert.ok(fs.existsSync(path.join(root, 'runtime', 'current', 'index.cjs')));
+  assert.ok(fs.existsSync(path.join(root, 'runtime', readRuntimePointer(root, 'current').digest, 'index.cjs')));
+
+  // Migrated ownership representation in installs.json is unrecognizable to old writers (no legacy `path` key)
+  const migratedInstalls = JSON.parse(fs.readFileSync(path.join(root, 'installs.json'), 'utf8'));
+  assert.equal(migratedInstalls.path, undefined, 'legacy path record removed so old writers cannot recognize or overwrite shim');
+  assert.equal(typeof migratedInstalls.pathV2?.shimDigest, 'string');
+  assert.equal(migratedInstalls.pathV2?.shimHash, undefined);
+  assert.ok(readPathRecord(f.home), 'current reader still reads migrated ownership record');
 
   // If user modifies the shim, update will NOT overwrite it
   fs.appendFileSync(shimPath, '\r\n:: user edit\r\n');
   const syncModified = await syncPathShim(
-    { home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: 'node' },
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: 'node', version: '0.9.0' },
     adapter,
   );
   assert.equal(syncModified.action, 'preserved', 'user modified shim is preserved during update');
@@ -391,7 +445,7 @@ test('syncPathShim restores previous shim content if record write fails', async 
 
   const newBundle = path.join(f.root, 'extension-v2/dist/index.cjs');
   fs.mkdirSync(path.dirname(newBundle), { recursive: true });
-  fs.writeFileSync(newBundle, '/* new runtime bundle */');
+  fs.writeFileSync(newBundle, validFixtureBundle('new runtime bundle'));
 
   // Intercept renameSync targeting installs.json to test record write failure rollback
   const origRename = fs.renameSync;
@@ -404,7 +458,11 @@ test('syncPathShim restores previous shim content if record write fails', async 
 
   try {
     await assert.rejects(
-      () => syncPathShim({ home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: 'node' }, adapter),
+      () =>
+        syncPathShim(
+          { home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: process.execPath },
+          adapter,
+        ),
       /Disk write failed/,
     );
   } finally {
@@ -571,8 +629,8 @@ test('removePathIntegration prunes unreferenced runtime copies on removal', asyn
 
   const uninst = await removePathIntegration(f.home, f.installation, 1500, adapter);
   assert.equal(uninst.action, 'removed');
-  assert.equal(fs.existsSync(runtimeDir), false, 'unreferenced runtime copy pruned on uninstall');
   const root = path.join(f.home, '.coagent8');
+  assert.equal(fs.existsSync(path.join(root, 'runtime')), false, 'unreferenced runtime copies and stable launcher pruned on uninstall');
   assert.equal(fs.existsSync(root), false, '~/.coagent8 completely removed when nothing remains');
 });
 
@@ -590,7 +648,7 @@ test('pruneUnreferencedRuntimes throws on corrupt installs.json and deletes no r
   fs.writeFileSync(installsFile, 'not valid json {{{');
 
   const { pruneUnreferencedRuntimes } = require('../../src/integrations/cleanup.ts');
-  assert.throws(() => pruneUnreferencedRuntimes(root, f.home), /Malformed installs.json/);
+  await assert.rejects(() => pruneUnreferencedRuntimes(root, f.home), /Malformed installs.json/);
 
   assert.equal(fs.existsSync(dummyRuntimeDir), true, 'runtime preserved when installs.json is corrupt');
 });
@@ -604,7 +662,316 @@ test('pruneUnreferencedRuntimes keeps every runtime when the PATH record has no 
   const { pruneUnreferencedRuntimes } = require('../../src/integrations/cleanup.ts');
   for (const record of [{ path: { shimPath: 'x', shimHash: 'y', installations: [] } }, { path: { runtime: 7 } }, { path: null }, []]) {
     fs.writeFileSync(path.join(root, 'installs.json'), JSON.stringify(record));
-    assert.throws(() => pruneUnreferencedRuntimes(root, f.home), /Malformed/);
+    await assert.rejects(() => pruneUnreferencedRuntimes(root, f.home), /Malformed/);
     assert.equal(fs.existsSync(dummyRuntimeDir), true, `runtime kept for ${JSON.stringify(record)}`);
   }
+});
+
+test(
+  'Windows PATH shim executes the real bundle across an extension update without changing shim bytes',
+  { skip: process.platform !== 'win32' },
+  async t => {
+    const f = fixture(t, { prefix: 'coagent8 path test ' });
+    const cp = require('node:child_process');
+    const distBundle = path.resolve(__dirname, '../../dist/index.cjs');
+    const bundleV1 = path.join(f.root, 'ext-v1', 'dist', 'index.cjs');
+    const bundleV2 = path.join(f.root, 'ext-v2', 'dist', 'index.cjs');
+    const distText = fs.readFileSync(distBundle, 'utf8');
+    fs.mkdirSync(path.dirname(bundleV1), { recursive: true });
+    fs.mkdirSync(path.dirname(bundleV2), { recursive: true });
+    fs.writeFileSync(bundleV1, distText + '\n// v1\n');
+    fs.writeFileSync(bundleV2, distText + '\n// v2\n');
+
+    const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+    await enablePathIntegration(
+      { home: f.home, storage: f.storage, installation: f.installation, bundle: bundleV1, nodePath: process.execPath, version: '0.7.0' },
+      adapter,
+    );
+    const shimPath = path.join(f.home, '.coagent8', 'bin', 'coagent8.cmd');
+    assert.ok(shimPath.includes(' '), 'shim path contains a space to verify safe cmd quoting');
+    const shimBytesBefore = fs.readFileSync(shimPath, 'utf8');
+    const childEnv = { ...process.env, HOME: f.home, USERPROFILE: f.home, coagent8_DIR: path.join(f.home, 'data') };
+
+    const run1 = cp.spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'call', shimPath, 'doctor', '--scope', 'health', '--json'], {
+      env: childEnv,
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 15_000,
+    });
+    assert.equal(run1.status, 0, run1.stderr);
+    const rt1 = JSON.parse(run1.stdout).runtime_path;
+
+    const syncRes = await syncPathShim(
+      { home: f.home, storage: f.storage, installation: f.installation, bundle: bundleV2, nodePath: process.execPath, version: '0.8.0' },
+      adapter,
+    );
+    assert.equal(syncRes.action, 'noop');
+    assert.equal(fs.readFileSync(shimPath, 'utf8'), shimBytesBefore, 'shim bytes unchanged on update');
+
+    const run2 = cp.spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'call', shimPath, 'doctor', '--scope', 'health', '--json'], {
+      env: childEnv,
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 15_000,
+    });
+    assert.equal(run2.status, 0, run2.stderr);
+    const rt2 = JSON.parse(run2.stdout).runtime_path;
+    assert.notEqual(rt2, rt1, 'shim invokes the newly updated runtime copy');
+  },
+);
+
+test('enablePathIntegration probes runtime before switching pointer, keeps incumbent on failure, and reports a clear error', async t => {
+  const { readRuntimePointer, coagentRootForHome } = require('../../src/integrations/runtime-manager.ts');
+
+  // 1. No incumbent: broken bundle fails verification before publishing pointer, shim, record, or PATH.
+  {
+    const f = fixture(t);
+    const brokenBundle = path.join(f.root, 'broken/dist/index.cjs');
+    fs.mkdirSync(path.dirname(brokenBundle), { recursive: true });
+    fs.writeFileSync(brokenBundle, 'process.exit(1);\n');
+    const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+
+    await assert.rejects(
+      () =>
+        enablePathIntegration(
+          {
+            home: f.home,
+            storage: f.storage,
+            installation: f.installation,
+            bundle: brokenBundle,
+            nodePath: process.execPath,
+            version: '0.8.0',
+          },
+          adapter,
+        ),
+      /Runtime verification failed:.*Probe process exited/,
+    );
+    const root = coagentRootForHome(f.home);
+    assert.equal(readRuntimePointer(root, 'current'), null, 'no pointer published for unverified bundle');
+    assert.equal(fs.existsSync(path.join(f.home, '.coagent8', 'bin', 'coagent8.cmd')), false, 'no shim written');
+    assert.equal(readPathRecord(f.home), undefined, 'no installs.json path record written');
+    assert.equal(adapter.writes.length, 0, 'PATH untouched');
+  }
+
+  // 2. Existing healthy incumbent (0.7.0): newer broken bundle (0.8.0) keeps incumbent pointer and existing PATH/shim intact.
+  {
+    const f = fixture(t);
+    const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+    await enablePathIntegration(
+      { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: process.execPath, version: '0.7.0' },
+      adapter,
+    );
+    const root = coagentRootForHome(f.home);
+    const incumbentBefore = readRuntimePointer(root, 'current');
+    assert.equal(incumbentBefore.version, '0.7.0');
+    const recordBefore = readPathRecord(f.home);
+    const shimBefore = fs.readFileSync(recordBefore.shimPath, 'utf8');
+    const writesBefore = adapter.writes.length;
+
+    const brokenNewer = path.join(f.root, 'ext-v2/dist/index.cjs');
+    fs.mkdirSync(path.dirname(brokenNewer), { recursive: true });
+    fs.writeFileSync(
+      brokenNewer,
+      [
+        "const rl = require('node:readline').createInterface({ input: process.stdin });",
+        "rl.on('line', line => {",
+        '  if (!line.trim()) return;',
+        '  const msg = JSON.parse(line);',
+        "  if (msg.method === 'initialize') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { serverInfo: { name: 'other-server' } } }) + '\\n');",
+        '});',
+      ].join('\n'),
+    );
+
+    await assert.rejects(
+      () =>
+        enablePathIntegration(
+          {
+            home: f.home,
+            storage: f.storage,
+            installation: path.join(f.root, '.vscode-insiders', 'extensions'),
+            bundle: brokenNewer,
+            nodePath: process.execPath,
+            version: '0.8.0',
+          },
+          adapter,
+        ),
+      /Runtime verification failed:.*not CoAgent8/,
+    );
+    assert.deepEqual(readRuntimePointer(root, 'current'), incumbentBefore, 'incumbent pointer preserved on probe failure');
+    assert.equal(fs.readFileSync(recordBefore.shimPath, 'utf8'), shimBefore, 'shim preserved');
+    assert.deepEqual(readPathRecord(f.home), recordBefore, 'path record preserved');
+    assert.equal(adapter.writes.length, writesBefore, 'no extra PATH write');
+  }
+});
+
+test('syncPathShim keeps healthy retained incumbent and refuses to publish unverified bundle when incumbent is missing', async t => {
+  const {
+    installAndSelectVerifiedRuntime,
+    readRuntimePointer,
+    coagentRootForHome,
+    runtimePointerPath,
+  } = require('../../src/integrations/runtime-manager.ts');
+  const f = fixture(t);
+  const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+  const root = coagentRootForHome(f.home);
+
+  // Establish 0.7.0 PATH shim via older installation, then a newer 0.8.0 installation becomes the incumbent pointer.
+  await enablePathIntegration(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: process.execPath, version: '0.7.0' },
+    adapter,
+  );
+  const v2Bundle = path.join(f.root, 'ext-v2/dist/index.cjs');
+  fs.mkdirSync(path.dirname(v2Bundle), { recursive: true });
+  fs.writeFileSync(v2Bundle, validFixtureBundle('v2'));
+  const v2 = await installAndSelectVerifiedRuntime({
+    home: f.home,
+    runtimeSource: v2Bundle,
+    version: '0.8.0',
+    nodePath: process.execPath,
+  });
+  assert.equal(readRuntimePointer(root, 'current').digest, v2.digest);
+
+  // Syncing the older 0.7.0 installation keeps the retained 0.8.0 incumbent and probes the launcher.
+  const syncRetained = await syncPathShim(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: process.execPath, version: '0.7.0' },
+    adapter,
+  );
+  assert.equal(syncRetained.action, 'noop');
+  assert.equal(readRuntimePointer(root, 'current').digest, v2.digest, 'retained 0.8.0 incumbent preserved');
+
+  // Migrating a legacy shim during older 0.7.0 sync also preserves the retained 0.8.0 incumbent and records 0.8.0.
+  const { hash } = require('../../src/integrations/setup-storage.ts');
+  const shimPath = readPathRecord(f.home).shimPath;
+  const legacyTarget = path.join(root, 'runtime', 'c'.repeat(64), 'index.cjs');
+  const legacyShim = `@echo off\r\n"${process.execPath}" "${legacyTarget}" %*\r\n`;
+  fs.writeFileSync(shimPath, legacyShim);
+  const installs = JSON.parse(fs.readFileSync(path.join(root, 'installs.json'), 'utf8'));
+  const prevRecord = installs.pathV2 ?? installs.path;
+  installs.path = {
+    shimPath: prevRecord.shimPath,
+    pathEntry: prevRecord.pathEntry,
+    runtime: legacyTarget,
+    addedToPath: prevRecord.addedToPath,
+    shimHash: hash(legacyShim),
+    installations: prevRecord.installations,
+  };
+  delete installs.pathV2;
+  fs.writeFileSync(path.join(root, 'installs.json'), JSON.stringify(installs, null, 2));
+  const syncMigrated = await syncPathShim(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: process.execPath, version: '0.7.0' },
+    adapter,
+  );
+  assert.equal(syncMigrated.action, 'updated');
+  assert.equal(readRuntimePointer(root, 'current').digest, v2.digest, 'retained 0.8.0 incumbent preserved across legacy shim migration');
+  assert.equal(readPathRecord(f.home).version, '0.8.0', 'migrated PATH record reflects retained incumbent version');
+
+  // If the incumbent pointer disappears and the bundle for syncPathShim fails probe, syncPathShim never publishes it.
+  fs.rmSync(runtimePointerPath(root, 'current'), { force: true });
+  const brokenBundle = path.join(f.root, 'broken/dist/index.cjs');
+  fs.mkdirSync(path.dirname(brokenBundle), { recursive: true });
+  fs.writeFileSync(brokenBundle, 'process.exit(1);\n');
+  await assert.rejects(
+    () =>
+      syncPathShim(
+        {
+          home: f.home,
+          storage: f.storage,
+          installation: f.installation,
+          bundle: brokenBundle,
+          nodePath: process.execPath,
+          version: '0.9.0',
+        },
+        adapter,
+      ),
+    /Runtime verification failed:.*Probe process exited/,
+  );
+  assert.equal(readRuntimePointer(root, 'current'), null, 'unverified bundle is not published by syncPathShim');
+});
+
+test('syncPathShim reports cleanupWarning without failing when post-commit pruning throws', async t => {
+  const { readRuntimePointer, coagentRootForHome } = require('../../src/integrations/runtime-manager.ts');
+  const { hash } = require('../../src/integrations/setup-storage.ts');
+  const f = fixture(t);
+  const root = coagentRootForHome(f.home);
+  const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+  await enablePathIntegration(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: process.execPath, version: '0.7.0' },
+    adapter,
+  );
+
+  // Rewrite shim & pathV2 record as an older legacy path so syncPathShim must rewrite both before pruning.
+  const shimPath = readPathRecord(f.home).shimPath;
+  const legacyTarget = path.join(root, 'runtime', 'c'.repeat(64), 'index.cjs');
+  const legacyShim = `@echo off\r\n"${process.execPath}" "${legacyTarget}" %*\r\n`;
+  fs.writeFileSync(shimPath, legacyShim);
+  const installsFile = path.join(root, 'installs.json');
+  const installs = JSON.parse(fs.readFileSync(installsFile, 'utf8'));
+  installs.pathV2.shimDigest = hash(legacyShim);
+  installs.pathV2.runtime = legacyTarget;
+  fs.writeFileSync(installsFile, JSON.stringify(installs, null, 2));
+
+  // Create an unreferenced lease-capable runtime copy so cleanupUnreferencedRuntimes attempts to delete it.
+  const staleDigest = 'd'.repeat(64);
+  const staleDir = path.join(root, 'runtime', staleDigest);
+  fs.mkdirSync(staleDir, { recursive: true });
+  fs.writeFileSync(path.join(staleDir, 'index.cjs'), 'stale');
+  fs.writeFileSync(path.join(staleDir, '.lease-capable'), '1\n');
+
+  const v2Bundle = path.join(f.root, 'v2/dist/index.cjs');
+  fs.mkdirSync(path.dirname(v2Bundle), { recursive: true });
+  fs.writeFileSync(v2Bundle, validFixtureBundle('v2-cleanup-warn'));
+
+  const origRmSync = fs.rmSync;
+  t.mock.method(fs, 'rmSync', (target, opts) => {
+    if (String(target) === staleDir) {
+      throw Object.assign(new Error('Simulated runtime dir EIO'), { code: 'EIO' });
+    }
+    return origRmSync(target, opts);
+  });
+
+  const syncRes = await syncPathShim(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: v2Bundle, nodePath: process.execPath, version: '0.8.0' },
+    adapter,
+  );
+  t.mock.restoreAll();
+
+  assert.equal(syncRes.action, 'updated');
+  assert.match(syncRes.cleanupWarning ?? '', /Simulated runtime dir EIO/);
+  assert.equal(readPathRecord(f.home).version, '0.8.0', 'PATH record was updated before cleanup failed');
+  assert.equal(readRuntimePointer(root, 'current').version, '0.8.0', 'stable pointer was updated before cleanup failed');
+});
+
+test('syncPathShim and removePathIntegration surface returned cleanupUnreferencedRuntimes warnings', async t => {
+  const f = fixture(t);
+  const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+  await enablePathIntegration(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: process.execPath, version: '0.7.0' },
+    adapter,
+  );
+
+  const lockedDigest = 'f'.repeat(64);
+  const lockedDir = path.join(f.home, '.coagent8', 'runtime', lockedDigest);
+  fs.mkdirSync(lockedDir, { recursive: true });
+  fs.writeFileSync(path.join(lockedDir, 'index.cjs'), 'locked');
+  fs.writeFileSync(path.join(lockedDir, '.lease-capable'), '1\n');
+
+  const origRmSync = fs.rmSync;
+  t.mock.method(fs, 'rmSync', (target, opts) => {
+    if (String(target) === lockedDir) {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    }
+    return origRmSync(target, opts);
+  });
+
+  const syncRes = await syncPathShim(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: process.execPath, version: '0.7.0' },
+    adapter,
+  );
+  assert.equal(syncRes.action, 'noop');
+  assert.match(syncRes.cleanupWarning ?? '', new RegExp(`Retained unreferenced runtime copy ${lockedDigest.slice(0, 12)}`));
+
+  const removeRes = await removePathIntegration(f.home, f.installation, 5000, adapter);
+  t.mock.restoreAll();
+  assert.equal(removeRes.action, 'removed');
+  assert.match(removeRes.cleanupWarning ?? '', new RegExp(`Retained unreferenced runtime copy ${lockedDigest.slice(0, 12)}`));
 });

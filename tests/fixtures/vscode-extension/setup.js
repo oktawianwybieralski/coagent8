@@ -58,10 +58,12 @@ export function readRegistrations(options) {
   return SETUP_CLIENTS.map(client => {
     const state = scripted().registrationStates[client];
     const isNewer = state === 'newer';
+    const isLegacy = state === 'legacy';
+    const isOutdated = state === 'outdated' || isLegacy;
     return {
       client,
-      state: state === 'outdated' || isNewer ? 'owned' : (state ?? 'absent'),
-      current: state !== 'outdated' && !isNewer,
+      state: isOutdated || isNewer ? 'owned' : (state ?? 'absent'),
+      current: !isOutdated && !isNewer,
       message:
         state === 'blocked'
           ? 'Malformed fixture configuration.'
@@ -69,6 +71,7 @@ export function readRegistrations(options) {
             ? 'Registered by setup for a newer CoAgent8 version (9.9.9); preserved.'
             : 'fixture',
       ...(isNewer ? { isNewer: true, version: '9.9.9' } : {}),
+      ...(isLegacy ? { legacy: true } : {}),
     };
   });
 }
@@ -77,13 +80,21 @@ export async function setupClients(options) {
   if (options.origin !== 'vscode-extension') throw new Error('missing extension origin');
   if (options.statusOnly) return options.clients.map(client => scripted().statusOf(client));
   scripted().recordClients(options.clients);
-  return options.clients.map(client => ({
-    ...scripted().statusOf(client),
-    action:
-      scripted().registrationStates[client] === 'newer'
-        ? 'preserved'
-        : scripted().registrationStates[client] === 'outdated'
-          ? 'updated'
-          : 'installed',
-  }));
+  return options.clients.map(client => {
+    const state = scripted().registrationStates[client];
+    const deferred = scripted().deferredClients?.includes(client);
+    const blocked = scripted().blockedClients?.includes(client);
+    return {
+      ...scripted().statusOf(client),
+      action:
+        blocked || state === 'blocked'
+          ? 'blocked'
+          : deferred || state === 'newer'
+            ? 'preserved'
+            : state === 'outdated' || state === 'legacy'
+              ? 'updated'
+              : 'installed',
+      ...(deferred ? { message: 'Managed runtime update deferred: fixture.' } : {}),
+    };
+  });
 }

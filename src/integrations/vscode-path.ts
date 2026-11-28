@@ -13,9 +13,13 @@ import os from 'node:os';
 import path from 'node:path';
 import cp from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { hash } from './setup-storage.js';
-import { copyJobHelperBeside } from './runtime-files.js';
-import { pruneUnreferencedRuntimes } from './cleanup.js';
+import { hash, classifyRuntimePath, extractRuntimeVersion, newerVersion } from './setup-storage.js';
+import {
+  cleanupUnreferencedRuntimes,
+  coagentRootForHome,
+  installAndSelectVerifiedRuntime,
+  type VerifiedRuntimeInstallResult,
+} from './runtime-manager.js';
 import { withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { redactDiagnostic } from '../security/redaction.js';
@@ -214,6 +218,7 @@ export interface PathOwnershipRecord {
   shimHash: string;
   installations: string[];
   userRetained?: boolean;
+  version?: string;
 }
 
 export interface PathOptInOptions {
@@ -222,6 +227,13 @@ export interface PathOptInOptions {
   installation: string;
   bundle: string;
   nodePath?: string;
+  version?: string;
+  /** Environment used to resolve `nodePath` and run the MCP verification probe. */
+  env?: NodeJS.ProcessEnv;
+  /** Working directory for the MCP verification probe; defaults to `home`. */
+  cwd?: string;
+  /** Additional environment variables injected into the probed runtime. */
+  probeEnv?: Record<string, string>;
 }
 
 export interface PathEnableResult {
@@ -230,6 +242,8 @@ export interface PathEnableResult {
   shimPath: string;
   /** False when open windows were not told about a changed `PATH`; a sign-out applies it. */
   environmentNotified: boolean;
+  /** Non-fatal cleanup diagnostic when post-selection cleanup failed after runtime publish. */
+  cleanupWarning?: string;
 }
 
 export interface PathRemovalResult {
@@ -237,10 +251,15 @@ export interface PathRemovalResult {
   message?: string;
   /** False when the `PATH` entry was removed but open windows were not told. */
   environmentNotified?: boolean;
+  /** Non-fatal cleanup diagnostic when unreferenced runtime pruning failed after PATH removal. */
+  cleanupWarning?: string;
 }
 
 export interface PathSyncResult {
   action: 'updated' | 'preserved' | 'missing' | 'noop';
+  message?: string;
+  /** Non-fatal cleanup diagnostic when post-sync cleanup failed after shim/record commit. */
+  cleanupWarning?: string;
 }
 
 function installRecordFile(home: string): string {
@@ -298,7 +317,9 @@ function writeRecordFile(home: string, record: Record<string, unknown>): void {
     fs.writeFileSync(tmp, JSON.stringify(record, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     fs.renameSync(tmp, file);
   } finally {
-    fs.rmSync(tmp, { force: true });
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {}
   }
 }
 
@@ -306,15 +327,15 @@ function setupLockTarget(home: string): string {
   return path.join(home, '.coagent8', 'setup');
 }
 
-export function readPathRecord(home: string): PathOwnershipRecord | undefined {
-  const record = readRecordFile(home);
-  const p = record.path;
-  if (!p || typeof p !== 'object' || Array.isArray(p)) return undefined;
-  const pathObj = p as Record<string, unknown>;
+function parseOwnershipEntry(raw: unknown): PathOwnershipRecord | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const pathObj = raw as Record<string, unknown>;
+  const digest =
+    typeof pathObj.shimDigest === 'string' ? pathObj.shimDigest : typeof pathObj.shimHash === 'string' ? pathObj.shimHash : null;
   if (
     typeof pathObj.shimPath === 'string' &&
     typeof pathObj.pathEntry === 'string' &&
-    typeof pathObj.shimHash === 'string' &&
+    digest !== null &&
     Array.isArray(pathObj.installations)
   ) {
     return {
@@ -322,30 +343,38 @@ export function readPathRecord(home: string): PathOwnershipRecord | undefined {
       pathEntry: pathObj.pathEntry,
       runtime: typeof pathObj.runtime === 'string' ? pathObj.runtime : '',
       addedToPath: pathObj.addedToPath === true,
-      shimHash: pathObj.shimHash,
+      shimHash: digest,
       installations: pathObj.installations.filter((i): i is string => typeof i === 'string'),
       userRetained: pathObj.userRetained === true,
+      ...(typeof pathObj.version === 'string' ? { version: pathObj.version } : {}),
     };
   }
   return undefined;
 }
 
-function ensureRuntimeCopy(home: string, bundle: string): string {
-  const content = fs.readFileSync(bundle);
-  const digest = hash(content);
-  const runtimeDir = path.join(home, '.coagent8', 'runtime', digest);
-  const target = path.join(runtimeDir, 'index.cjs');
-  fs.mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
-  copyJobHelperBeside(bundle, runtimeDir);
-  if (fs.existsSync(target) && hash(fs.readFileSync(target)) === digest) return target;
-  const tmp = `${target}.tmp.${randomUUID()}`;
-  try {
-    fs.writeFileSync(tmp, content, { flag: 'wx', mode: 0o600 });
-    fs.renameSync(tmp, target);
-  } finally {
-    fs.rmSync(tmp, { force: true });
-  }
-  return target;
+/**
+ * Serializes PATH ownership under `records.pathV2` (with `shimDigest` instead of legacy `shimHash`)
+ * and removes legacy `records.path` so pre-migration extension windows cannot recognize or overwrite
+ * a migrated stable shim back to an old runtime path.
+ */
+function writeMigratedPathRecord(records: Record<string, unknown>, record: PathOwnershipRecord): void {
+  records.pathV2 = {
+    schemaVersion: 2,
+    shimPath: record.shimPath,
+    pathEntry: record.pathEntry,
+    runtime: record.runtime,
+    addedToPath: record.addedToPath,
+    shimDigest: record.shimHash,
+    installations: record.installations,
+    ...(record.userRetained ? { userRetained: true } : {}),
+    ...(record.version !== undefined ? { version: record.version } : {}),
+  };
+  delete records.path;
+}
+
+export function readPathRecord(home: string): PathOwnershipRecord | undefined {
+  const record = readRecordFile(home);
+  return parseOwnershipEntry(record.pathV2) ?? parseOwnershipEntry(record.path);
 }
 
 function generateShimContent(nodePath: string, runtimeTarget: string): string {
@@ -360,7 +389,9 @@ function atomicWriteShim(shimPath: string, content: string): void {
     fs.writeFileSync(tmp, content, { flag: 'wx', mode: 0o755 });
     fs.renameSync(tmp, shimPath);
   } finally {
-    fs.rmSync(tmp, { force: true });
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {}
   }
 }
 
@@ -382,6 +413,23 @@ async function entryMayRemain(adapter: PathSystemAdapter, normalizedEntry: strin
     return false;
   } catch {
     return true;
+  }
+}
+
+/** Installs/selects and MCP-probes the runtime bundle for PATH shim creation or synchronization. */
+async function installVerifiedPathRuntime(options: PathOptInOptions, nodeExec: string): Promise<VerifiedRuntimeInstallResult> {
+  try {
+    return await installAndSelectVerifiedRuntime({
+      home: options.home,
+      runtimeSource: options.bundle,
+      version: options.version,
+      nodePath: nodeExec,
+      env: options.env,
+      cwd: options.cwd ?? options.home,
+      probeEnv: options.probeEnv,
+    });
+  } catch (err) {
+    throw new Error(`Runtime verification failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -427,8 +475,9 @@ export async function enablePathIntegration(
       .map(p => p.trim())
       .filter(Boolean);
 
-    const runtimeTarget = ensureRuntimeCopy(options.home, options.bundle);
     const nodeExec = options.nodePath?.trim() || 'node';
+    const installed = await installVerifiedPathRuntime(options, nodeExec);
+    const runtimeTarget = installed.launcherPath;
     const shimContent = generateShimContent(nodeExec, runtimeTarget);
     const shimDigest = hash(shimContent);
 
@@ -459,9 +508,14 @@ export async function enablePathIntegration(
       addedToPath: existingPath ? existingPath.addedToPath || !alreadyExists : !alreadyExists,
       shimHash: shimDigest,
       installations,
+      version: installed.version,
     };
 
-    records.path = updatedRecord;
+    const hadLegacyRecord = Object.hasOwn(records, 'path');
+    const previousLegacy = records.path;
+    const hadV2Record = Object.hasOwn(records, 'pathV2');
+    const previousV2 = records.pathV2;
+    writeMigratedPathRecord(records, updatedRecord);
     try {
       writeRecordFile(options.home, records);
     } catch (err) {
@@ -485,11 +539,10 @@ export async function enablePathIntegration(
           );
         }
         rollbackShim();
-        if (existingPath) {
-          records.path = existingPath;
-        } else {
-          delete records.path;
-        }
+        if (hadLegacyRecord) records.path = previousLegacy;
+        else delete records.path;
+        if (hadV2Record) records.pathV2 = previousV2;
+        else delete records.pathV2;
         try {
           writeRecordFile(options.home, records);
         } catch {}
@@ -499,7 +552,13 @@ export async function enablePathIntegration(
       addedToPath = true;
     }
 
-    return { action: 'enabled', addedToPath, shimPath, environmentNotified };
+    return {
+      action: 'enabled',
+      addedToPath,
+      shimPath,
+      environmentNotified,
+      ...(installed.cleanupWarning ? { cleanupWarning: installed.cleanupWarning } : {}),
+    };
   });
 }
 
@@ -532,25 +591,71 @@ export async function syncPathShim(
       return { action: 'preserved' };
     }
 
-    const runtimeTarget = ensureRuntimeCopy(options.home, options.bundle);
+    const candidateVersion = options.version ?? extractRuntimeVersion(options.bundle) ?? undefined;
+    // Respect downgrade guard for existing healthy legacy shims pointing to a strictly newer version.
+    if (record.runtime && classifyRuntimePath(record.runtime) === 'legacy' && fs.existsSync(record.runtime)) {
+      const legacyVersion = extractRuntimeVersion(record.runtime);
+      if (legacyVersion && candidateVersion && newerVersion(legacyVersion, candidateVersion)) {
+        return { action: 'noop', message: `Kept newer legacy PATH shim (${legacyVersion}).` };
+      }
+    }
+
     const nodeExec = options.nodePath?.trim() || 'node';
+    const installed = await installVerifiedPathRuntime(options, nodeExec);
+    const runtimeTarget = installed.launcherPath;
     const newShimContent = generateShimContent(nodeExec, runtimeTarget);
     const newShimHash = hash(newShimContent);
 
-    atomicWriteShim(record.shimPath, newShimContent);
+    const hasLegacyRecord = Object.hasOwn(records, 'path');
+    const shimUpToDate = previousShimContent === newShimContent && record.runtime === runtimeTarget && record.shimHash === newShimHash;
+    const cleanupWarnings: string[] = installed.cleanupWarning ? [installed.cleanupWarning] : [];
+    const pruneBestEffort = async () => {
+      try {
+        const pruneResult = await cleanupUnreferencedRuntimes(coagentRootForHome(options.home), options.home, process.env, {
+          keepStableNamespaces: true,
+        });
+        if (pruneResult.warnings?.length) {
+          cleanupWarnings.push(...pruneResult.warnings);
+        }
+      } catch (error) {
+        // Keep copies if another host config or lease is uncertain.
+        cleanupWarnings.push(redactDiagnostic(error instanceof Error ? error.message : 'Runtime cleanup failed.'));
+      }
+    };
+    if (shimUpToDate && !hasLegacyRecord) {
+      await pruneBestEffort();
+      return {
+        action: 'noop',
+        message: installed.message,
+        ...(cleanupWarnings.length ? { cleanupWarning: redactDiagnostic(cleanupWarnings.join('; '), 1024) } : {}),
+      };
+    }
+
+    if (!shimUpToDate) {
+      atomicWriteShim(record.shimPath, newShimContent);
+    }
     record.runtime = runtimeTarget;
     record.shimHash = newShimHash;
-    records.path = record;
+    record.version = installed.version;
+    writeMigratedPathRecord(records, record);
     try {
       writeRecordFile(options.home, records);
     } catch (err) {
-      try {
-        atomicWriteShim(record.shimPath, previousShimContent);
-      } catch {}
+      if (!shimUpToDate) {
+        try {
+          atomicWriteShim(record.shimPath, previousShimContent);
+        } catch {}
+      }
       throw err;
     }
 
-    return { action: 'updated' };
+    await pruneBestEffort();
+
+    return {
+      action: shimUpToDate ? 'noop' : 'updated',
+      message: installed.message,
+      ...(cleanupWarnings.length ? { cleanupWarning: redactDiagnostic(cleanupWarnings.join('; '), 1024) } : {}),
+    };
   });
 }
 
@@ -576,20 +681,24 @@ export async function removePathIntegration(
       const record = readPathRecord(home);
       if (!record) return { action: 'missing' };
 
+      const saveUpdatedRecord = () => {
+        if (Object.hasOwn(records, 'pathV2')) writeMigratedPathRecord(records, record);
+        else records.path = record;
+      };
       const isOwner = record.installations.some(i => sameInstallation(i, installation));
       if (!isOwner) return { action: 'preserved', message: 'Not an owner of PATH integration' };
 
       const remaining = record.installations.filter(i => !sameInstallation(i, installation));
       if (remaining.length > 0) {
         record.installations = remaining;
-        records.path = record;
+        saveUpdatedRecord();
         writeRecordFile(home, records);
         return { action: 'preserved', message: 'Remaining installations active' };
       }
 
       // Check budget before performing any destructive file system changes
       if (record.addedToPath && timeRemaining() <= 100) {
-        records.path = record;
+        saveUpdatedRecord();
         try {
           writeRecordFile(home, records);
         } catch {}
@@ -613,7 +722,7 @@ export async function removePathIntegration(
         if (onDiskHash !== record.shimHash) {
           record.userRetained = true;
           record.installations = remaining;
-          records.path = record;
+          saveUpdatedRecord();
           writeRecordFile(home, records);
           return { action: 'preserved', message: 'User-modified shim preserved' };
         }
@@ -631,7 +740,7 @@ export async function removePathIntegration(
         const remainingRead = timeRemaining();
         if (remainingRead <= 0) {
           restoreShimIfNeeded();
-          records.path = record;
+          saveUpdatedRecord();
           try {
             writeRecordFile(home, records);
           } catch {}
@@ -661,7 +770,7 @@ export async function removePathIntegration(
           }
         } catch (error) {
           restoreShimIfNeeded();
-          records.path = record;
+          saveUpdatedRecord();
           try {
             writeRecordFile(home, records);
           } catch {}
@@ -670,12 +779,26 @@ export async function removePathIntegration(
       }
 
       delete records.path;
+      delete records.pathV2;
       writeRecordFile(home, records);
       const root = path.join(home, '.coagent8');
+      const cleanupWarnings: string[] = [];
       try {
-        pruneUnreferencedRuntimes(root, home);
-      } catch {}
-      return { action: 'removed', environmentNotified };
+        const pruneResult = await cleanupUnreferencedRuntimes(root, home, process.env, {
+          keepStableNamespaces: false,
+          leaseTimeoutMs: Math.max(100, timeRemaining()),
+        });
+        if (pruneResult.warnings?.length) {
+          cleanupWarnings.push(...pruneResult.warnings);
+        }
+      } catch (error) {
+        cleanupWarnings.push(redactDiagnostic(error instanceof Error ? error.message : 'Runtime cleanup failed.'));
+      }
+      return {
+        action: 'removed',
+        environmentNotified,
+        ...(cleanupWarnings.length ? { cleanupWarning: redactDiagnostic(cleanupWarnings.join('; '), 1024) } : {}),
+      };
     },
     Math.min(leaseTimeoutMs, Math.max(100, timeRemaining())),
   );

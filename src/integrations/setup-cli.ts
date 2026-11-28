@@ -1,8 +1,60 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { setupClients, SETUP_CLIENTS, type SetupClient } from './setup.js';
 import { cleanupClients } from './cleanup.js';
+import {
+  cleanupUnreferencedRuntimes,
+  coagentRootForHome,
+  readRuntimeStatus,
+  rollbackOrPinRuntime,
+  unpinRuntime,
+} from './runtime-manager.js';
+import { type RuntimeNamespace } from './runtime-version.js';
 import { manageSkills, skillSelectionForAction } from './skill-management.js';
 import { redactDiagnostic } from '../security/redaction.js';
+
+function resolveSkillsDir(): string {
+  const beside = path.resolve(__dirname, 'skills');
+  if (fs.existsSync(beside)) return beside;
+  return path.resolve(__dirname, '..', 'skills');
+}
+
+async function runRuntimeCli(args: string[]): Promise<void> {
+  const [action, ...rest] = args;
+  const home = os.homedir();
+  const nsFlag = rest.find(arg => arg.startsWith('--namespace='));
+  const namespace = (nsFlag?.slice('--namespace='.length) ?? 'current') as RuntimeNamespace;
+  if (namespace !== 'current' && namespace !== 'dev') {
+    throw new Error('Runtime namespace must be current or dev.');
+  }
+  if (action === 'status') {
+    process.stdout.write(JSON.stringify(readRuntimeStatus(home, namespace), null, 2) + '\n');
+    return;
+  }
+  if (action === 'pin' || action === 'rollback') {
+    const digest = rest.find(arg => !arg.startsWith('--'));
+    const version = rest.find(arg => arg.startsWith('--version='))?.slice('--version='.length);
+    const reason = rest.find(arg => arg.startsWith('--reason='))?.slice('--reason='.length) ?? action;
+    const result = await rollbackOrPinRuntime({ home, namespace, digest, version, reason });
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    return;
+  }
+  if (action === 'unpin') {
+    const result = await unpinRuntime(home, namespace);
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    return;
+  }
+  if (action === 'prune') {
+    const result = await cleanupUnreferencedRuntimes(coagentRootForHome(home), home, process.env, { keepStableNamespaces: true });
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    if (result.warnings?.length) {
+      process.stderr.write(`Warning: ${redactDiagnostic(result.warnings.join('; '), 1024)}\n`);
+    }
+    return;
+  }
+  throw new Error('Usage: coagent8 runtime status|rollback|pin|unpin|prune [<sha256>] [--namespace=current|dev]');
+}
 
 async function runSkillsCli(args: string[]): Promise<void> {
   const [action, ...flags] = args;
@@ -35,7 +87,7 @@ async function runSkillsCli(args: string[]): Promise<void> {
   if (action === 'status' && (names || apply !== undefined)) throw new Error('Skill status takes only --clients.');
   const results = [];
   for (const client of clients as SetupClient[]) {
-    const options = { client, skillsSource: path.resolve(__dirname, '..', 'skills') };
+    const options = { client, skillsSource: resolveSkillsDir() };
     const current = await manageSkills(options);
     if (action === 'status') {
       results.push(current);
@@ -69,6 +121,10 @@ export async function runSetupCli(args: string[]): Promise<boolean> {
     await runSkillsCli(args.slice(1));
     return true;
   }
+  if (args[0] === 'runtime') {
+    await runRuntimeCli(args.slice(1));
+    return true;
+  }
   if (args.length === 1 && ['--help', '-h'].includes(args[0])) {
     process.stdout.write(
       'CoAgent8: no arguments starts the stdio MCP server.\nUsage: coagent8 setup|repair|status|cleanup [--clients=codex,claude,agy]\nSetup/repair explicitly authorize native-host MCP registration and reconcile the selected CoAgent8 skills. Status checks CLI readiness.\nCleanup previews owned removals of registrations and skills; apply with cleanup --apply=<preview token>.\nSkills: coagent8 skills status|install|uninstall|enable|disable [--clients=agy] [--skills=coagent8-review,...]\nModels: coagent8 models [--backend codex|claude|agy] [--json] lists models, prices and approval tags.\nChanges are previews; apply one client with the same arguments and --apply=<preview token>. Start a new client chat to refresh skills.\nnpm uninstall runs no cleanup: run cleanup first.\n',
@@ -89,6 +145,9 @@ export async function runSetupCli(args: string[]): Promise<boolean> {
   if (args[0] === 'cleanup') {
     const preview = await cleanupClients({ clients: clients as SetupClient[] | undefined, apply: apply?.slice('--apply='.length) });
     process.stdout.write(JSON.stringify(preview, null, 2) + '\n');
+    if (preview.cleanupWarning) {
+      process.stderr.write(`Warning: ${preview.cleanupWarning}\n`);
+    }
     const kept = (action: string) => action === 'blocked' || action === 'preserved';
     if (preview.stateError || preview.results.some(result => kept(result.action) || result.skills?.some(skill => kept(skill.action))))
       process.exitCode = 1;
@@ -99,9 +158,13 @@ export async function runSetupCli(args: string[]): Promise<boolean> {
     clients: clients as SetupClient[] | undefined,
     statusOnly: args[0] === 'status',
     runtimeSource: path.resolve(__dirname, 'index.cjs'),
-    skillsSource: path.resolve(__dirname, '..', 'skills'),
+    skillsSource: resolveSkillsDir(),
   });
   process.stdout.write(JSON.stringify(results, null, 2) + '\n');
+  const cleanupWarning = results.find(result => result.cleanupWarning)?.cleanupWarning;
+  if (cleanupWarning) {
+    process.stderr.write(`Warning: ${cleanupWarning}\n`);
+  }
   if (
     args[0] === 'status'
       ? !results.some(result => result.ready)

@@ -455,3 +455,101 @@ test('without its ownership record, an entry setup wrote is recognized by its sh
     assert.equal((await cleanupClients({ ...p, clients: ['agy'] })).results[0].action, 'preserved', JSON.stringify(edited));
   }
 });
+
+test('uninstall cleanup bounds runtime cleanup with remaining leaseTimeoutMs when runtime-update is held', async t => {
+  const { withFileLock } = require('../../src/storage/lock.ts');
+  const { runtimeUpdateLockResource } = require('../../src/integrations/runtime-manager.ts');
+  const p = profile(t);
+  const root = path.join(p.home, '.coagent8');
+  const preview = await cleanupClients({ ...p, origin: 'vscode-extension', uninstall: true });
+
+  let releaseUpdate;
+  let updateHeld;
+  const gate = new Promise(resolve => {
+    releaseUpdate = resolve;
+  });
+  const acquired = new Promise(resolve => {
+    updateHeld = resolve;
+  });
+  const holder = withFileLock(runtimeUpdateLockResource(root), async () => {
+    updateHeld();
+    await gate;
+  });
+  await acquired;
+  setTimeout(() => releaseUpdate(), 600);
+
+  const started = Date.now();
+  const applied = await cleanupClients({
+    ...p,
+    origin: 'vscode-extension',
+    uninstall: true,
+    apply: preview.token,
+    leaseTimeoutMs: 350,
+  });
+  const elapsed = Date.now() - started;
+
+  assert.ok(elapsed < 600, `expected uninstall cleanup to respect 350ms budget, took ${elapsed}ms`);
+  assert.match(applied.stateError, /Timed out waiting for local storage lock/);
+
+  releaseUpdate();
+  await holder;
+});
+
+test('uninstall cleanup ignores trailing rmdirSync failure on empty root after removing setup state', async t => {
+  const p = profile(t);
+  const root = path.join(p.home, '.coagent8');
+  fs.mkdirSync(root, { recursive: true });
+  const preview = await cleanupClients({ ...p, origin: 'vscode-extension', uninstall: true });
+
+  const origRmdirSync = fs.rmdirSync;
+  t.mock.method(fs, 'rmdirSync', (target, opts) => {
+    if (path.resolve(String(target)) === path.resolve(root)) {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    }
+    return origRmdirSync(target, opts);
+  });
+
+  const applied = await cleanupClients({
+    ...p,
+    origin: 'vscode-extension',
+    uninstall: true,
+    apply: preview.token,
+  });
+  t.mock.restoreAll();
+
+  assert.equal(applied.stateError, undefined);
+  assert.equal(
+    applied.results.every(r => r.action === 'absent' || r.action === 'removed'),
+    true,
+  );
+});
+
+test('cleanupClients uninstall and pruneUnreferencedRuntimes propagate returned cleanup warnings', async t => {
+  const { pruneUnreferencedRuntimes } = require('../../src/integrations/cleanup.ts');
+  const p = profile(t);
+  const root = path.join(p.home, '.coagent8');
+  const lockedDigest = 'f'.repeat(64);
+  const lockedDir = path.join(root, 'runtime', lockedDigest);
+  fs.mkdirSync(lockedDir, { recursive: true });
+  fs.writeFileSync(path.join(lockedDir, 'index.cjs'), 'locked');
+  fs.writeFileSync(path.join(lockedDir, '.lease-capable'), '1\n');
+
+  const origRmSync = fs.rmSync;
+  t.mock.method(fs, 'rmSync', (target, opts) => {
+    if (String(target) === lockedDir) {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    }
+    return origRmSync(target, opts);
+  });
+
+  const pruneRes = await pruneUnreferencedRuntimes(root, p.home, process.env, { keepStableNamespaces: true });
+  assert.ok(pruneRes.kept.includes(lockedDigest));
+  assert.match(pruneRes.cleanupWarning ?? '', new RegExp(`Retained unreferenced runtime copy ${lockedDigest.slice(0, 12)}`));
+
+  const preview = await cleanupClients({ ...p, origin: 'vscode-extension', uninstall: true });
+  const applied = await cleanupClients({ ...p, origin: 'vscode-extension', uninstall: true, apply: preview.token });
+  t.mock.restoreAll();
+
+  assert.equal(applied.stateError, undefined);
+  assert.match(applied.cleanupWarning ?? '', new RegExp(`Retained unreferenced runtime copy ${lockedDigest.slice(0, 12)}`));
+});

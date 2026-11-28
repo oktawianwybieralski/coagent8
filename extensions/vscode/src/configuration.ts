@@ -12,7 +12,9 @@ function replaceFile(file: string, content: string): void {
     fs.writeFileSync(temporary, content, { flag: 'wx', mode: 0o600 });
     fs.renameSync(temporary, file);
   } finally {
-    fs.rmSync(temporary, { force: true });
+    try {
+      fs.rmSync(temporary, { force: true });
+    } catch {}
   }
 }
 
@@ -44,8 +46,8 @@ export async function resetConfigurationFile(file: string, defaults: unknown): P
 export interface SetupState {
   /** The first-activation notice was shown; later activations start no CLI check. */
   welcomed?: boolean;
-  /** The runtime (`<version>#<sha-256>`) whose outdated CLI chat registrations were last offered for update. */
-  updateOffered?: string;
+  /** The runtime (`<version>#<sha-256>`) whose legacy CLI chat registration was migrated, per client. */
+  updateOffered?: Partial<Record<SetupClient, string>>;
   /** The bundled skill catalog digest whose changes were last offered for update, per client. */
   skillsOffered?: Partial<Record<SetupClient, string>>;
   /** Vendor extensions whose removal the user started from a CLI menu, finished once VS Code has removed them. */
@@ -106,7 +108,14 @@ function strings(value: unknown): string[] | undefined {
 export function readSetupState(storage: string): SetupState {
   const record = readObject(setupStateFile(storage));
   const state: SetupState = record.welcomed === true ? { welcomed: true } : {};
-  if (typeof record.updateOffered === 'string') state.updateOffered = record.updateOffered;
+  if (record.updateOffered && typeof record.updateOffered === 'object' && !Array.isArray(record.updateOffered)) {
+    const offered: Partial<Record<SetupClient, string>> = {};
+    for (const client of SETUP_CLIENTS) {
+      const value = (record.updateOffered as Record<string, unknown>)[client];
+      if (typeof value === 'string') offered[client] = value;
+    }
+    if (Object.keys(offered).length) state.updateOffered = offered;
+  }
   if (record.skillsOffered && typeof record.skillsOffered === 'object' && !Array.isArray(record.skillsOffered)) {
     const offered: Partial<Record<SetupClient, string>> = {};
     for (const client of SETUP_CLIENTS) {
@@ -182,6 +191,7 @@ export async function updateSetupState(storage: string, changes: SetupState): Pr
   await withFileLock(file, async () => {
     const previous = readSetupState(storage);
     const next: SetupState = { ...previous, ...changes };
+    if (changes.updateOffered) next.updateOffered = { ...previous.updateOffered, ...changes.updateOffered };
     if (changes.skillsOffered) next.skillsOffered = { ...previous.skillsOffered, ...changes.skillsOffered };
     replaceFile(file, JSON.stringify(next, null, 2) + '\n');
   });
