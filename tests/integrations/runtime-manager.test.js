@@ -606,3 +606,129 @@ test('installAndSelectVerifiedRuntime reserves incumbent during probe and avoids
   const postFailCleanup = await cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: true });
   assert.ok(postFailCleanup.kept.includes(v1.digest));
 });
+
+test('reusing an existing unmarked runtime copy never marks it lease-capable and keeps it pre-lease', async t => {
+  const { installAndSelectVerifiedRuntime } = require('../../src/integrations/runtime-manager.ts');
+  const home = makeHome(t);
+  const root = coagentRootForHome(home);
+  const mcpBundle = content =>
+    [
+      content,
+      "const rl = require('node:readline').createInterface({ input: process.stdin });",
+      "rl.on('line', line => {",
+      '  if (!line.trim()) return;',
+      '  const msg = JSON.parse(line);',
+      "  if (msg.method === 'initialize') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { serverInfo: { name: 'coagent8' } } }) + '\\n');",
+      "  else if (msg.method === 'tools/list') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'doctor' }] } }) + '\\n');",
+      '});',
+    ].join('\n');
+
+  const v1Source = path.join(home, 'v1.cjs');
+  const v1Text = mcpBundle('/* pre-lease v1 */');
+  fs.writeFileSync(v1Source, v1Text);
+  const v1Digest = createHash('sha256').update(v1Text).digest('hex');
+  const v1Dir = path.join(root, 'runtime', v1Digest);
+  fs.mkdirSync(v1Dir, { recursive: true });
+  fs.writeFileSync(path.join(v1Dir, 'index.cjs'), v1Text);
+
+  // Reusing the unmarked copy via installAndSelectRuntime and installAndSelectVerifiedRuntime never adds .lease-capable.
+  await installAndSelectRuntime({ home, runtimeSource: v1Source, version: '0.7.0' });
+  assert.equal(fs.existsSync(path.join(v1Dir, '.lease-capable')), false, 'installAndSelectRuntime keeps unmarked copy pre-lease');
+  await installAndSelectVerifiedRuntime({ home, runtimeSource: v1Source, version: '0.7.0', nodePath: process.execPath });
+  assert.equal(fs.existsSync(path.join(v1Dir, '.lease-capable')), false, 'installAndSelectVerifiedRuntime keeps unmarked copy pre-lease');
+
+  // Freshly creating v2 marks v2 lease-capable, and cleanup keeps unmarked v1.
+  const v2Source = path.join(home, 'v2.cjs');
+  fs.writeFileSync(v2Source, mcpBundle('/* fresh v2 */'));
+  const v2 = await installAndSelectVerifiedRuntime({ home, runtimeSource: v2Source, version: '0.8.0', nodePath: process.execPath });
+  assert.equal(fs.existsSync(path.join(path.dirname(v2.runtimePath), '.lease-capable')), true, 'freshly created copy gets .lease-capable');
+
+  const cleanup = await cleanupUnreferencedRuntimes(root, home, process.env, { keepStableNamespaces: true });
+  assert.ok(cleanup.kept.includes(v1Digest), 'reused unmarked copy stays protected by cleanup');
+  assert.equal(fs.existsSync(path.join(v1Dir, 'index.cjs')), true);
+});
+
+test('installAndSelectVerifiedRuntime revalidates under final lock and probes before publishing after concurrent pointer change', async t => {
+  const { installAndSelectVerifiedRuntime, runtimePointerPath } = require('../../src/integrations/runtime-manager.ts');
+  const fsp = require('node:fs/promises');
+  const validBundle = tag =>
+    [
+      `/* ${tag} */`,
+      "const rl = require('node:readline').createInterface({ input: process.stdin });",
+      "rl.on('line', line => {",
+      '  if (!line.trim()) return;',
+      '  const msg = JSON.parse(line);',
+      "  if (msg.method === 'initialize') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { serverInfo: { name: 'coagent8' } } }) + '\\n');",
+      "  else if (msg.method === 'tools/list') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'doctor' }] } }) + '\\n');",
+      '});',
+    ].join('\n');
+
+  // 1. Broken candidate (0.7.0) with incumbent (0.8.0): pointer disappears between lock 1 and lock 2 -> never published.
+  {
+    const home = makeHome(t);
+    const root = coagentRootForHome(home);
+    const pointerFile = runtimePointerPath(root, 'current');
+    const v2 = path.join(home, 'v2.cjs');
+    const brokenV1 = path.join(home, 'broken-v1.cjs');
+    fs.writeFileSync(v2, validBundle('v2'));
+    fs.writeFileSync(brokenV1, 'process.exit(1);\n');
+    await installAndSelectVerifiedRuntime({ home, runtimeSource: v2, version: '0.8.0', nodePath: process.execPath });
+
+    const pointerWrites = [];
+    const origRename = fs.renameSync;
+    t.mock.method(fs, 'renameSync', (from, to) => {
+      if (to === pointerFile) pointerWrites.push(fs.readFileSync(from, 'utf8'));
+      return origRename(from, to);
+    });
+    const origLink = fsp.link;
+    let lockAcquires = 0;
+    t.mock.method(fsp, 'link', async (src, dst) => {
+      if (typeof dst === 'string' && dst.endsWith('runtime-lock.lease')) {
+        lockAcquires++;
+        if (lockAcquires === 2) {
+          fs.rmSync(pointerFile, { force: true });
+        }
+      }
+      return origLink(src, dst);
+    });
+
+    await assert.rejects(
+      () => installAndSelectVerifiedRuntime({ home, runtimeSource: brokenV1, version: '0.7.0', nodePath: process.execPath }),
+      /Probe process exited/,
+    );
+    t.mock.restoreAll();
+    assert.deepEqual(pointerWrites, [], 'unprobed broken candidate was never written to pointer.json');
+    assert.equal(readRuntimePointer(root, 'current'), null);
+  }
+
+  // 2. Healthy candidate (0.7.0) with incumbent (0.8.0): pointer disappears between lock 1 and lock 2 -> probes outside lock and publishes.
+  {
+    const home = makeHome(t);
+    const root = coagentRootForHome(home);
+    const pointerFile = runtimePointerPath(root, 'current');
+    const v2 = path.join(home, 'v2.cjs');
+    const healthyV1 = path.join(home, 'healthy-v1.cjs');
+    fs.writeFileSync(v2, validBundle('v2'));
+    fs.writeFileSync(healthyV1, validBundle('v1'));
+    await installAndSelectVerifiedRuntime({ home, runtimeSource: v2, version: '0.8.0', nodePath: process.execPath });
+
+    const origLink = fsp.link;
+    let lockAcquires = 0;
+    t.mock.method(fsp, 'link', async (src, dst) => {
+      if (typeof dst === 'string' && dst.endsWith('runtime-lock.lease')) {
+        lockAcquires++;
+        if (lockAcquires === 2) {
+          fs.rmSync(pointerFile, { force: true });
+        }
+      }
+      return origLink(src, dst);
+    });
+
+    const res = await installAndSelectVerifiedRuntime({ home, runtimeSource: healthyV1, version: '0.7.0', nodePath: process.execPath });
+    t.mock.restoreAll();
+    assert.equal(res.action, 'installed');
+    assert.equal(res.version, '0.7.0');
+    assert.ok(res.tools.includes('doctor'));
+    assert.equal(readRuntimePointer(root, 'current').version, '0.7.0');
+  }
+});

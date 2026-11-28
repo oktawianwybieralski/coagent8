@@ -574,7 +574,8 @@ export function installAndVerifyRuntimeCopy(options: RuntimeCopyOptions): Instal
   const runtimePath = path.join(runtimeDir, 'index.cjs');
   fs.mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
 
-  if (!fs.existsSync(runtimePath) || sha256(fs.readFileSync(runtimePath)) !== digest) {
+  const createdFreshly = !fs.existsSync(runtimePath);
+  if (createdFreshly || sha256(fs.readFileSync(runtimePath)) !== digest) {
     atomicWriteText(runtimePath, bundleBytes, 0o600);
   }
   if (sha256(fs.readFileSync(runtimePath)) !== digest) {
@@ -617,7 +618,10 @@ export function installAndVerifyRuntimeCopy(options: RuntimeCopyOptions): Instal
   if (!fs.existsSync(versionFile)) {
     atomicWriteText(versionFile, JSON.stringify({ version }) + '\n', 0o600);
   }
-  markRuntimeLeaseCapable(runtimeDir);
+  // Only mark copies freshly created here; an existing unmarked copy may still be running in a pre-lease server.
+  if (createdFreshly) {
+    markRuntimeLeaseCapable(runtimeDir);
+  }
 
   return { root, runtimeRoot, digest, version, runtimeDir, runtimePath };
 }
@@ -882,6 +886,26 @@ export async function probeRuntime(
 }
 
 /**
+ * Reports whether `selectRuntimePointerLocked` would publish `copy` (or clear a pin on `copy`)
+ * given the current pointer state on disk; caller MUST hold `runtimeLockResource`.
+ */
+function wouldPublishCandidate(
+  root: string,
+  copy: InstalledRuntimeCopy,
+  options: { namespace?: RuntimeNamespace; allowDevInCurrent?: boolean; pin?: boolean; unpin?: boolean },
+): boolean {
+  if (options.pin) return true;
+  const namespace = resolveRuntimeNamespace(copy.version, options);
+  const existingPointer = readRuntimePointer(root, namespace);
+  const existingTarget = resolveStableTarget(root, namespace);
+  if (!existingPointer || !existingTarget?.exists) return true;
+  if (existingPointer.pinned && !options.unpin) return false;
+  const cmp = compareSemver(copy.version, existingPointer.version);
+  if (cmp === 1) return true;
+  return cmp === 0 && copy.digest === existingPointer.digest && Boolean(existingPointer.pinned && options.unpin);
+}
+
+/**
  * Installs, reserves candidate and incumbent copies against concurrent cleanup, probes the installed
  * candidate and stable launcher, and publishes the pointer under the shared lock, restoring the
  * incumbent pointer only if its target still exists on probe failure.
@@ -895,6 +919,7 @@ export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeIn
   let copy!: InstalledRuntimeCopy;
   let namespace!: RuntimeNamespace;
   let wouldSwitch = false;
+  let candidateProbed = false;
   const reservedDigests = new Set<string>();
   const reservationLeaseFiles: string[] = [];
 
@@ -919,6 +944,17 @@ export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeIn
     reservationLeaseFiles.push(leasePath);
   };
 
+  const reservePointerTargetsLocked = (pointer: RuntimePointer | null, targetExists: boolean) => {
+    if (!pointer) return;
+    if (targetExists) reserveDigestLocked(pointer.digest);
+    if (pointer.pinned) {
+      const pinnedTarget = path.join(copy.runtimeRoot, pointer.pinned.digest, 'index.cjs');
+      if (fs.statSync(pinnedTarget, { throwIfNoEntry: false })?.isFile()) {
+        reserveDigestLocked(pointer.pinned.digest);
+      }
+    }
+  };
+
   await withFileLock(
     runtimeLockResource(root),
     async () => {
@@ -926,59 +962,66 @@ export async function installAndSelectVerifiedRuntime(options: VerifiedRuntimeIn
       namespace = resolveRuntimeNamespace(copy.version, options);
       const existingPointer = readRuntimePointer(root, namespace);
       const existingTarget = resolveStableTarget(root, namespace);
-      wouldSwitch =
-        !existingPointer ||
-        !existingTarget?.exists ||
-        Boolean(options.pin) ||
-        Boolean(options.unpin && existingPointer.pinned) ||
-        compareSemver(copy.version, existingPointer.version) === 1;
+      wouldSwitch = wouldPublishCandidate(root, copy, options);
 
       reserveDigestLocked(copy.digest);
-      if (existingPointer) {
-        if (existingTarget?.exists) reserveDigestLocked(existingPointer.digest);
-        if (existingPointer.pinned) {
-          const pinnedTarget = path.join(copy.runtimeRoot, existingPointer.pinned.digest, 'index.cjs');
-          if (fs.statSync(pinnedTarget, { throwIfNoEntry: false })?.isFile()) {
-            reserveDigestLocked(existingPointer.pinned.digest);
-          }
-        }
-      }
+      reservePointerTargetsLocked(existingPointer, Boolean(existingTarget?.exists));
     },
     RUNTIME_LOCK_TIMEOUT_MS,
   );
 
   try {
+    const probeCandidate = () =>
+      probeRuntime({ command: node.command, args: [...node.argsPrefix, copy.runtimePath, 'mcp'], env: options.probeEnv }, env, cwd);
+
     if (wouldSwitch) {
-      await probeRuntime({ command: node.command, args: [...node.argsPrefix, copy.runtimePath, 'mcp'], env: options.probeEnv }, env, cwd);
+      await probeCandidate();
+      candidateProbed = true;
     }
 
+    const MAX_SELECTION_ATTEMPTS = 4;
     let previousPointerRaw: string | null = null;
     let writtenPointerRaw: string | null = null;
     let selected!: RuntimeInstallResult;
     const pointerFile = runtimePointerPath(root, namespace);
 
-    await withFileLock(
-      runtimeLockResource(root),
-      async () => {
-        previousPointerRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
-        if (previousPointerRaw !== null) {
-          try {
-            const parsedPrev = validateRuntimePointer(JSON.parse(previousPointerRaw));
-            const prevTarget = path.join(copy.runtimeRoot, parsedPrev.digest, 'index.cjs');
-            if (fs.statSync(prevTarget, { throwIfNoEntry: false })?.isFile()) {
-              reserveDigestLocked(parsedPrev.digest);
+    for (let attempt = 0; ; attempt++) {
+      let needsCandidateProbe = false;
+      await withFileLock(
+        runtimeLockResource(root),
+        async () => {
+          previousPointerRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
+          let currentPointer: RuntimePointer | null = null;
+          let currentTargetExists = false;
+          if (previousPointerRaw !== null) {
+            try {
+              currentPointer = validateRuntimePointer(JSON.parse(previousPointerRaw));
+              const prevTarget = path.join(copy.runtimeRoot, currentPointer.digest, 'index.cjs');
+              currentTargetExists = Boolean(fs.statSync(prevTarget, { throwIfNoEntry: false })?.isFile());
+              reservePointerTargetsLocked(currentPointer, currentTargetExists);
+            } catch {
+              // Invalid previous pointer cannot be restored safely; handled during rollback.
             }
-          } catch {
-            // Invalid previous pointer cannot be restored safely; handled during rollback.
           }
-        }
-        selected = selectRuntimePointerLocked(copy, options);
-        if (selected.action === 'installed' || selected.action === 'updated') {
-          writtenPointerRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
-        }
-      },
-      RUNTIME_LOCK_TIMEOUT_MS,
-    );
+          // Revalidate under the final lock so a concurrent pointer change never publishes an unprobed candidate.
+          if (!candidateProbed && wouldPublishCandidate(root, copy, options)) {
+            needsCandidateProbe = true;
+            return;
+          }
+          selected = selectRuntimePointerLocked(copy, options);
+          if (selected.action === 'installed' || selected.action === 'updated') {
+            writtenPointerRaw = fs.existsSync(pointerFile) ? fs.readFileSync(pointerFile, 'utf8') : null;
+          }
+        },
+        RUNTIME_LOCK_TIMEOUT_MS,
+      );
+      if (!needsCandidateProbe) break;
+      if (attempt + 1 >= MAX_SELECTION_ATTEMPTS) {
+        throw new Error('Concurrent runtime pointer updates prevented verified selection.');
+      }
+      await probeCandidate();
+      candidateProbed = true;
+    }
 
     const switched = selected.action === 'installed' || selected.action === 'updated';
     try {

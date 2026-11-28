@@ -500,3 +500,30 @@ test('modern profile entry without record is recognized as current via extension
   const record = JSON.parse(fs.readFileSync(recordFile, 'utf8'))[p.file];
   assert.equal(record.entry, hash(JSON.stringify(modernEntry)));
 });
+
+test('reusing an existing unmarked runtime copy never marks it lease-capable and preserves it across cleanup', async t => {
+  const { hash } = require('../../src/integrations/setup-storage.ts');
+  const p = profile(t);
+  const v1Content = 'bundle v1';
+  const v1Dir = path.join(p.storagePath, 'runtime', hash(v1Content));
+  const v1Target = path.join(v1Dir, 'index.cjs');
+  fs.mkdirSync(v1Dir, { recursive: true });
+  fs.writeFileSync(v1Target, v1Content);
+
+  // Syncing with the same bundle reuses the existing unmarked copy without adding .lease-capable.
+  assert.equal(await p.sync({ version: '0.7.0' }), 'registered');
+  assert.equal(fs.existsSync(path.join(v1Dir, '.lease-capable')), false, 'reused unmarked copy stays pre-lease');
+
+  // Updating to a newer bundle freshly creates v2 (marked lease-capable), while unmarked v1 is preserved by cleanup.
+  fs.writeFileSync(p.bundle, 'bundle v2');
+  assert.equal(await p.sync({ version: '0.8.0' }), 'registered');
+  const v2Dir = path.join(p.storagePath, 'runtime', hash('bundle v2'));
+  assert.equal(fs.existsSync(path.join(v2Dir, '.lease-capable')), true, 'freshly created copy gets .lease-capable');
+  assert.equal(fs.existsSync(v1Target), true, 'reused pre-lease copy is kept by cleanup');
+
+  // Updating again to v3 prunes the freshly created v2 copy while still preserving pre-lease v1.
+  fs.writeFileSync(p.bundle, 'bundle v3');
+  assert.equal(await p.sync({ version: '0.9.0' }), 'registered');
+  assert.equal(fs.existsSync(v2Dir), false, 'freshly created unreferenced copy is pruned');
+  assert.equal(fs.existsSync(v1Target), true, 'reused unmarked copy remains protected');
+});

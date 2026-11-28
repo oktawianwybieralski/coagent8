@@ -190,8 +190,8 @@ function runtimeCopy(storagePath: string, bundle: string): string {
     target = path.join(directory, 'index.cjs');
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   copyJobHelperBeside(bundle, directory);
-  if (fs.existsSync(target) && hash(fs.readFileSync(target)) === path.basename(directory)) {
-    markRuntimeLeaseCapable(directory);
+  const targetExisted = fs.existsSync(target);
+  if (targetExisted && hash(fs.readFileSync(target)) === path.basename(directory)) {
     return target;
   }
   const temp = `${target}.${randomUUID()}.tmp`;
@@ -201,7 +201,10 @@ function runtimeCopy(storagePath: string, bundle: string): string {
   } finally {
     fs.rmSync(temp, { force: true });
   }
-  markRuntimeLeaseCapable(directory);
+  // Only mark copies this code freshly creates; an existing unmarked copy may be running in a pre-lease server.
+  if (!targetExisted) {
+    markRuntimeLeaseCapable(directory);
+  }
   return target;
 }
 /**
